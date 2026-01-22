@@ -196,39 +196,42 @@ export function ChartingResult({
         )}
 
         {isArray ? (
-          <>
-            {arrayValue.filter(item => item).length > 0 && (
-              <div className="flex flex-wrap gap-1.5 mb-2">
-                {arrayValue.filter(item => item).map((item, index) => (
-                  <Badge
-                    key={index}
-                    variant={isConfirmed ? "secondary" : "outline"}
-                    className={isConfirmed 
-                      ? "bg-teal-100 text-teal-700 border-teal-200" 
-                      : "border-amber-300 text-amber-700 bg-white"
-                    }
-                  >
-                    {item}
-                  </Badge>
-                ))}
-              </div>
-            )}
-            <Textarea
-              value={arrayValue.join(', ')}
-              onChange={(e) => {
-                // 입력 중에는 빈 문자열 유지 (콤마 입력 허용)
-                const items = e.target.value.split(',').map(s => s.trim());
-                handleFieldChange(field.id, items);
-              }}
-              onBlur={(e) => {
-                // 포커스 해제 시 빈 문자열 제거
-                const items = e.target.value.split(',').map(s => s.trim()).filter(s => s);
-                handleFieldChange(field.id, items);
-              }}
-              className="min-h-[60px] bg-white border-slate-200"
-              placeholder="콤마(,)로 구분하여 입력"
-            />
-          </>
+          (() => {
+            // 문자열로 저장된 경우에도 처리
+            const textValue = Array.isArray(value) ? value.join(', ') : (value || '');
+            // 실시간으로 태그 파싱 (표시용)
+            const parsedTags = textValue.split(',').map(s => s.trim()).filter(s => s);
+            
+            return (
+              <>
+                {parsedTags.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {parsedTags.map((item, index) => (
+                      <Badge
+                        key={index}
+                        variant={isConfirmed ? "secondary" : "outline"}
+                        className={isConfirmed 
+                          ? "bg-teal-100 text-teal-700 border-teal-200" 
+                          : "border-amber-300 text-amber-700 bg-white"
+                        }
+                      >
+                        {item}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+                <Textarea
+                  value={textValue}
+                  onChange={(e) => {
+                    // 문자열 그대로 저장 (자유로운 입력)
+                    handleFieldChange(field.id, e.target.value);
+                  }}
+                  className="min-h-[60px] bg-white border-slate-200"
+                  placeholder="콤마(,)로 구분하여 입력 (예: Tylenol 500mg, Ibuprofen 200mg)"
+                />
+              </>
+            );
+          })()
         ) : field.type === 'text' ? (
           <Input
             value={stringValue}
