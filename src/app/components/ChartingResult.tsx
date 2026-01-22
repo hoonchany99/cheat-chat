@@ -20,6 +20,71 @@ import { ChartField, DEPARTMENT_PRESETS, DdxItem, ChartFieldValue } from '@/serv
 // ChartData는 여기서 export (chartService의 타입 활용)
 export type { DdxItem, ChartFieldValue };
 
+// 차트 애니메이션 스타일
+const chartAnimationStyles = `
+  @keyframes chartFieldFadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(12px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  
+  @keyframes chartSlideDown {
+    from {
+      opacity: 0;
+      max-height: 0;
+      transform: translateY(-8px);
+    }
+    to {
+      opacity: 1;
+      max-height: 500px;
+      transform: translateY(0);
+    }
+  }
+  
+  @keyframes chartPulse {
+    0%, 100% {
+      transform: scale(1);
+    }
+    50% {
+      transform: scale(1.02);
+    }
+  }
+  
+  @keyframes shimmer {
+    0% {
+      background-position: -200% 0;
+    }
+    100% {
+      background-position: 200% 0;
+    }
+  }
+  
+  .chart-field-animate {
+    animation: chartFieldFadeIn 0.4s ease-out forwards;
+    opacity: 0;
+  }
+  
+  .chart-details-animate {
+    animation: chartSlideDown 0.3s ease-out forwards;
+    overflow: hidden;
+  }
+  
+  .chart-badge-animate {
+    animation: chartPulse 0.3s ease-out;
+  }
+  
+  .chart-shimmer {
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s ease-in-out infinite;
+  }
+`;
+
 // 필드별 placeholder (영어 설명 + 예시)
 const FIELD_PLACEHOLDERS: Record<string, string> = {
   // S - Subjective
@@ -339,17 +404,18 @@ export function ChartingResult({
           <Sparkles className="w-3 h-3" />
           AI DDx/r/o (개별 확정 가능)
         </div>
-        {visibleItems.map((item) => {
+        {visibleItems.map((item, idx) => {
           const isExpanded = expandedDDx.has(item.id);
           
           return (
             <div
               key={item.id}
-              className={`rounded-lg p-3 transition-all ${
+              className={`chart-field-animate rounded-lg p-3 transition-all duration-200 hover:shadow-sm ${
                 item.isConfirmed
                   ? 'bg-teal-50 border border-teal-200'
                   : 'bg-amber-50 border border-amber-200'
               }`}
+              style={{ animationDelay: `${idx * 50}ms` }}
             >
               {/* DDx Header */}
               <div className="flex items-center justify-between">
@@ -433,7 +499,7 @@ export function ChartingResult({
     );
   };
 
-  const renderField = (field: ChartField) => {
+  const renderField = (field: ChartField, index: number) => {
     const fieldValue = editableData[field.id];
     if (!fieldValue) return null;
 
@@ -454,7 +520,6 @@ export function ChartingResult({
     // 상세정보가 있는지 체크 (inferred + rationale 또는 evidence가 있으면)
     const hasDetails = isInferred && (rationale || evidence.length > 0);
 
-    // 배경색 결정: 확정됨(teal) / AI 추론(amber) / 빈값(slate)
     // 배경색: 확정(teal) / AI추론(amber) / 불확실(yellow) / 빈값(slate)
     const bgClass = !hasContent
       ? 'bg-slate-50 border border-dashed border-slate-200'
@@ -464,8 +529,15 @@ export function ChartingResult({
           ? 'bg-amber-50/50 border border-amber-200'
           : 'bg-yellow-50/50 border border-yellow-200'; // stated but not confirmed = 불확실
 
+    // 스태거드 애니메이션 딜레이 (각 필드별로 60ms씩 증가)
+    const animationDelay = `${index * 60}ms`;
+
     return (
-      <div key={field.id} className={`rounded-xl p-4 transition-all ${bgClass}`}>
+      <div 
+        key={field.id} 
+        className={`chart-field-animate rounded-xl p-4 transition-all duration-300 hover:shadow-md ${bgClass}`}
+        style={{ animationDelay }}
+      >
         {/* Header */}
         <div className="flex items-center justify-between mb-2">
           <label className="text-sm font-semibold flex items-center gap-2">
@@ -550,9 +622,9 @@ export function ChartingResult({
           </button>
         )}
 
-        {/* 상세정보 (펼쳤을 때만) */}
+        {/* 상세정보 (펼쳤을 때만) - 애니메이션 적용 */}
         {hasContent && hasDetails && isExpanded && (
-          <div className="mb-3 p-2.5 bg-white/60 rounded-lg border border-amber-200/50 text-xs space-y-1.5">
+          <div className="chart-details-animate mb-3 p-2.5 bg-white/60 rounded-lg border border-amber-200/50 text-xs space-y-1.5">
             {confidence && (
               <div className="flex items-center gap-2">
                 <span className="text-slate-500">신뢰도:</span>
@@ -643,7 +715,11 @@ export function ChartingResult({
   const hasChartData = chartData && Object.keys(chartData).length > 0;
 
   return (
-    <div className="flex flex-col h-[500px] bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+    <>
+      {/* 애니메이션 스타일 주입 */}
+      <style>{chartAnimationStyles}</style>
+      
+      <div className="flex flex-col h-[500px] bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
       {/* Header */}
       <div className="flex-none px-5 py-4 border-b border-slate-100 bg-white">
         <div className="flex items-center justify-between">
@@ -685,21 +761,32 @@ export function ChartingResult({
           <div className="p-4">
             {isGenerating ? (
               <div className="flex flex-col items-center justify-center py-16 text-center">
-                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-teal-500 to-teal-600 flex items-center justify-center mb-4 animate-pulse">
-                  <Sparkles className="w-7 h-7 text-white" />
+                <div className="relative w-16 h-16 mb-4">
+                  {/* 회전하는 외곽 링 */}
+                  <div className="absolute inset-0 rounded-2xl border-2 border-teal-200 animate-spin" style={{ animationDuration: '3s' }} />
+                  <div className="absolute inset-1 rounded-xl bg-gradient-to-br from-teal-500 to-cyan-500 flex items-center justify-center shadow-lg">
+                    <Sparkles className="w-7 h-7 text-white animate-pulse" />
+                  </div>
+                  {/* 빛나는 효과 */}
+                  <div className="absolute inset-0 rounded-2xl chart-shimmer pointer-events-none" />
                 </div>
-                <p className="text-slate-700 font-medium mb-2">AI 차트 생성 중...</p>
-                <p className="text-sm text-slate-500">잠시만 기다려주세요</p>
-                <div className="w-48 h-1.5 bg-slate-100 rounded-full mt-4 overflow-hidden">
+                <p className="text-slate-700 font-semibold mb-1">AI 차트 생성 중...</p>
+                <p className="text-sm text-slate-500">대화를 분석하고 있습니다</p>
+                <div className="w-56 h-2 bg-slate-100 rounded-full mt-5 overflow-hidden shadow-inner">
                   <div 
-                    className="h-full bg-gradient-to-r from-teal-500 to-cyan-500 rounded-full transition-all duration-300"
-                    style={{ width: `${recordingProgress}%` }}
-            />
-          </div>
-          </div>
+                    className="h-full bg-gradient-to-r from-teal-500 via-cyan-400 to-teal-500 rounded-full transition-all duration-500 ease-out relative"
+                    style={{ 
+                      width: `${Math.max(recordingProgress, 15)}%`,
+                      backgroundSize: '200% 100%',
+                      animation: 'shimmer 2s ease-in-out infinite'
+                    }}
+                  />
+                </div>
+                <p className="text-xs text-slate-400 mt-2">{Math.round(recordingProgress)}% 완료</p>
+              </div>
             ) : hasChartData ? (
               <div className="space-y-3">
-                {displayFields.map(renderField)}
+                {displayFields.map((field, index) => renderField(field, index))}
           </div>
             ) : isRecording ? (
               <div className="flex flex-col items-center justify-center py-16 text-center">
@@ -719,14 +806,15 @@ export function ChartingResult({
               <div className="flex flex-col items-center justify-center py-16 text-center">
                 <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center mb-4">
                   <FileText className="w-7 h-7 text-slate-400" />
-          </div>
+                </div>
                 <p className="text-slate-700 font-medium mb-1">차트가 여기에 생성됩니다</p>
                 <p className="text-sm text-slate-400">녹음 완료 후 AI가 자동 생성합니다</p>
-            </div>
+              </div>
             )}
           </div>
         </ScrollArea>
-          </div>
-          </div>
+      </div>
+    </div>
+    </>
   );
 }
