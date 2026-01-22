@@ -52,6 +52,7 @@ export class RemoteMicHost {
 
   async start(): Promise<void> {
     const channelName = `remote-mic-${this.sessionId}`;
+    console.log('[Host] Starting channel:', channelName);
     
     this.channel = supabase.channel(channelName, {
       config: {
@@ -61,31 +62,47 @@ export class RemoteMicHost {
 
     this.channel
       .on('broadcast', { event: 'mic-message' }, (payload) => {
+        console.log('[Host] Received mic-message:', payload);
         const message = payload.payload as RemoteMicMessage;
         
         if (message.type === 'connected') {
+          console.log('[Host] Mobile connected!');
           this.isConnected = true;
           this.onConnectionChange(true);
         } else if (message.type === 'ping') {
-          // 모바일에서 ping 받음 - 연결 유지 확인
+          console.log('[Host] Received ping from mobile');
+        } else if (message.type === 'transcript') {
+          console.log('[Host] Received transcript:', message.data?.text);
+        } else if (message.type === 'segment') {
+          console.log('[Host] Received segments:', message.data?.segments?.length);
         }
         
         this.onMessage(message);
       })
       .subscribe((status) => {
-        console.log('Host channel status:', status);
+        console.log('[Host] Channel status:', status);
+        if (status === 'SUBSCRIBED') {
+          console.log('[Host] Successfully subscribed to channel');
+          // 구독 성공 후 첫 ping 전송
+          this.sendHostPing();
+        }
       });
 
     // 연결 상태 체크를 위한 ping
     this.pingInterval = setInterval(() => {
-      if (this.channel) {
-        this.channel.send({
-          type: 'broadcast',
-          event: 'host-ping',
-          payload: { sessionId: this.sessionId, timestamp: Date.now() }
-        });
-      }
+      this.sendHostPing();
     }, 5000);
+  }
+
+  private async sendHostPing(): Promise<void> {
+    if (this.channel) {
+      const result = await this.channel.send({
+        type: 'broadcast',
+        event: 'host-ping',
+        payload: { sessionId: this.sessionId, timestamp: Date.now() }
+      });
+      console.log('[Host] Sent host-ping, result:', result);
+    }
   }
 
   stop(): void {
@@ -124,6 +141,7 @@ export class RemoteMicClient {
 
   async connect(): Promise<boolean> {
     const channelName = `remote-mic-${this.sessionId}`;
+    console.log('[Client] Connecting to channel:', channelName);
     
     this.channel = supabase.channel(channelName, {
       config: {
@@ -133,12 +151,14 @@ export class RemoteMicClient {
 
     return new Promise((resolve) => {
       this.channel!
-        .on('broadcast', { event: 'host-ping' }, () => {
+        .on('broadcast', { event: 'host-ping' }, (payload) => {
+          console.log('[Client] Received host-ping:', payload);
           this.onHostPing();
         })
         .subscribe((status) => {
-          console.log('Client channel status:', status);
+          console.log('[Client] Channel status:', status);
           if (status === 'SUBSCRIBED') {
+            console.log('[Client] Successfully subscribed to channel');
             // 연결 알림 전송
             this.sendMessage({
               type: 'connected',
@@ -157,25 +177,30 @@ export class RemoteMicClient {
             
             resolve(true);
           } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+            console.log('[Client] Connection failed:', status);
             resolve(false);
           }
         });
     });
   }
 
-  sendMessage(message: RemoteMicMessage): void {
+  async sendMessage(message: RemoteMicMessage): Promise<void> {
     if (this.channel) {
-      this.channel.send({
+      const result = await this.channel.send({
         type: 'broadcast',
         event: 'mic-message',
         payload: message
       });
+      console.log(`[Client] Sent ${message.type}, result:`, result);
+    } else {
+      console.log('[Client] Cannot send message - channel is null');
     }
   }
 
   // 녹음 시작 알림
-  notifyRecordingStart(): void {
-    this.sendMessage({
+  async notifyRecordingStart(): Promise<void> {
+    console.log('[Client] Notifying recording start');
+    await this.sendMessage({
       type: 'recording_start',
       sessionId: this.sessionId,
       timestamp: Date.now()
@@ -183,8 +208,9 @@ export class RemoteMicClient {
   }
 
   // 녹음 종료 알림
-  notifyRecordingStop(): void {
-    this.sendMessage({
+  async notifyRecordingStop(): Promise<void> {
+    console.log('[Client] Notifying recording stop');
+    await this.sendMessage({
       type: 'recording_stop',
       sessionId: this.sessionId,
       timestamp: Date.now()
@@ -192,8 +218,8 @@ export class RemoteMicClient {
   }
 
   // 실시간 텍스트 전송
-  sendTranscript(text: string, isFinal: boolean = false): void {
-    this.sendMessage({
+  async sendTranscript(text: string, isFinal: boolean = false): Promise<void> {
+    await this.sendMessage({
       type: 'transcript',
       sessionId: this.sessionId,
       data: { text, isFinal },
@@ -202,8 +228,8 @@ export class RemoteMicClient {
   }
 
   // 세그먼트 전송 (화자 분류 포함)
-  sendSegments(segments: Array<{ text: string; speaker: 'doctor' | 'patient' | 'pending' }>): void {
-    this.sendMessage({
+  async sendSegments(segments: Array<{ text: string; speaker: 'doctor' | 'patient' | 'pending' }>): Promise<void> {
+    await this.sendMessage({
       type: 'segment',
       sessionId: this.sessionId,
       data: { segments },

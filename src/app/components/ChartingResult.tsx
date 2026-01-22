@@ -146,7 +146,7 @@ export function ChartingResult({
       // [필드명] 다음에 줄바꿈
       return `[${fieldLabel}]${uncertainMarker}\n${formattedContent}`;
     }).filter(Boolean).join('\n\n');
-
+      
     navigator.clipboard.writeText(chartText);
     setIsCopied(true);
     toast.success('차트가 클립보드에 복사되었습니다');
@@ -286,12 +286,12 @@ export function ChartingResult({
             </div>
           </div>
           {hasChartData && (
-            <Button
-              variant="outline"
-              size="sm"
+          <Button
+            variant="outline"
+            size="sm"
               onClick={handleCopyChart}
               className="h-8 text-xs border-teal-200 text-teal-700 hover:bg-teal-50"
-            >
+          >
               {isCopied ? (
                 <>
                   <Check className="w-3 h-3 mr-1.5" />
@@ -303,11 +303,11 @@ export function ChartingResult({
                   EMR 복사
                 </>
               )}
-            </Button>
+          </Button>
           )}
         </div>
       </div>
-
+      
       {/* Content */}
       <div className="flex-1 overflow-hidden">
         <ScrollArea className="h-full">
@@ -323,39 +323,39 @@ export function ChartingResult({
                   <div 
                     className="h-full bg-gradient-to-r from-teal-500 to-cyan-500 rounded-full transition-all duration-300"
                     style={{ width: `${recordingProgress}%` }}
-                  />
-                </div>
-              </div>
+            />
+          </div>
+          </div>
             ) : hasChartData ? (
               <div className="space-y-3">
                 {displayFields.map(renderField)}
-              </div>
+          </div>
             ) : isRecording ? (
               <div className="flex flex-col items-center justify-center py-16 text-center">
                 <div className="w-14 h-14 rounded-2xl bg-red-50 flex items-center justify-center mb-4 border border-red-100">
                   <div className="w-3 h-3 rounded-full bg-red-500 animate-pulse" />
-                </div>
+          </div>
                 <p className="text-slate-700 font-medium mb-1">녹음 중...</p>
                 <p className="text-sm text-slate-500">녹음이 끝나면 차트가 생성됩니다</p>
                 <div className="w-48 h-1.5 bg-slate-100 rounded-full mt-4 overflow-hidden">
                   <div 
                     className="h-full bg-gradient-to-r from-red-500 to-red-400 rounded-full transition-all duration-300"
                     style={{ width: `${Math.min(recordingProgress, 100)}%` }}
-                  />
-                </div>
-              </div>
+            />
+          </div>
+            </div>
             ) : (
               <div className="flex flex-col items-center justify-center py-16 text-center">
                 <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center mb-4">
                   <FileText className="w-7 h-7 text-slate-400" />
-                </div>
+          </div>
                 <p className="text-slate-700 font-medium mb-1">차트가 여기에 생성됩니다</p>
                 <p className="text-sm text-slate-400">녹음 완료 후 AI가 자동 생성합니다</p>
-              </div>
+            </div>
             )}
           </div>
         </ScrollArea>
-      </div>
-    </div>
+          </div>
+          </div>
   );
 }

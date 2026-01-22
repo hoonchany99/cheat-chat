@@ -27,7 +27,7 @@ const AGE_OPTIONS = [
   { value: '40s', label: '40대' },
   { value: '50s+', label: '50대 이상' },
 ];
-
+  
 const JOB_OPTIONS = [
   { value: 'medical_student', label: '의대생/본과생' },
   { value: 'resident', label: '전공의/레지던트' },
@@ -419,7 +419,7 @@ function MainApp() {
         <Toaster position="top-center" richColors />
       </>
     );
-  }
+    }
 
   return (
     <div className={`min-h-screen bg-slate-50 flex flex-col ${pageAnimation === 'enter' ? 'page-enter' : pageAnimation === 'exit' ? 'page-exit' : ''}`}>
@@ -501,7 +501,7 @@ function MainApp() {
                     <span className="w-2 h-2 rounded-full bg-green-500" />
                   ) : null}
                 </Button>
-              </div>
+                </div>
 
               {/* Usage Guide - Right aligned */}
               <div className="hidden md:flex items-center">
@@ -571,7 +571,7 @@ function MainApp() {
               recordingProgress={recordingProgress}
               isRecording={isRecording}
             />
-          </div>
+              </div>
 
           {/* Mobile: Tab Content */}
           <div className="lg:hidden">
@@ -671,7 +671,7 @@ function MainApp() {
                               ))}
                             </SelectContent>
                           </Select>
-                        </div>
+            </div>
                         
                         <Select value={feedbackSpecialty} onValueChange={setFeedbackSpecialty}>
                           <SelectTrigger className="w-full">
@@ -714,7 +714,7 @@ function MainApp() {
                             {isSendingFeedback ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Send className="w-4 h-4 mr-2" />}
                             보내기
                           </Button>
-                        </div>
+              </div>
                       </form>
                     )}
                   </DialogContent>
@@ -811,7 +811,7 @@ function MainApp() {
               </div>
             </div>
           </div>
-        </div>
+            </div>
       </main>
 
       <Toaster position="top-center" richColors />

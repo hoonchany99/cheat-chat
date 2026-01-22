@@ -93,7 +93,7 @@ export function VoiceRecorder({
       const source = audioContextRef.current.createMediaStreamSource(stream);
       source.connect(analyserRef.current);
       analyserRef.current.fftSize = 256;
-
+      
       const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
 
       const updateLevel = () => {
@@ -150,7 +150,7 @@ export function VoiceRecorder({
           return newTime;
         });
       }, 1000);
-
+      
     } catch (error) {
       console.error('Error starting recording:', error);
       toast.error('마이크 권한을 허용해주세요');
@@ -158,12 +158,12 @@ export function VoiceRecorder({
   }, [connect, startAudioAnalysis, onRecordingStart, onRecordingProgress, onTranscriptUpdate, onRealtimeSegmentsUpdate]);
 
   const handleStopRecording = useCallback(async () => {
-    setIsRecording(false);
+      setIsRecording(false);
     setIsTranscribing(true);
     onProcessingStart();
-
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
+      
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
       timerRef.current = null;
     }
 
@@ -252,7 +252,7 @@ export function VoiceRecorder({
             <Square className="w-5 h-5 fill-current" />
           </Button>
         )}
-        
+
         {/* Pulse animation when recording */}
         {isRecording && (
           <>

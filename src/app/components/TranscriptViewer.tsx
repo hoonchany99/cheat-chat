@@ -41,7 +41,7 @@ export function TranscriptViewer({
               <h3 className="font-semibold text-sm text-slate-800">실시간 대화</h3>
               <p className="text-xs text-slate-500">AI가 실시간으로 대화를 듣고 정리해줍니다</p>
             </div>
-          </div>
+      </div>
           {isRecording && (
             <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-red-50 border border-red-100">
               <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
@@ -62,27 +62,27 @@ export function TranscriptViewer({
                 </div>
                 <p className="text-slate-700 font-medium mb-1">대화 내용이 여기에 표시됩니다</p>
                 <p className="text-sm text-slate-400">녹음을 시작하면 실시간으로 변환됩니다</p>
-              </div>
-            ) : (
+            </div>
+          ) : (
               <div className="space-y-3">
                 {realtimeSegments.map((segment, index) => {
                   const isDoctor = segment.speaker === 'doctor';
                   const isPending = segment.speaker === 'pending';
 
-                  return (
-                    <div
-                      key={index}
+              return (
+                <div
+                  key={index}
                       className={`flex ${isPending ? 'justify-center' : isDoctor ? 'justify-end' : 'justify-start'}`}
-                    >
-                      <div
+                >
+                  <div
                         className={`max-w-[85%] rounded-2xl px-4 py-3 ${
                           isPending
                             ? 'bg-amber-50 border border-amber-200 border-dashed'
                             : isDoctor
                               ? 'bg-gradient-to-br from-teal-500 to-teal-600 text-white'
                               : 'bg-slate-100'
-                        }`}
-                      >
+                    }`}
+                  >
                         <div className={`text-xs mb-1 flex items-center gap-1.5 font-medium ${
                           isPending
                             ? 'text-amber-600'
@@ -127,8 +127,8 @@ export function TranscriptViewer({
                 )}
                 {/* 스크롤 타겟 */}
                 <div ref={scrollEndRef} />
-              </div>
-            )}
+                </div>
+          )}
           </div>
         </div>
       </div>
