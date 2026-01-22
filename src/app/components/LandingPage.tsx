@@ -608,7 +608,7 @@ export function LandingPage({ onStart }: LandingPageProps) {
                     )}
                   </div>
                   
-                  <div className="flex-1 bg-white rounded-xl border border-teal-100 p-3 overflow-y-auto max-h-[220px]">
+                  <div className="flex-1 bg-white rounded-xl border border-teal-100 p-3 max-h-[220px] overflow-y-scroll hide-scrollbar pointer-events-none">
                     {!showChart ? (
                       <div className="h-full flex items-center justify-center text-slate-400 text-xs">
                         녹음 종료 후 AI가 차트를 생성합니다

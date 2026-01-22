@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#f8fafc"/>
+      <stop offset="100%" style="stop-color:#f1f5f9"/>
+    </linearGradient>
+    <linearGradient id="teal" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#14b8a6"/>
+      <stop offset="100%" style="stop-color:#0d9488"/>
+    </linearGradient>
+  </defs>
+  
+  <!-- Background -->
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  
+  <!-- Decorative circles -->
+  <circle cx="100" cy="100" r="200" fill="#14b8a6" opacity="0.05"/>
+  <circle cx="1100" cy="530" r="250" fill="#0891b2" opacity="0.05"/>
+  <circle cx="600" cy="315" r="400" fill="#14b8a6" opacity="0.03"/>
+  
+  <!-- Logo Icon -->
+  <g transform="translate(440, 180)">
+    <rect width="80" height="80" rx="16" fill="url(#teal)"/>
+    <path d="M40 20c-6.6 0-12 5.4-12 12v4h-4c-2.2 0-4 1.8-4 4v16c0 2.2 1.8 4 4 4h32c2.2 0 4-1.8 4-4V40c0-2.2-1.8-4-4-4h-4v-4c0-6.6-5.4-12-12-12zm0 6.4c3.1 0 5.6 2.5 5.6 5.6v4H34.4v-4c0-3.1 2.5-5.6 5.6-5.6z" fill="white" opacity="0.9"/>
+    <circle cx="40" cy="48" r="3.2" fill="white"/>
+  </g>
+  
+  <!-- Logo Text -->
+  <text x="540" y="240" font-family="system-ui, -apple-system, sans-serif" font-size="48" font-weight="bold" fill="#0f172a">Cheat Chat AI</text>
+  
+  <!-- Tagline -->
+  <text x="600" y="320" font-family="system-ui, -apple-system, sans-serif" font-size="32" fill="#0d9488" text-anchor="middle" font-weight="600">AI 기반 의료 차팅 솔루션</text>
+  
+  <!-- Description -->
+  <text x="600" y="400" font-family="system-ui, -apple-system, sans-serif" font-size="24" fill="#64748b" text-anchor="middle">녹음 버튼 하나로 의사-환자 대화를</text>
+  <text x="600" y="440" font-family="system-ui, -apple-system, sans-serif" font-size="24" fill="#64748b" text-anchor="middle">EMR 차트로 자동 변환</text>
+  
+  <!-- Bottom accent line -->
+  <rect x="500" y="500" width="200" height="4" rx="2" fill="url(#teal)"/>
+  
+  <!-- URL -->
+  <text x="600" y="560" font-family="system-ui, -apple-system, sans-serif" font-size="18" fill="#94a3b8" text-anchor="middle">cheat-chat-sage.vercel.app</text>
+</svg>
