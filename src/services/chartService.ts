@@ -64,7 +64,7 @@ export const DEFAULT_FIELDS: ChartField[] = [
 
   // Dx - English only
   { id: 'diagnosisConfirmed', name: '진단(의사 언급)', nameEn: 'Dx (stated)', type: 'tags', required: false, description: '영어. 의사가 말한 Dx만.' },
-  { id: 'diagnosisInferred', name: '진단(AI DDx)', nameEn: 'Dx (AI)', type: 'list', required: false, description: '영어. 한 줄 요약 "r/o X vs Y". 리스트 금지.' },
+  { id: 'diagnosisInferred', name: '진단(AI 요약)', nameEn: 'Dx (AI)', type: 'textarea', required: false, description: 'ENGLISH. ONE LINE ONLY. Problem-oriented impression using "r/o X vs Y". Do NOT list.' },
 
   // P - English orders
   { id: 'plan', name: '계획(P)', nameEn: 'P', type: 'textarea', required: true, description: '영어. 오더만. [Orders] [AI Suggestions optional]. 설명문 금지.' },
@@ -121,6 +121,10 @@ CORE PHILOSOPHY:
 - Use "r/o" or "vs" format ONLY.
 - Good: "Syncope, r/o hypoglycemia vs neurologic cause"
 - Bad: "저혈당, 뇌혈관 사고, 심장 문제"
+
+=== ROLE SEPARATION (IMPORTANT) ===
+- Put DDx/r/o list ONLY inside Assessment under [AI DDx/r/o].
+- Put ONE-LINE impression ONLY in diagnosisInferred (Dx AI). Do NOT duplicate DDx list there.
 
 === ASSESSMENT STRUCTURE (3-PART) ===
 [Summary]
@@ -206,28 +210,28 @@ INTERNAL MEDICINE EMPHASIS:
     id: 'dermatology',
     name: '피부과',
     fields: [
-      { id: 'chiefComplaint', name: '주호소', nameEn: 'CC', type: 'textarea', required: true, description: '환자 표현 그대로(한국어).' },
-      { id: 'historyOfPresentIllness', name: '현병력(PI)', nameEn: 'PI', type: 'textarea', required: true, description: '한국어 서술형. 발생시기/경과/악화요인/동반증상.' },
-      { id: 'lesionDescription', name: '병변 기술', nameEn: 'Lesion', type: 'textarea', required: false, description: '대화에서 언급된 형태/분포만. 추정 금지.' },
-      { id: 'pertinentROS', name: '동반증상/관련음성', nameEn: 'Pertinent +/-', type: 'textarea', required: false, description: '가려움/통증/삼출/발열 등 +/-만.' },
-      { id: 'pastMedicalHistory', name: '과거력(PMH)', nameEn: 'PMH', type: 'tags', required: false, description: '아토피 등 언급된 것만.' },
-      { id: 'medications', name: '복용약', nameEn: 'Meds', type: 'tags', required: false, description: '언급된 약만.' },
-      { id: 'allergies', name: '알레르기', nameEn: 'Allergies', type: 'tags', required: false, description: '언급된 알레르기만.' },
-      { id: 'physicalExam', name: '진찰(PE)', nameEn: 'PE', type: 'textarea', required: false, description: '언급된 피부 진찰 소견만.' },
-      { id: 'assessment', name: '평가(A)', nameEn: 'A', type: 'textarea', required: true, description: '한국어 기반 + 약어. 의사 언급 vs AI 감별 분리.' },
-      { id: 'diagnosisConfirmed', name: '진단(의사 언급/확정)', nameEn: 'Dx (stated)', type: 'tags', required: false, description: '의사가 말한 Dx만.' },
-      { id: 'diagnosisInferred', name: '진단(AI 추론/DDx)', nameEn: 'Dx (AI)', type: 'list', required: false, description: 'AI 감별/의심. confidence/근거 포함.' },
-      { id: 'plan', name: '계획(P)', nameEn: 'P', type: 'textarea', required: true, description: '오더 중심. 의사 오더 vs AI 제안 분리.' },
-      { id: 'followUp', name: '추적/주의(F/U)', nameEn: 'F/U', type: 'textarea', required: false, description: '언급된 f/u만.' },
-      { id: 'notes', name: '기타', nameEn: 'Notes', type: 'textarea', required: false, description: '메모.' },
+      { id: 'chiefComplaint', name: '주호소', nameEn: 'CC', type: 'textarea', required: true, description: '한국어. 환자 표현 그대로 인용.' },
+      { id: 'historyOfPresentIllness', name: '현병력(PI)', nameEn: 'PI', type: 'textarea', required: true, description: '한국어 서술형. 3-6문장. 발생시기/경과/악화요인/동반증상.' },
+      { id: 'lesionDescription', name: '병변 기술', nameEn: 'Lesion', type: 'textarea', required: false, description: 'ENGLISH. Morphology/distribution mentioned only. No guessing.' },
+      { id: 'pertinentROS', name: '동반증상/관련음성', nameEn: 'Pertinent +/-', type: 'textarea', required: false, description: 'ENGLISH. pruritus(+/-), pain(+/-), oozing(+/-), fever(-) etc.' },
+      { id: 'pastMedicalHistory', name: '과거력(PMH)', nameEn: 'PMH', type: 'tags', required: false, description: 'ENGLISH. Atopic dermatitis, eczema etc. if mentioned.' },
+      { id: 'medications', name: '복용약', nameEn: 'Meds', type: 'tags', required: false, description: 'ENGLISH. Mentioned meds only.' },
+      { id: 'allergies', name: '알레르기', nameEn: 'Allergies', type: 'tags', required: false, description: 'ENGLISH. NKDA if none.' },
+      { id: 'physicalExam', name: '진찰(PE)', nameEn: 'PE', type: 'textarea', required: false, description: 'ENGLISH. Mentioned skin findings only.' },
+      { id: 'assessment', name: '평가(A)', nameEn: 'A', type: 'textarea', required: true, description: 'ENGLISH 중심. [Summary] [Provider Impression] [AI DDx/r/o]. Korean connectors only.' },
+      { id: 'diagnosisConfirmed', name: '진단(의사 언급)', nameEn: 'Dx (stated)', type: 'tags', required: false, description: 'ENGLISH. Provider-stated Dx only.' },
+      { id: 'diagnosisInferred', name: '진단(AI 요약)', nameEn: 'Dx (AI)', type: 'textarea', required: false, description: 'ENGLISH. ONE LINE ONLY. "r/o X vs Y" impression. Do NOT list.' },
+      { id: 'plan', name: '계획(P)', nameEn: 'P', type: 'textarea', required: true, description: 'ENGLISH. Orders only. [Orders] + optional [AI Suggestions]. No explanatory sentences.' },
+      { id: 'followUp', name: '추적(F/U)', nameEn: 'F/U', type: 'textarea', required: false, description: 'ENGLISH. If not discussed, leave empty.' },
+      { id: 'notes', name: '기타', nameEn: 'Notes', type: 'textarea', required: false, description: 'Notes.' },
     ],
     promptContext: `
 ${BASE_CHARTING_STYLE}
 
 DERM NOTES:
 - Do not hallucinate morphology. Only document what is described.
-- If the provider names a diagnosis, put it into diagnosisConfirmed.
-- AI DDx goes to diagnosisInferred with confidence + rationale + evidence.
+- If the provider names a diagnosis, put it into diagnosisConfirmed (ENGLISH).
+- AI DDx goes to Assessment [AI DDx/r/o] section. ONE-LINE summary goes to diagnosisInferred.
 `.trim(),
   },
   {
@@ -433,6 +437,7 @@ CONFIDENCE & INFERENCE:
   - rationale: 1-2 short lines
   - evidence: 1-2 quotes from conversation
 - For stated content: source="stated"
+- If Provider Impression is inferred from orders (not explicitly spoken), set source="inferred" and isConfirmed=false.
 
 OUTPUT FORMAT (PURE JSON ONLY):
 ${JSON.stringify(jsonSchema, null, 2)}
@@ -464,9 +469,10 @@ LANGUAGE:
 - Assessment/DDx/Dx/Plan: 영어 (진단명 한국어 번역 금지)
 
 FORMAT:
-- DDx: "r/o [diagnosis] - [reason]" (최대 2-3개)
-- Dx (AI): 한 줄 요약 "r/o X vs Y"
+- DDx: Assessment 안에만. "r/o [diagnosis] - [reason]" (최대 2-3개)
+- Dx (AI): diagnosisInferred에 한 줄 요약만. "r/o X vs Y". 리스트 금지.
 - Plan: 오더만 (설명문 금지)
+- Follow-up: 언급 없으면 비움 (일반적 문구 금지)
 - 불릿 항목은 한 줄씩 띄워
 
 [진료 대화]
