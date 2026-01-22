@@ -2,7 +2,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { Button } from '@/app/components/ui/button';
 import { Mic, Square, Loader2 } from 'lucide-react';
 import { useDeepgram } from '@/services/deepgramService';
-import { generateChartFromTranscript, ChartData } from '@/services/chartService';
+import { generateChartFromTranscript, correctSTTErrors, ChartData } from '@/services/chartService';
 import { toast } from 'sonner';
 
 interface Segment {
@@ -191,8 +191,17 @@ export function VoiceRecorder({
 
     if (finalTranscript) {
       try {
-        const result = await generateChartFromTranscript(finalTranscript, finalSegments, department);
-        onRecordingComplete(finalTranscript, result);
+        // 1. STT 오류 교정 (의학 용어 등)
+        console.log('[Local] Correcting STT errors...');
+        const correctedSegments = await correctSTTErrors(finalSegments);
+        
+        // 2. 교정된 세그먼트로 UI 업데이트
+        onRealtimeSegmentsUpdate(correctedSegments);
+        
+        // 3. 교정된 텍스트로 차트 생성
+        const correctedTranscript = correctedSegments.map(s => s.text).join(' ');
+        const result = await generateChartFromTranscript(correctedTranscript, correctedSegments, department);
+        onRecordingComplete(correctedTranscript, result);
       } catch (error) {
         console.error('Chart generation error:', error);
         toast.error('차트 생성 중 오류가 발생했습니다');

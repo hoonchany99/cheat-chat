@@ -392,27 +392,27 @@ function normalizeEvidence(value: unknown): string[] {
 function normalizeConfidence(value: unknown): 'low' | 'medium' | 'high' {
   const v = typeof value === 'string' ? value.toLowerCase().trim() : '';
   if (v === 'high' || v === 'medium' || v === 'low') return v;
+  if (v === 'mid') return 'medium'; // 모델이 "mid" 반환할 경우 처리
   return 'low';
 }
 
-export async function generateChart(
-  segments: SpeakerSegment[],
-  settings: ChartSettings
-): Promise<GeneratedChart | null> {
+// STT 오류 교정 함수 (UI 업데이트용으로 분리)
+export async function correctSTTErrors(segments: SpeakerSegment[]): Promise<SpeakerSegment[]> {
   if (!OPENAI_API_KEY) {
-    console.error('❌ OPENAI_API_KEY가 설정되지 않았습니다.');
-    return null;
+    console.warn('⚠️ OPENAI_API_KEY가 없어 STT 교정 생략');
+    return segments;
+  }
+
+  const filteredSegments = segments.filter(s => s.speaker !== 'pending');
+  if (filteredSegments.length === 0) {
+    return segments;
   }
 
   // 대화 내용 구성
-  const rawConversation = segments
-    .filter(s => s.speaker !== 'pending')
+  const rawConversation = filteredSegments
     .map((s, idx) => `${idx + 1}. ${s.speaker === 'doctor' ? '의사' : '환자'}: ${s.text}`)
     .join('\n');
 
-  // GPT를 활용한 STT 오류 교정 (의학 용어 + 문맥 기반)
-  let conversation = rawConversation;
-  
   try {
     console.log('🔧 STT 오류 교정 중...');
     const correctionResponse = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -453,34 +453,83 @@ export async function generateChart(
           }
         ],
         max_tokens: 2000,
-        temperature: 0.1, // 낮은 temperature로 보수적 교정
+        temperature: 0.1,
       }),
     });
 
     if (correctionResponse.ok) {
       const correctionResult = await correctionResponse.json();
       const correctedText = correctionResult.choices[0]?.message?.content?.trim();
+      
       if (correctedText) {
-        // 안전 검사: 교정 결과가 원본 대비 10% 이상 길이 차이나면 원본 사용
+        // 안전 검사 1: 교정 결과가 원본 대비 10% 이상 길이 차이나면 원본 사용
         const lengthDiff = Math.abs(correctedText.length - rawConversation.length) / rawConversation.length;
         if (lengthDiff > 0.1) {
           console.warn('⚠️ STT 교정 결과가 원본과 너무 다름 (길이 차이 10% 초과), 원본 사용');
-        } else {
-          conversation = correctedText;
-          console.log('✅ STT 오류 교정 완료');
-          
-          // 변경된 부분이 있으면 로그
-          if (rawConversation !== correctedText) {
-            console.log('📝 교정된 내용이 있습니다.');
-          }
+          return segments;
         }
+
+        // 안전 검사 2: 화자 태그("의사:", "환자:") 개수가 일치하는지 확인
+        const originalDoctorCount = (rawConversation.match(/의사:/g) || []).length;
+        const originalPatientCount = (rawConversation.match(/환자:/g) || []).length;
+        const correctedDoctorCount = (correctedText.match(/의사:/g) || []).length;
+        const correctedPatientCount = (correctedText.match(/환자:/g) || []).length;
+        
+        if (originalDoctorCount !== correctedDoctorCount || originalPatientCount !== correctedPatientCount) {
+          console.warn('⚠️ STT 교정 결과에서 화자 태그 개수가 변경됨, 원본 사용');
+          console.warn(`  원본: 의사 ${originalDoctorCount}개, 환자 ${originalPatientCount}개`);
+          console.warn(`  교정: 의사 ${correctedDoctorCount}개, 환자 ${correctedPatientCount}개`);
+          return segments;
+        }
+
+        // 교정된 텍스트를 파싱하여 segments 업데이트
+        const correctedLines = correctedText.split('\n').filter((line: string) => line.trim());
+        const updatedSegments = [...segments];
+        let filteredIdx = 0;
+
+        for (let i = 0; i < updatedSegments.length && filteredIdx < correctedLines.length; i++) {
+          if (updatedSegments[i].speaker === 'pending') continue;
+          
+          const line = correctedLines[filteredIdx];
+          // 파싱: "1. 의사: 내용" 또는 "1. 환자: 내용"
+          const match = line.match(/^\d+\.\s*(의사|환자):\s*(.+)$/);
+          if (match) {
+            const correctedContent = match[2].trim();
+            if (correctedContent !== updatedSegments[i].text) {
+              console.log(`📝 교정: "${updatedSegments[i].text}" → "${correctedContent}"`);
+              updatedSegments[i] = { ...updatedSegments[i], text: correctedContent };
+            }
+          }
+          filteredIdx++;
+        }
+
+        console.log('✅ STT 오류 교정 완료');
+        return updatedSegments;
       }
-    } else {
-      console.warn('⚠️ STT 교정 API 실패, 원본 사용');
     }
+    
+    console.warn('⚠️ STT 교정 API 실패, 원본 사용');
+    return segments;
   } catch (correctionError) {
     console.warn('⚠️ STT 교정 중 오류, 원본 사용:', correctionError);
+    return segments;
   }
+}
+
+export async function generateChart(
+  segments: SpeakerSegment[],
+  settings: ChartSettings
+): Promise<GeneratedChart | null> {
+  if (!OPENAI_API_KEY) {
+    console.error('❌ OPENAI_API_KEY가 설정되지 않았습니다.');
+    return null;
+  }
+
+  // 대화 내용 구성 (STT 교정은 이미 완료된 segments 사용)
+  const conversation = segments
+    .filter(s => s.speaker !== 'pending')
+    .map((s, idx) => `${idx + 1}. ${s.speaker === 'doctor' ? '의사' : '환자'}: ${s.text}`)
+    .join('\n');
 
   if (!conversation.trim()) {
     console.error('❌ 대화 내용이 없습니다.');
@@ -749,6 +798,15 @@ ${conversation}`
           // chartData[field.id].confidence = 'low';
         }
       });
+
+      // 후처리: Assessment에서 빈 [Provider Impression] 헤더 제거
+      if (chartData.assessment && typeof chartData.assessment.value === 'string') {
+        // [Provider Impression] 뒤에 내용이 없거나 공백만 있는 경우 헤더 자체 삭제
+        chartData.assessment.value = chartData.assessment.value
+          .replace(/\n*\[Provider Impression\]\s*\n*$/i, '') // 끝에 있는 빈 헤더 제거
+          .replace(/\[Provider Impression\]\s*\n*(\[|$)/gi, '$1') // 다음 섹션 바로 앞의 빈 헤더 제거
+          .trim();
+      }
 
       const confirmedFields: string[] = [];
       const inferredFields: string[] = [];

@@ -7,7 +7,7 @@ import { DemoPage } from './components/DemoPage';
 import { ChartSettingsModal } from './components/ChartSettingsModal';
 import { MobileMicPage } from './components/MobileMicPage';
 import { RemoteMicModal } from './components/RemoteMicModal';
-import { ChartSettings, DEFAULT_CHART_SETTINGS, DEPARTMENT_PRESETS, generateChartFromTranscript } from '@/services/chartService';
+import { ChartSettings, DEFAULT_CHART_SETTINGS, DEPARTMENT_PRESETS, generateChartFromTranscript, correctSTTErrors } from '@/services/chartService';
 import { classifyUtterancesWithGPT } from '@/services/deepgramService';
 import { Button } from '@/app/components/ui/button';
 import { Input } from '@/app/components/ui/input';
@@ -882,19 +882,23 @@ function MainApp() {
             try {
               console.log('[Remote] Final GPT classification for', utterances.length, 'utterances');
               
-              // 최종 GPT 분류 (pending 상태 해소)
+              // 1. 최종 GPT 분류 (pending 상태 해소)
               const classifiedSegments = await classifyUtterancesWithGPT(utterances);
               console.log('[Remote] Classified segments:', classifiedSegments.length);
               
-              // 분류된 세그먼트로 UI 업데이트
-              setRealtimeSegments(classifiedSegments);
+              // 2. STT 오류 교정 (의학 용어 등)
+              console.log('[Remote] Correcting STT errors...');
+              const correctedSegments = await correctSTTErrors(classifiedSegments);
               
-              // 차트 생성
-              const transcriptText = classifiedSegments.map(s => s.text).join(' ');
-              console.log('[Remote] Generating chart from classified segments');
+              // 3. 교정된 세그먼트로 UI 업데이트
+              setRealtimeSegments(correctedSegments);
+              
+              // 4. 차트 생성
+              const transcriptText = correctedSegments.map(s => s.text).join(' ');
+              console.log('[Remote] Generating chart from corrected segments');
               const result = await generateChartFromTranscript(
                 transcriptText, 
-                classifiedSegments, 
+                correctedSegments, 
                 chartSettings.selectedDepartment
               );
               if (result) {

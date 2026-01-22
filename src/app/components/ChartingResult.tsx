@@ -69,6 +69,19 @@ export function ChartingResult({
     toast.success('확정되었습니다');
   }, []);
 
+  // 필드 확정 취소
+  const handleUnconfirmField = useCallback((fieldId: string) => {
+    setEditableData(prev => ({
+      ...prev,
+      [fieldId]: {
+        ...prev[fieldId],
+        isConfirmed: false,
+        source: 'inferred' as const, // 취소하면 다시 inferred로
+      }
+    }));
+    toast.info('확정이 취소되었습니다');
+  }, []);
+
   // DDx 개별 항목 확정
   const handleConfirmDDx = useCallback((ddxId: string) => {
     setEditableData(prev => {
@@ -119,6 +132,42 @@ export function ChartingResult({
       };
     });
     toast.info('DDx가 제외되었습니다');
+  }, []);
+
+  // DDx 개별 항목 확정 취소
+  const handleUnconfirmDDx = useCallback((ddxId: string) => {
+    setEditableData(prev => {
+      const assessment = prev.assessment;
+      if (!assessment?.ddxList) return prev;
+      
+      // 해당 DDx 찾기
+      const targetDdx = assessment.ddxList.find(item => item.id === ddxId);
+      if (!targetDdx) return prev;
+      
+      // DDx 리스트에서 확정 취소
+      const updatedDdxList = assessment.ddxList.map(item =>
+        item.id === ddxId ? { ...item, isConfirmed: false } : item
+      );
+      
+      // diagnosisConfirmed에서 해당 진단 제거
+      const currentConfirmed = prev.diagnosisConfirmed?.value || [];
+      const confirmedArray = Array.isArray(currentConfirmed) ? currentConfirmed : [currentConfirmed].filter(Boolean);
+      const filteredConfirmed = confirmedArray.filter(dx => dx !== targetDdx.diagnosis);
+      
+      return {
+        ...prev,
+        assessment: {
+          ...assessment,
+          ddxList: updatedDdxList,
+        },
+        diagnosisConfirmed: {
+          ...prev.diagnosisConfirmed,
+          value: filteredConfirmed,
+          isConfirmed: filteredConfirmed.length > 0,
+        }
+      };
+    });
+    toast.info('확정이 취소되었습니다');
   }, []);
 
   // DDx 펼침/접기
@@ -221,12 +270,17 @@ export function ChartingResult({
       const fieldLabel = field.nameEn && field.nameEn !== field.name 
         ? field.nameEn 
         : field.name;
-      // 추측 필드에는 (?) 표시 추가
-      const uncertainMarker = fieldValue.isConfirmed ? '' : ' (?)';
+      // 상태 마커: 확정(없음), 불확실(?), AI추론(AI)
+      const source = fieldValue.source || 'stated';
+      const statusMarker = fieldValue.isConfirmed 
+        ? '' 
+        : source === 'inferred' 
+          ? ' (AI)' 
+          : ' (?)'; // stated but not confirmed = 불확실
       // 내용 포맷팅 (번호 항목이면 줄바꿈)
       const formattedContent = formatContent(displayValue);
       // [필드명] 다음에 줄바꿈
-      return `[${fieldLabel}]${uncertainMarker}\n${formattedContent}`;
+      return `[${fieldLabel}]${statusMarker}\n${formattedContent}`;
     }).filter(Boolean).join('\n\n');
       
     navigator.clipboard.writeText(chartText);
@@ -286,7 +340,7 @@ export function ChartingResult({
                 
                 {/* 버튼들 */}
                 <div className="flex items-center gap-1">
-                  {!item.isConfirmed && (
+                  {!item.isConfirmed ? (
                     <>
                       <Button
                         variant="outline"
@@ -306,6 +360,15 @@ export function ChartingResult({
                         제외
                       </Button>
                     </>
+                  ) : (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleUnconfirmDDx(item.id)}
+                      className="h-6 text-xs px-2 border-slate-300 text-slate-500 hover:bg-slate-100 bg-white"
+                    >
+                      취소
+                    </Button>
                   )}
                 </div>
               </div>
@@ -356,13 +419,14 @@ export function ChartingResult({
     const hasDetails = isInferred && (rationale || evidence.length > 0);
 
     // 배경색 결정: 확정됨(teal) / AI 추론(amber) / 빈값(slate)
+    // 배경색: 확정(teal) / AI추론(amber) / 불확실(yellow) / 빈값(slate)
     const bgClass = !hasContent
       ? 'bg-slate-50 border border-dashed border-slate-200'
       : isConfirmed
         ? 'bg-teal-50/50 border border-teal-200'
         : isInferred
           ? 'bg-amber-50/50 border border-amber-200'
-          : 'bg-slate-50 border border-slate-200';
+          : 'bg-yellow-50/50 border border-yellow-200'; // stated but not confirmed = 불확실
 
     return (
       <div key={field.id} className={`rounded-xl p-4 transition-all ${bgClass}`}>
@@ -379,44 +443,60 @@ export function ChartingResult({
           </label>
 
           <div className="flex items-center gap-2">
-            {/* 소스 표시 (대화 기반 / AI 추론) */}
+            {/* 소스 표시: 확정됨 / 불확실 / AI 추론 */}
             {hasContent && (
               <span className={`text-xs flex items-center gap-1 px-2 py-0.5 rounded-full ${
                 isConfirmed
-                  ? 'bg-teal-100 text-teal-700'
+                  ? 'bg-teal-100 text-teal-700' // 확정됨
                   : isInferred
-                    ? 'bg-amber-100 text-amber-700'
-                    : 'bg-slate-100 text-slate-600'
+                    ? 'bg-amber-100 text-amber-700' // AI 추론
+                    : 'bg-yellow-100 text-yellow-700' // 불확실 (stated but not confirmed)
               }`}>
                 {isConfirmed ? (
                   <>
                     <CheckCircle2 className="w-3 h-3" />
-                    대화 기반
+                    확정됨
                   </>
                 ) : isInferred ? (
                   <>
-                    <AlertCircle className="w-3 h-3" />
+                    <Sparkles className="w-3 h-3" />
                     AI 추론
                   </>
                 ) : (
                   <>
-                    <CheckCircle2 className="w-3 h-3" />
-                    대화 기반
+                    <AlertCircle className="w-3 h-3" />
+                    불확실
                   </>
                 )}
               </span>
             )}
 
-            {/* 확정 버튼 (AI 추론이고 확정 안됨) */}
-            {hasContent && isInferred && !isConfirmed && (
+            {/* 확정 버튼 (확정 안된 필드 - AI추론 또는 불확실) */}
+            {hasContent && !isConfirmed && field.id !== 'chiefComplaint' && field.id !== 'historyOfPresentIllness' && (
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => handleConfirmField(field.id)}
-                className="h-6 text-xs px-2 border-amber-300 text-amber-700 hover:bg-amber-100 bg-white"
+                className={`h-6 text-xs px-2 bg-white ${
+                  isInferred 
+                    ? 'border-amber-300 text-amber-700 hover:bg-amber-100' 
+                    : 'border-yellow-300 text-yellow-700 hover:bg-yellow-100'
+                }`}
               >
                 <Check className="w-3 h-3 mr-1" />
                 확정
+              </Button>
+            )}
+            
+            {/* 확정 취소 버튼 (확정된 AI 추론 필드) */}
+            {hasContent && isConfirmed && field.id !== 'chiefComplaint' && field.id !== 'historyOfPresentIllness' && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => handleUnconfirmField(field.id)}
+                className="h-6 text-xs px-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+              >
+                취소
               </Button>
             )}
           </div>
