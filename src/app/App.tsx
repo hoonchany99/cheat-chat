@@ -122,7 +122,9 @@ export default function App() {
   }, []);
 
   const handleProcessingStart = useCallback(() => {
-    console.log('Processing started');
+    setIsRecording(false);
+    setIsGeneratingChart(true);
+    setMobileTab('chart'); // 차트 생성 시작 시 차트 탭으로 전환
   }, []);
 
   const handleRecordingComplete = useCallback((transcript: string, result: ChartData | null) => {
