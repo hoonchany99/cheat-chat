@@ -234,6 +234,27 @@ export function ChartingResult({
     toast.info('DDx가 제외되었습니다');
   }, []);
 
+  // DDx 개별 항목 복구
+  const handleRestoreDDx = useCallback((ddxId: string) => {
+    setEditableData(prev => {
+      const assessment = prev.assessment;
+      if (!assessment?.ddxList) return prev;
+      
+      const updatedDdxList = assessment.ddxList.map(item =>
+        item.id === ddxId ? { ...item, isRemoved: false } : item
+      );
+      
+      return {
+        ...prev,
+        assessment: {
+          ...assessment,
+          ddxList: updatedDdxList,
+        }
+      };
+    });
+    toast.success('DDx가 복구되었습니다');
+  }, []);
+
   // DDx 개별 항목 확정 취소
   const handleUnconfirmDDx = useCallback((ddxId: string) => {
     setEditableData(prev => {
@@ -392,108 +413,150 @@ export function ChartingResult({
   // DDx 리스트 렌더링
   const renderDDxList = (ddxList: DdxItem[]) => {
     const visibleItems = ddxList.filter(item => !item.isRemoved);
+    const removedItems = ddxList.filter(item => item.isRemoved);
     
-    if (visibleItems.length === 0) {
-      return <p className="text-sm text-slate-400 italic">DDx가 없거나 모두 제외되었습니다.</p>;
+    if (visibleItems.length === 0 && removedItems.length === 0) {
+      return <p className="text-sm text-slate-400 italic">DDx가 없습니다.</p>;
     }
 
     return (
       <div className="space-y-2 mt-3">
-        <div className="text-xs font-semibold text-slate-600 mb-2 flex items-center gap-1">
-          <Sparkles className="w-3 h-3" />
-          AI DDx/r/o (개별 확정 가능)
-        </div>
-        {visibleItems.map((item, idx) => {
-          const isExpanded = expandedDDx.has(item.id);
-          
-          return (
-            <div
-              key={item.id}
-              className={`chart-field-animate rounded-lg p-3 transition-all duration-200 hover:shadow-sm ${
-                item.isConfirmed
-                  ? 'bg-teal-50 border border-teal-200'
-                  : 'bg-amber-50 border border-amber-200'
-              }`}
-              style={{ animationDelay: `${idx * 50}ms` }}
-            >
-              {/* DDx Header */}
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  {item.isConfirmed ? (
-                    <CheckCircle2 className="w-4 h-4 text-teal-600" />
-                  ) : (
-                    <AlertCircle className="w-4 h-4 text-amber-600" />
+        {/* 활성 DDx 목록 */}
+        {visibleItems.length > 0 && (
+          <>
+            <div className="text-xs font-semibold text-slate-600 mb-2 flex items-center gap-1">
+              <Sparkles className="w-3 h-3" />
+              AI DDx/r/o (개별 확정 가능)
+            </div>
+            {visibleItems.map((item, idx) => {
+              const isExpanded = expandedDDx.has(item.id);
+              
+              return (
+                <div
+                  key={item.id}
+                  className={`chart-field-animate rounded-lg p-3 transition-all duration-200 hover:shadow-sm ${
+                    item.isConfirmed
+                      ? 'bg-teal-50 border border-teal-200'
+                      : 'bg-amber-50 border border-amber-200'
+                  }`}
+                  style={{ animationDelay: `${idx * 50}ms` }}
+                >
+                  {/* DDx Header */}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      {item.isConfirmed ? (
+                        <CheckCircle2 className="w-4 h-4 text-teal-600" />
+                      ) : (
+                        <AlertCircle className="w-4 h-4 text-amber-600" />
+                      )}
+                      <span className={`text-sm font-medium ${
+                        item.isConfirmed ? 'text-teal-800' : 'text-amber-800'
+                      }`}>
+                        r/o {item.diagnosis}
+                      </span>
+                      {/* 신뢰도 뱃지 */}
+                      <span className={`text-xs px-1.5 py-0.5 rounded ${
+                        item.confidence === 'high' ? 'bg-green-100 text-green-700' :
+                        item.confidence === 'medium' ? 'bg-amber-100 text-amber-700' :
+                        'bg-red-100 text-red-600'
+                      }`}>
+                        {item.confidence === 'high' ? '높음' : item.confidence === 'medium' ? '중간' : '낮음'}
+                      </span>
+                    </div>
+                    
+                    {/* 버튼들 */}
+                    <div className="flex items-center gap-1">
+                      {!item.isConfirmed ? (
+                        <>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleConfirmDDx(item.id)}
+                            className="h-6 text-xs px-2 border-teal-300 text-teal-700 hover:bg-teal-100 bg-white"
+                          >
+                            <Check className="w-3 h-3 mr-1" />
+                            확정
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleRemoveDDx(item.id)}
+                            className="h-6 text-xs px-2 border-slate-300 text-slate-500 hover:bg-slate-100 bg-white"
+                          >
+                            제외
+                          </Button>
+                        </>
+                      ) : (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleUnconfirmDDx(item.id)}
+                          className="h-6 text-xs px-2 border-slate-300 text-slate-500 hover:bg-slate-100 bg-white"
+                        >
+                          취소
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                  
+                  {/* 근거 토글 */}
+                  {item.reason && (
+                    <button
+                      onClick={() => toggleDDxDetails(item.id)}
+                      className="text-xs text-slate-500 mt-1 flex items-center gap-1 hover:text-slate-700 transition-colors"
+                    >
+                      {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                      {isExpanded ? '근거 닫기' : '근거 보기'}
+                    </button>
                   )}
-                  <span className={`text-sm font-medium ${
-                    item.isConfirmed ? 'text-teal-800' : 'text-amber-800'
-                  }`}>
+                  
+                  {/* 근거 내용 */}
+                  {isExpanded && item.reason && (
+                    <div className="chart-details-animate mt-2 p-2 bg-white/60 rounded text-xs text-slate-600 border border-slate-200/50">
+                      <span className="font-medium text-slate-500">추론 근거:</span> {item.reason}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </>
+        )}
+
+        {/* 제외된 DDx 목록 (접혀있음, 복구 가능) */}
+        {removedItems.length > 0 && (
+          <div className="mt-3 pt-3 border-t border-dashed border-slate-200">
+            <div className="text-xs text-slate-400 mb-2">
+              제외됨 ({removedItems.length}개) - 복구 가능
+            </div>
+            <div className="space-y-1.5">
+              {removedItems.map((item) => (
+                <div
+                  key={item.id}
+                  className="flex items-center justify-between rounded-lg p-2 bg-slate-50 border border-dashed border-slate-200 opacity-60 hover:opacity-100 transition-opacity"
+                >
+                  <span className="text-xs text-slate-500 line-through">
                     r/o {item.diagnosis}
                   </span>
-                  {/* 신뢰도 뱃지 */}
-                  <span className={`text-xs px-1.5 py-0.5 rounded ${
-                    item.confidence === 'high' ? 'bg-green-100 text-green-700' :
-                    item.confidence === 'medium' ? 'bg-amber-100 text-amber-700' :
-                    'bg-red-100 text-red-600'
-                  }`}>
-                    {item.confidence === 'high' ? '높음' : item.confidence === 'medium' ? '중간' : '낮음'}
-                  </span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleRestoreDDx(item.id)}
+                    className="h-5 text-xs px-2 text-slate-500 hover:text-teal-600 hover:bg-teal-50"
+                  >
+                    복구
+                  </Button>
                 </div>
-                
-                {/* 버튼들 */}
-                <div className="flex items-center gap-1">
-                  {!item.isConfirmed ? (
-                    <>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleConfirmDDx(item.id)}
-                        className="h-6 text-xs px-2 border-teal-300 text-teal-700 hover:bg-teal-100 bg-white"
-                      >
-                        <Check className="w-3 h-3 mr-1" />
-                        확정
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleRemoveDDx(item.id)}
-                        className="h-6 text-xs px-2 border-slate-300 text-slate-500 hover:bg-slate-100 bg-white"
-                      >
-                        제외
-                      </Button>
-                    </>
-                  ) : (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleUnconfirmDDx(item.id)}
-                      className="h-6 text-xs px-2 border-slate-300 text-slate-500 hover:bg-slate-100 bg-white"
-                    >
-                      취소
-                    </Button>
-                  )}
-                </div>
-              </div>
-              
-              {/* 근거 토글 */}
-              {item.reason && (
-                <button
-                  onClick={() => toggleDDxDetails(item.id)}
-                  className="text-xs text-slate-500 mt-1 flex items-center gap-1 hover:text-slate-700 transition-colors"
-                >
-                  {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                  {isExpanded ? '근거 닫기' : '근거 보기'}
-                </button>
-              )}
-              
-              {/* 근거 내용 */}
-              {isExpanded && item.reason && (
-                <div className="mt-2 p-2 bg-white/60 rounded text-xs text-slate-600 border border-slate-200/50">
-                  <span className="font-medium text-slate-500">추론 근거:</span> {item.reason}
-                </div>
-              )}
+              ))}
             </div>
-          );
-        })}
+          </div>
+        )}
+
+        {/* 활성 DDx가 없고 제외만 있는 경우 메시지 */}
+        {visibleItems.length === 0 && removedItems.length > 0 && (
+          <p className="text-sm text-slate-400 italic mb-2">
+            모든 DDx가 제외되었습니다. 위에서 복구할 수 있습니다.
+          </p>
+        )}
       </div>
     );
   };
