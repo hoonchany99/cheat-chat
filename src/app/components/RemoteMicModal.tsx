@@ -14,6 +14,7 @@ interface Segment {
 interface RemoteMicModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onConnectionChange: (connected: boolean) => void;
   onSegmentsUpdate: (segments: Segment[]) => void;
   onTranscriptUpdate: (text: string) => void;
   onRemoteRecordingStart: () => void;
@@ -23,6 +24,7 @@ interface RemoteMicModalProps {
 export function RemoteMicModal({
   open,
   onOpenChange,
+  onConnectionChange,
   onSegmentsUpdate,
   onTranscriptUpdate,
   onRemoteRecordingStart,
@@ -73,6 +75,7 @@ export function RemoteMicModal({
       },
       (connected) => {
         setIsConnected(connected);
+        onConnectionChange(connected);
         if (!connected && isRemoteRecording) {
           setIsRemoteRecording(false);
           onRemoteRecordingStop();
@@ -82,7 +85,7 @@ export function RemoteMicModal({
 
     newHost.start();
     setHost(newHost);
-  }, [onSegmentsUpdate, onTranscriptUpdate, onRemoteRecordingStart, onRemoteRecordingStop, isRemoteRecording]);
+  }, [onSegmentsUpdate, onTranscriptUpdate, onRemoteRecordingStart, onRemoteRecordingStop, onConnectionChange, isRemoteRecording]);
 
   // 모달 열릴 때 세션 시작
   useEffect(() => {
@@ -100,13 +103,14 @@ export function RemoteMicModal({
     };
   }, [open, host, startSession]);
 
-  // 모달 닫힐 때 정리
+  // 모달 닫힐 때 - 연결 안 된 상태면 정리
   useEffect(() => {
-    if (!open && host) {
+    if (!open && host && !isConnected) {
       host.stop();
       setHost(null);
+      onConnectionChange(false);
     }
-  }, [open, host]);
+  }, [open, host, isConnected, onConnectionChange]);
 
   const handleCopyCode = () => {
     navigator.clipboard.writeText(sessionId);
@@ -119,20 +123,38 @@ export function RemoteMicModal({
     if (host) {
       host.stop();
       setHost(null);
+      onConnectionChange(false);
     }
     startSession();
   };
 
-  const handleClose = () => {
+  // 연결 끊기 (완전 종료)
+  const handleDisconnect = () => {
     if (host) {
       host.stop();
       setHost(null);
     }
+    setIsConnected(false);
+    setIsRemoteRecording(false);
+    onConnectionChange(false);
+    onOpenChange(false);
+  };
+
+  // 모달만 닫기 (연결 유지)
+  const handleCloseKeepConnection = () => {
     onOpenChange(false);
   };
 
   return (
-    <Dialog open={open} onOpenChange={handleClose}>
+    <Dialog open={open} onOpenChange={(openState) => {
+      if (!openState && isConnected) {
+        // 연결된 상태에서 모달 닫기 → 연결 유지
+        handleCloseKeepConnection();
+      } else if (!openState) {
+        // 연결 안 된 상태에서 모달 닫기
+        handleDisconnect();
+      }
+    }}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
@@ -235,22 +257,41 @@ export function RemoteMicModal({
 
           {/* Actions */}
           <div className="flex gap-2">
-            {!isConnected && (
-              <Button 
-                variant="outline" 
-                onClick={handleNewSession}
-                className="flex-1"
-              >
-                새 세션 생성
-              </Button>
+            {!isConnected ? (
+              <>
+                <Button 
+                  variant="outline" 
+                  onClick={handleNewSession}
+                  className="flex-1"
+                >
+                  새 세션 생성
+                </Button>
+                <Button 
+                  variant="outline"
+                  onClick={handleDisconnect}
+                  className="flex-1"
+                >
+                  취소
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button 
+                  variant="outline"
+                  onClick={handleDisconnect}
+                  className="flex-1 text-red-600 hover:text-red-700 hover:bg-red-50"
+                >
+                  <X className="w-4 h-4 mr-1" />
+                  연결 끊기
+                </Button>
+                <Button 
+                  onClick={handleCloseKeepConnection}
+                  className="flex-1 bg-teal-600 hover:bg-teal-700"
+                >
+                  연결 유지하며 닫기
+                </Button>
+              </>
             )}
-            <Button 
-              variant={isConnected ? "default" : "outline"}
-              onClick={handleClose}
-              className={`flex-1 ${isConnected ? 'bg-teal-600 hover:bg-teal-700' : ''}`}
-            >
-              {isConnected ? '연결 유지하며 닫기' : '취소'}
-            </Button>
           </div>
         </div>
       </DialogContent>

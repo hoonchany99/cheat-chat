@@ -89,12 +89,19 @@ export function MobileMicPage({ sessionId }: MobileMicPageProps) {
     const checkConnection = setInterval(() => {
       if (lastHostPing > 0 && Date.now() - lastHostPing > 10000) {
         // 10초 이상 호스트 ping 없으면 연결 끊김으로 간주
+        if (isConnected) {
+          toast.error('데스크톱과의 연결이 끊어졌습니다');
+          // 녹음 중이었다면 중지
+          if (isRecording) {
+            handleStopRecording();
+          }
+        }
         setIsConnected(false);
       }
     }, 5000);
 
     return () => clearInterval(checkConnection);
-  }, [lastHostPing]);
+  }, [lastHostPing, isConnected, isRecording]);
 
   // 녹음 시간 타이머
   useEffect(() => {
@@ -241,21 +248,31 @@ export function MobileMicPage({ sessionId }: MobileMicPageProps) {
     );
   }
 
-  // 연결 실패 화면
+  // 연결 실패/끊김 화면
   if (!isConnected && !isConnecting) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-600 to-slate-700 flex items-center justify-center p-4">
+        <Toaster position="top-center" richColors />
         <Card className="w-full max-w-sm">
           <CardContent className="pt-8 pb-8 text-center">
-            <WifiOff className="w-12 h-12 text-red-500 mx-auto mb-4" />
+            <div className="w-16 h-16 rounded-full bg-red-100 flex items-center justify-center mx-auto mb-4">
+              <WifiOff className="w-8 h-8 text-red-500" />
+            </div>
             <h2 className="text-lg font-semibold text-slate-800 mb-2">연결 끊김</h2>
-            <p className="text-sm text-slate-500 mb-4">데스크톱과의 연결이 끊어졌습니다.</p>
-            <Button 
-              onClick={() => window.location.reload()}
-              className="bg-teal-600 hover:bg-teal-700"
-            >
-              다시 연결
-            </Button>
+            <p className="text-sm text-slate-500 mb-1">데스크톱과의 연결이 끊어졌습니다.</p>
+            <p className="text-xs text-slate-400 mb-6">데스크톱에서 세션이 종료되었거나 네트워크 문제일 수 있습니다.</p>
+            
+            <div className="space-y-3">
+              <Button 
+                onClick={() => window.location.reload()}
+                className="w-full bg-teal-600 hover:bg-teal-700"
+              >
+                다시 연결 시도
+              </Button>
+              <p className="text-xs text-slate-400">
+                세션 코드: <span className="font-mono font-bold">{sessionId}</span>
+              </p>
+            </div>
           </CardContent>
         </Card>
       </div>

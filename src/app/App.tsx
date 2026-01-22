@@ -170,6 +170,7 @@ function MainApp() {
   const [subscribeOpen, setSubscribeOpen] = useState(false);
   const [mobileTab, setMobileTab] = useState<'transcript' | 'chart'>('transcript');
   const [remoteMicOpen, setRemoteMicOpen] = useState(false);
+  const [isRemoteConnected, setIsRemoteConnected] = useState(false);
   
   // 사용자 정보 상태
   const [userAge, setUserAge] = useState('');
@@ -481,16 +482,24 @@ function MainApp() {
                   variant="outline"
                   onClick={() => setRemoteMicOpen(true)}
                   disabled={isRecording}
-                  className={`rounded-full h-10 px-4 shrink-0 gap-2 ${isRemoteRecording ? 'border-green-500 text-green-600 bg-green-50' : ''}`}
+                  className={`rounded-full h-10 px-4 shrink-0 gap-2 transition-all ${
+                    isRemoteRecording 
+                      ? 'border-red-500 text-red-600 bg-red-50' 
+                      : isRemoteConnected 
+                        ? 'border-green-500 text-green-600 bg-green-50' 
+                        : ''
+                  }`}
                   title="휴대폰 마이크 연결"
                 >
                   <Smartphone className="w-4 h-4" />
                   <span className="text-xs font-medium hidden sm:inline">
-                    {isRemoteRecording ? '연결됨' : '휴대폰 연결'}
+                    {isRemoteRecording ? '녹음 중' : isRemoteConnected ? '연결됨' : '휴대폰 연결'}
                   </span>
-                  {isRemoteRecording && (
+                  {isRemoteRecording ? (
                     <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-                  )}
+                  ) : isRemoteConnected ? (
+                    <span className="w-2 h-2 rounded-full bg-green-500" />
+                  ) : null}
                 </Button>
               </div>
 
@@ -811,6 +820,7 @@ function MainApp() {
       <RemoteMicModal
         open={remoteMicOpen}
         onOpenChange={setRemoteMicOpen}
+        onConnectionChange={setIsRemoteConnected}
         onSegmentsUpdate={(segments) => {
           setRealtimeSegments(segments);
         }}
