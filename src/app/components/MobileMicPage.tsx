@@ -174,11 +174,33 @@ export function MobileMicPage({ sessionId }: MobileMicPageProps) {
 
   const handleStartRecording = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // 먼저 마이크 권한 상태 확인
+      if (navigator.permissions) {
+        try {
+          const permissionStatus = await navigator.permissions.query({ name: 'microphone' as PermissionName });
+          console.log('Microphone permission:', permissionStatus.state);
+        } catch (e) {
+          console.log('Permission query not supported');
+        }
+      }
+
+      console.log('Requesting microphone access...');
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        } 
+      });
+      console.log('Microphone access granted, stream:', stream);
+      
       mediaStreamRef.current = stream;
       
       startAudioAnalysis(stream);
+      
+      console.log('Connecting to Deepgram...');
       await connectDeepgram(stream);
+      console.log('Deepgram connected');
       
       setIsRecording(true);
       setRecordingTime(0);
@@ -189,9 +211,23 @@ export function MobileMicPage({ sessionId }: MobileMicPageProps) {
       }
       
       toast.success('녹음이 시작되었습니다');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Recording start error:', error);
-      toast.error('마이크 접근 권한이 필요합니다');
+      console.error('Error name:', error?.name);
+      console.error('Error message:', error?.message);
+      
+      // 더 구체적인 에러 메시지
+      if (error?.name === 'NotAllowedError') {
+        toast.error('마이크 권한이 거부되었습니다. 브라우저 설정에서 권한을 허용해주세요.');
+      } else if (error?.name === 'NotFoundError') {
+        toast.error('마이크를 찾을 수 없습니다.');
+      } else if (error?.name === 'NotReadableError') {
+        toast.error('마이크가 다른 앱에서 사용 중입니다.');
+      } else if (error?.name === 'OverconstrainedError') {
+        toast.error('마이크 설정 오류가 발생했습니다.');
+      } else {
+        toast.error(`오류: ${error?.message || '마이크 접근 실패'}`);
+      }
     }
   };
 
