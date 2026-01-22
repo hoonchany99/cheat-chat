@@ -1,247 +1,359 @@
-import { useState, useRef, useEffect } from 'react';
-import { VoiceRecorder } from '@/app/components/VoiceRecorder';
-import { TranscriptViewer } from '@/app/components/TranscriptViewer';
-import { ChartingResult } from '@/app/components/ChartingResult';
-import { ChartSettingsModal } from '@/app/components/ChartSettingsModal';
-import { Stethoscope, RotateCcw } from 'lucide-react';
+import { useState, useCallback, useEffect } from 'react';
+import { VoiceRecorder } from './components/VoiceRecorder';
+import { TranscriptViewer } from './components/TranscriptViewer';
+import { ChartingResult, ChartData } from './components/ChartingResult';
+import { LandingPage } from './components/LandingPage';
+import { ChartSettingsModal } from './components/ChartSettingsModal';
+import { ChartSettings, DEFAULT_CHART_SETTINGS, DEPARTMENT_PRESETS } from '@/services/chartService';
+import { Button } from '@/app/components/ui/button';
+import { Input } from '@/app/components/ui/input';
 import { Toaster } from '@/app/components/ui/sonner';
 import { toast } from 'sonner';
-import { type SpeakerSegment } from '@/services/deepgramService';
-import {
-  generateChart,
-  loadChartSettings,
-  getFieldsForSettings,
-  type ChartSettings,
-  type GeneratedChart,
-  type ChartField,
-  DEPARTMENT_PRESETS,
-} from '@/services/chartService';
+import { RotateCcw, Stethoscope, FileText, Mail, Loader2, MessageSquare, Send, X, Mic, Sparkles, ClipboardList, ChevronRight } from 'lucide-react';
+import { Textarea } from '@/app/components/ui/textarea';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/app/components/ui/dialog';
 
-function App() {
-  const [speakerSegments, setSpeakerSegments] = useState<SpeakerSegment[]>([]); // 최종 화자분리 결과
-  const [realtimeSegments, setRealtimeSegments] = useState<SpeakerSegment[]>([]); // 실시간 화자 추정
-  const [chartingData, setChartingData] = useState<GeneratedChart | null>(null);
-  const [chartFields, setChartFields] = useState<ChartField[]>([]);
-  const [isRecording, setIsRecording] = useState(false);
-  const [isProcessingAudio, setIsProcessingAudio] = useState(false); // 화자분리 처리 중
-  const [isGeneratingChart, setIsGeneratingChart] = useState(false);
-  const [chartSettings, setChartSettings] = useState<ChartSettings>(loadChartSettings);
-  const [recordingTime, setRecordingTime] = useState(0); // 녹음 시간 (초)
-  const [audioLevel, setAudioLevel] = useState(0); // 오디오 레벨 (0-1)
-  const [realtimeText, setRealtimeText] = useState(''); // 실시간 전사 텍스트
+// 페이지 전환 애니메이션 스타일
+const pageTransitionStyles = `
+  @keyframes pageSlideIn {
+    from {
+      opacity: 0;
+      transform: translateY(20px) scale(0.98);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
   
-  // 차트 생성용 참조 (최신 세그먼트 유지)
-  const speakerSegmentsRef = useRef<SpeakerSegment[]>([]);
-
-  // 설정 변경 시 필드 업데이트
-  useEffect(() => {
-    setChartFields(getFieldsForSettings(chartSettings));
-  }, [chartSettings]);
-
-  // 현재 선택된 진료과 이름
-  const selectedDepartmentName = DEPARTMENT_PRESETS.find(p => p.id === chartSettings.selectedDepartment)?.name || '일반';
-
-  // 호환성용 (사용 안 함)
-  const handleTranscriptUpdate = (_text: string) => {};
-
-  // 새 발화 추가 (처음에는 pending 상태)
-  const handleRealtimeSegment = (segment: SpeakerSegment) => {
-    setRealtimeSegments(prev => [...prev, segment]);
-  };
-
-  // 전체 세그먼트 업데이트 (GPT-4o-mini 배치 분류 후)
-  const handleRealtimeSegmentsUpdate = (segments: SpeakerSegment[]) => {
-    setRealtimeSegments(segments);
-  };
-
-  // 최종 화자 분리 결과 (녹음 종료 후 GPT에서 반환)
-  const handleFullUpdate = (segments: SpeakerSegment[]) => {
-    speakerSegmentsRef.current = segments;
-    setSpeakerSegments([...segments]); // GPT 정확한 화자분리 결과
-    setIsProcessingAudio(false); // 화자분리 처리 완료
-  };
-
-  const handleRecordingStart = () => {
-    setIsRecording(true);
-    setIsProcessingAudio(false);
-    setSpeakerSegments([]);
-    setRealtimeSegments([]); // 실시간 세그먼트 초기화
-    setChartingData(null);
-    speakerSegmentsRef.current = [];
-    setRecordingTime(0);
-    setAudioLevel(0);
-    setRealtimeText('');
-  };
-
-  // 녹음 진행 상황 업데이트
-  const handleRecordingProgress = (time: number, level: number, text: string) => {
-    setRecordingTime(time);
-    setAudioLevel(level);
-    setRealtimeText(text);
-  };
-
-  // 녹음 종료 후 화자분리 처리 시작
-  const handleProcessingStart = () => {
-    setIsRecording(false);
-    setIsProcessingAudio(true);
-  };
-
-  const handleRecordingComplete = async () => {
-    // isRecording은 handleProcessingStart에서 이미 false로 설정됨
-    // isProcessingAudio는 handleFullUpdate에서 false로 설정됨
-    
-    const segments = speakerSegmentsRef.current;
-    console.log('녹음 완료! 세그먼트:', segments.length, '개');
-    
-    // 대화 내용이 없으면 차트 생성 스킵
-    if (segments.length === 0 || segments.every(s => s.speaker === 'pending')) {
-      toast.warning('대화 내용이 없어 차트를 생성할 수 없습니다.');
-      return;
+  @keyframes pageFadeOut {
+    from {
+      opacity: 1;
+      transform: scale(1);
     }
+    to {
+      opacity: 0;
+      transform: scale(0.98);
+    }
+  }
+  
+  .page-enter {
+    animation: pageSlideIn 0.5s ease-out forwards;
+  }
+  
+  .page-exit {
+    animation: pageFadeOut 0.3s ease-in forwards;
+  }
+`;
+
+interface Segment {
+  text: string;
+  speaker: 'doctor' | 'patient' | 'pending';
+}
+
+export default function App() {
+  const [showLanding, setShowLanding] = useState(true);
+  const [isTransitioning, setIsTransitioning] = useState(false);
+  const [pageAnimation, setPageAnimation] = useState<'enter' | 'exit' | ''>('');
+  const [finalTranscript, setFinalTranscript] = useState('');
+  const [realtimeSegments, setRealtimeSegments] = useState<Segment[]>([]);
+  const [isRecording, setIsRecording] = useState(false);
+  const [chartData, setChartData] = useState<ChartData | null>(null);
+  const [isGeneratingChart, setIsGeneratingChart] = useState(false);
+  const [recordingProgress, setRecordingProgress] = useState(0);
+  const [chartSettings, setChartSettings] = useState<ChartSettings>(DEFAULT_CHART_SETTINGS);
+  const [email, setEmail] = useState('');
+  const [isSubscribing, setIsSubscribing] = useState(false);
+  const [feedback, setFeedback] = useState('');
+  const [isSendingFeedback, setIsSendingFeedback] = useState(false);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
+
+  const selectedDepartment = DEPARTMENT_PRESETS.find(d => d.id === chartSettings.selectedDepartment);
+  const selectedDepartmentName = selectedDepartment?.name || '내과';
+
+  // 페이지 전환 핸들러
+  const handlePageTransition = useCallback((toPage: 'landing' | 'app') => {
+    if (isTransitioning) return;
     
-    // 차트 자동 생성 (설정 기반)
-    setIsGeneratingChart(true);
-    toast.loading(`AI가 ${selectedDepartmentName} 차트를 생성하고 있습니다...`, { id: 'chart-gen' });
+    setIsTransitioning(true);
+    setPageAnimation('exit');
     
-    try {
-      const chart = await generateChart(segments, chartSettings);
+    setTimeout(() => {
+      setShowLanding(toPage === 'landing');
+      setPageAnimation('enter');
       
-      if (chart) {
-        setChartingData(chart);
-        setChartFields(getFieldsForSettings(chartSettings));
-        toast.success('차트가 생성되었습니다!', { id: 'chart-gen' });
-      } else {
-        toast.error('차트 생성에 실패했습니다. 다시 시도해주세요.', { id: 'chart-gen' });
-      }
-    } catch (error) {
-      console.error('차트 생성 오류:', error);
-      toast.error('차트 생성 중 오류가 발생했습니다.', { id: 'chart-gen' });
-    } finally {
-      setIsGeneratingChart(false);
+      setTimeout(() => {
+        setIsTransitioning(false);
+        setPageAnimation('');
+      }, 500);
+    }, 300);
+  }, [isTransitioning]);
+
+  // 초기 진입 시 애니메이션
+  useEffect(() => {
+    setPageAnimation('enter');
+    const timer = setTimeout(() => setPageAnimation(''), 500);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const handleTranscriptUpdate = useCallback((text: string) => {
+    setFinalTranscript(text);
+  }, []);
+
+  const handleRealtimeSegment = useCallback((text: string) => {
+    console.log('Realtime segment:', text);
+  }, []);
+
+  const handleRealtimeSegmentsUpdate = useCallback((segments: Segment[]) => {
+    setRealtimeSegments(segments);
+  }, []);
+
+  const handleFullUpdate = useCallback((_transcript: string, segments: Segment[]) => {
+    setRealtimeSegments(segments);
+  }, []);
+
+  const handleRecordingStart = useCallback(() => {
+    setIsRecording(true);
+    setChartData(null);
+    setRecordingProgress(0);
+  }, []);
+
+  const handleProcessingStart = useCallback(() => {
+    console.log('Processing started');
+  }, []);
+
+  const handleRecordingComplete = useCallback((transcript: string, result: ChartData | null) => {
+    setIsRecording(false);
+    setFinalTranscript(transcript);
+    
+    if (result) {
+      setChartData(result);
     }
-  };
+    setIsGeneratingChart(false);
+  }, []);
 
+  const handleRecordingProgress = useCallback((progress: number) => {
+    setRecordingProgress(progress);
+  }, []);
 
-  // 전체 리셋 (대화 + 차트 초기화)
-  const handleReset = () => {
-    if (isRecording) {
-      toast.warning('녹음 중에는 리셋할 수 없습니다.');
+  const handleReset = useCallback(() => {
+    setFinalTranscript('');
+    setRealtimeSegments([]);
+    setChartData(null);
+    setIsGeneratingChart(false);
+    setRecordingProgress(0);
+  }, []);
+
+  const handleEmailSubscribe = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email || !email.includes('@')) {
+      toast.error('올바른 이메일을 입력해주세요');
       return;
     }
-    
-    setSpeakerSegments([]);
-    setChartingData(null);
-    speakerSegmentsRef.current = [];
-    toast.success('초기화되었습니다.');
+    setIsSubscribing(true);
+    await new Promise(resolve => setTimeout(resolve, 800));
+    toast.success('구독해주셔서 감사합니다!');
+    setEmail('');
+    setIsSubscribing(false);
   };
+
+  const handleFeedbackSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!feedback.trim()) {
+      toast.error('피드백을 입력해주세요');
+      return;
+    }
+    setIsSendingFeedback(true);
+    await new Promise(resolve => setTimeout(resolve, 800));
+    console.log('Feedback:', feedback);
+    toast.success('피드백 감사합니다!');
+    setFeedback('');
+    setIsSendingFeedback(false);
+    setFeedbackOpen(false);
+  };
+
+  if (showLanding) {
+    return (
+      <>
+        <style>{pageTransitionStyles}</style>
+        <div className={pageAnimation === 'enter' ? 'page-enter' : pageAnimation === 'exit' ? 'page-exit' : ''}>
+          <LandingPage onStart={() => handlePageTransition('app')} />
+        </div>
+        <Toaster position="top-center" richColors />
+      </>
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-background">
-      <Toaster />
-      
+    <div className={`min-h-screen bg-slate-50 flex flex-col ${pageAnimation === 'enter' ? 'page-enter' : pageAnimation === 'exit' ? 'page-exit' : ''}`}>
+      <style>{pageTransitionStyles}</style>
       {/* Header */}
-      <header className="border-b bg-card">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="bg-primary text-primary-foreground p-2 rounded-lg">
-                <Stethoscope className="w-6 h-6" />
-              </div>
-              <div>
-                <h1 className="text-2xl font-bold">Cheat Chat AI</h1>
-                <p className="text-sm text-muted-foreground">
-                  진료 대화를 자동으로 기록하고 차팅합니다
-                </p>
-              </div>
+      <header className="sticky top-0 z-50 border-b bg-white/95 backdrop-blur-sm">
+        <div className="container mx-auto px-4 h-14 flex items-center justify-between">
+          <button
+            onClick={() => handlePageTransition('landing')}
+            className="flex items-center gap-2.5 hover:opacity-80 transition-opacity"
+          >
+            <div className="p-1.5 rounded-lg bg-gradient-to-br from-teal-500 to-teal-600 text-white">
+              <Stethoscope className="w-4 h-4" />
             </div>
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-muted-foreground hidden sm:block">
-                📋 {selectedDepartmentName}
-              </span>
-              <ChartSettingsModal
-                settings={chartSettings}
-                onSettingsChange={setChartSettings}
-              />
-            </div>
+            <span className="font-bold text-sm text-slate-800">Cheat Chat AI</span>
+          </button>
+
+          <div className="flex items-center">
+            <ChartSettingsModal
+              settings={chartSettings}
+              onSettingsChange={setChartSettings}
+              departmentName={selectedDepartmentName}
+            />
           </div>
         </div>
       </header>
 
       {/* Main Content */}
-      <main className="container mx-auto px-4 py-6 space-y-6">
-        {/* Recording + Usage Guide Row */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          {/* Recording Card */}
-          <div className="bg-card border rounded-lg px-4 py-3 flex items-center justify-between">
-            <VoiceRecorder
-              onTranscriptUpdate={handleTranscriptUpdate}
-              onRealtimeSegment={handleRealtimeSegment}
-              onRealtimeSegmentsUpdate={handleRealtimeSegmentsUpdate}
-              onFullUpdate={handleFullUpdate}
-              onRecordingStart={handleRecordingStart}
-              onProcessingStart={handleProcessingStart}
-              onRecordingComplete={handleRecordingComplete}
-              onRecordingProgress={handleRecordingProgress}
-              department={chartSettings.selectedDepartment}
-            />
-            <button
-              onClick={handleReset}
-              disabled={isRecording || isGeneratingChart}
-              className="p-2 rounded-lg border bg-background hover:bg-muted transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              title="초기화"
-            >
-              <RotateCcw className="w-5 h-5" />
-            </button>
-                </div>
-
-          {/* Usage Guide Card */}
-          <div className="lg:col-span-2 bg-muted/50 border rounded-lg p-4">
-            <h3 className="font-medium text-sm mb-2">사용 방법</h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
-              <div className="flex items-start gap-2">
-                <div className="w-6 h-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-bold flex-shrink-0">1</div>
-                <p className="text-muted-foreground">왼쪽 <span className="text-foreground font-medium">마이크 버튼</span>을 클릭하여 진료 녹음을 시작하세요.</p>
-                </div>
-              <div className="flex items-start gap-2">
-                <div className="w-6 h-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-bold flex-shrink-0">2</div>
-                <p className="text-muted-foreground">의사-환자 대화가 <span className="text-foreground font-medium">실시간으로 텍스트</span>로 변환됩니다.</p>
+      <main className="flex-1 container mx-auto px-4 py-6">
+        <div className="flex flex-col gap-6">
+          {/* Recording Control */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm px-6 py-5">
+            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
+              {/* Recording Section */}
+              <div className="flex items-center gap-4">
+                <VoiceRecorder
+                  onTranscriptUpdate={handleTranscriptUpdate}
+                  onRealtimeSegment={handleRealtimeSegment}
+                  onRealtimeSegmentsUpdate={handleRealtimeSegmentsUpdate}
+                  onFullUpdate={handleFullUpdate}
+                  onRecordingStart={handleRecordingStart}
+                  onProcessingStart={handleProcessingStart}
+                  onRecordingComplete={handleRecordingComplete}
+                  onRecordingProgress={handleRecordingProgress}
+                  department={chartSettings.selectedDepartment}
+                />
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={handleReset}
+                  disabled={isRecording || isGeneratingChart}
+                  className="rounded-full h-10 w-10 shrink-0"
+                  title="초기화"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                </Button>
               </div>
-              <div className="flex items-start gap-2">
-                <div className="w-6 h-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-bold flex-shrink-0">3</div>
-                <p className="text-muted-foreground">녹음 종료 시 AI가 <span className="text-foreground font-medium">차트</span>를 자동 생성합니다.</p>
+
+              {/* Usage Guide - Right aligned */}
+              <div className="hidden md:flex items-center">
+                <div className="flex items-center bg-slate-50 rounded-full px-1.5 py-1.5 border border-slate-200">
+                  <div className="flex items-center gap-2 px-3 py-1">
+                    <div className="w-5 h-5 rounded-full bg-teal-500 text-white flex items-center justify-center text-xs font-bold">1</div>
+                    <span className="text-xs font-medium text-slate-600">녹음</span>
+                  </div>
+                  <ChevronRight className="w-3.5 h-3.5 text-slate-300" />
+                  <div className="flex items-center gap-2 px-3 py-1">
+                    <div className="w-5 h-5 rounded-full bg-cyan-500 text-white flex items-center justify-center text-xs font-bold">2</div>
+                    <span className="text-xs font-medium text-slate-600">변환</span>
+                  </div>
+                  <ChevronRight className="w-3.5 h-3.5 text-slate-300" />
+                  <div className="flex items-center gap-2 px-3 py-1">
+                    <div className="w-5 h-5 rounded-full bg-blue-500 text-white flex items-center justify-center text-xs font-bold">3</div>
+                    <span className="text-xs font-medium text-slate-600">차트</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Content Area */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <TranscriptViewer
+              finalTranscript={finalTranscript}
+              isRecording={isRecording}
+              realtimeSegments={realtimeSegments}
+            />
+            <ChartingResult
+              chartData={chartData}
+              isGenerating={isGeneratingChart}
+              recordingProgress={recordingProgress}
+              isRecording={isRecording}
+            />
+          </div>
+
+          {/* Email Subscribe Section */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm px-6 py-5 max-w-3xl ml-auto">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-5">
+              <div className="flex items-center gap-4">
+                <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-teal-500 to-teal-600 flex items-center justify-center shrink-0">
+                  <Mail className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-slate-800">정식 출시 알림 받기</h3>
+                  <p className="text-sm text-slate-500 mt-0.5">새로운 기능과 업데이트 소식을 받아보세요</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                {/* Feedback Button */}
+                <Dialog open={feedbackOpen} onOpenChange={setFeedbackOpen}>
+                  <DialogTrigger asChild>
+                    <Button variant="outline" size="sm" className="text-slate-600">
+                      <MessageSquare className="w-4 h-4 mr-1.5" />
+                      피드백
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="sm:max-w-md">
+                    <DialogHeader>
+                      <DialogTitle className="flex items-center gap-2">
+                        <MessageSquare className="w-5 h-5 text-teal-600" />
+                        피드백 보내기
+                      </DialogTitle>
+                    </DialogHeader>
+                    <form onSubmit={handleFeedbackSubmit} className="space-y-4">
+                      <Textarea
+                        placeholder="개선사항이나 의견을 자유롭게 남겨주세요..."
+                        value={feedback}
+                        onChange={(e) => setFeedback(e.target.value)}
+                        className="min-h-[120px] resize-none"
+                      />
+                      <div className="flex justify-end gap-2">
+                        <Button type="button" variant="outline" onClick={() => setFeedbackOpen(false)}>
+                          취소
+                        </Button>
+                        <Button 
+                          type="submit" 
+                          disabled={isSendingFeedback}
+                          className="bg-teal-600 hover:bg-teal-700"
+                        >
+                          {isSendingFeedback ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Send className="w-4 h-4 mr-2" />}
+                          보내기
+                        </Button>
+                      </div>
+                    </form>
+                  </DialogContent>
+                </Dialog>
+
+                {/* Subscribe Form */}
+                <form onSubmit={handleEmailSubscribe} className="flex gap-2">
+                  <Input
+                    type="email"
+                    placeholder="your@email.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="w-48 sm:w-56"
+                  />
+                  <Button 
+                    type="submit" 
+                    disabled={isSubscribing}
+                    className="bg-teal-600 hover:bg-teal-700 px-5"
+                  >
+                    {isSubscribing ? <Loader2 className="w-4 h-4 animate-spin" /> : '구독'}
+                  </Button>
+                </form>
               </div>
             </div>
           </div>
         </div>
-
-        {/* Two Column Layout */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-end">
-          {/* Left Column - Transcript */}
-          <div className="h-[600px]">
-            <TranscriptViewer 
-              segments={speakerSegments}
-              realtimeSegments={realtimeSegments}
-              isRecording={isRecording}
-              isProcessing={isProcessingAudio}
-              recordingTime={recordingTime}
-              audioLevel={audioLevel}
-              realtimeText={realtimeText}
-            />
-              </div>
-
-          {/* Right Column - Charting Result */}
-          <div className="h-[600px]">
-                <ChartingResult 
-                  data={chartingData} 
-              fields={chartFields}
-              settings={chartSettings}
-              isLoading={isGeneratingChart}
-                />
-              </div>
-            </div>
       </main>
+
+      <Toaster position="top-center" richColors />
     </div>
   );
 }
-
-export default App;

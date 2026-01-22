@@ -492,3 +492,25 @@ export function getFieldsForSettings(settings: ChartSettings): ChartField[] {
   const preset = DEPARTMENT_PRESETS.find(p => p.id === settings.selectedDepartment) || DEPARTMENT_PRESETS[0];
   return [...preset.fields];
 }
+
+// 간편 차트 생성 함수 (VoiceRecorder용)
+export async function generateChartFromTranscript(
+  transcript: string,
+  segments: SpeakerSegment[],
+  department: string = 'internal'
+): Promise<GeneratedChart | null> {
+  // 기본 설정 생성
+  const settings: ChartSettings = {
+    ...DEFAULT_CHART_SETTINGS,
+    selectedDepartment: department,
+    activeFields: getFieldsForDepartment(department),
+  };
+  
+  // segments가 비어있으면 transcript로 단일 세그먼트 생성
+  const useSegments = segments.length > 0 ? segments : [{ speaker: 'patient' as const, text: transcript }];
+  
+  return generateChart(useSegments, settings);
+}
+
+// ChartData 타입 export (ChartingResult 호환용)
+export type ChartData = GeneratedChart;

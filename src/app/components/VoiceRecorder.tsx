@@ -1,295 +1,285 @@
-import { useState, useRef, useEffect } from 'react';
-import { Mic, Square, Loader2 } from 'lucide-react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { Button } from '@/app/components/ui/button';
-import { DeepgramRealtimeTranscriber, type SpeakerSegment } from '@/services/deepgramService';
+import { Mic, Square, Loader2 } from 'lucide-react';
+import { useDeepgram } from '@/services/deepgramService';
+import { generateChartFromTranscript, ChartData } from '@/services/chartService';
+import { toast } from 'sonner';
+
+interface Segment {
+  text: string;
+  speaker: 'doctor' | 'patient' | 'pending';
+}
 
 interface VoiceRecorderProps {
-  onTranscriptUpdate: (transcript: string) => void;
-  onRealtimeSegment?: (segment: SpeakerSegment) => void; // 새 발화 추가 시
-  onRealtimeSegmentsUpdate?: (segments: SpeakerSegment[]) => void; // 전체 세그먼트 업데이트 (화자 분류 후)
-  onFullUpdate?: (segments: SpeakerSegment[]) => void;
-  onRecordingStart?: () => void;
-  onProcessingStart?: () => void;
-  onRecordingComplete: () => void;
-  onRecordingProgress?: (time: number, audioLevel: number, realtimeText: string) => void;
+  onTranscriptUpdate: (text: string) => void;
+  onRealtimeSegment: (text: string) => void;
+  onRealtimeSegmentsUpdate: (segments: Segment[]) => void;
+  onFullUpdate: (transcript: string, segments: Segment[]) => void;
+  onRecordingStart: () => void;
+  onProcessingStart: () => void;
+  onRecordingComplete: (transcript: string, chartResult: ChartData | null) => void;
+  onRecordingProgress?: (progress: number) => void;
   department?: string;
 }
 
-export function VoiceRecorder({ 
-  onTranscriptUpdate, 
+export function VoiceRecorder({
+  onTranscriptUpdate,
   onRealtimeSegment,
   onRealtimeSegmentsUpdate,
-  onFullUpdate, 
-  onRecordingStart, 
-  onProcessingStart, 
-  onRecordingComplete, 
-  onRecordingProgress, 
-  department = 'general' 
+  onFullUpdate,
+  onRecordingStart,
+  onProcessingStart,
+  onRecordingComplete,
+  onRecordingProgress,
+  department = 'internal'
 }: VoiceRecorderProps) {
   const [isRecording, setIsRecording] = useState(false);
-  const [recordingTime, setRecordingTime] = useState(0);
-  const [waveformData, setWaveformData] = useState<number[]>([0.2, 0.4, 0.6, 0.8, 0.6, 0.4, 0.3, 0.5, 0.7, 0.5, 0.3, 0.2]);
   const [isTranscribing, setIsTranscribing] = useState(false);
-  const [isConnecting, setIsConnecting] = useState(false);
-  
-  const isRecordingRef = useRef(false);
+  const [recordingTime, setRecordingTime] = useState(0);
+  const [audioLevel, setAudioLevel] = useState(0);
   const timerRef = useRef<number | null>(null);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const animationFrameRef = useRef<number | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const transcriberRef = useRef<DeepgramRealtimeTranscriber | null>(null);
-  const currentAudioLevelRef = useRef(0);
-  const realtimeTextRef = useRef<string>('');
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const segmentsRef = useRef<Segment[]>([]);
+  const fullTranscriptRef = useRef<string>('');
+
+  const {
+    connect,
+    disconnect,
+    isConnecting,
+    error: deepgramError
+  } = useDeepgram({
+    onTranscript: (text, isFinal) => {
+      if (isFinal) {
+        onTranscriptUpdate(fullTranscriptRef.current + (fullTranscriptRef.current ? ' ' : '') + text);
+      }
+      onRealtimeSegment(text);
+    },
+    onSegmentsUpdate: (segments) => {
+      segmentsRef.current = segments;
+      onRealtimeSegmentsUpdate(segments);
+    },
+    onFullUpdate: (transcript, segments) => {
+      fullTranscriptRef.current = transcript;
+      segmentsRef.current = segments;
+      onFullUpdate(transcript, segments);
+    }
+  });
 
   useEffect(() => {
-    return () => {
-      if (timerRef.current) window.clearInterval(timerRef.current);
-      if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
-      if (audioContextRef.current) audioContextRef.current.close();
-      if (streamRef.current) streamRef.current.getTracks().forEach(track => track.stop());
-      if (transcriberRef.current) transcriberRef.current.reset();
-    };
-  }, []);
-
-  // 실시간 파형 업데이트
-  const updateWaveform = () => {
-    if (analyserRef.current && isRecordingRef.current) {
-      const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
-      analyserRef.current.getByteTimeDomainData(dataArray);
-      
-      const bars = 12;
-      const step = Math.floor(dataArray.length / bars);
-      const newWaveform: number[] = [];
-      let sum = 0;
-      
-      for (let i = 0; i < bars; i++) {
-        const value = Math.abs(dataArray[i * step] - 128) / 128;
-        newWaveform.push(Math.min(1, value * 3));
-        sum += Math.abs(dataArray[i * step] - 128);
-      }
-      
-      setWaveformData(newWaveform);
-      currentAudioLevelRef.current = sum / dataArray.length / 128;
-      
-      animationFrameRef.current = requestAnimationFrame(updateWaveform);
+    if (deepgramError) {
+      toast.error(`연결 오류: ${deepgramError}`);
     }
-  };
+  }, [deepgramError]);
 
-  const handleStartRecording = async () => {
-    console.log('녹음 시작!');
-    setIsRecording(true);
-    setIsConnecting(true);
-    isRecordingRef.current = true;
-    setRecordingTime(0);
-    setIsTranscribing(false);
-    realtimeTextRef.current = '';
-    onRecordingStart?.();
-
-    // Deepgram 실시간 전사 초기화
-    transcriberRef.current = new DeepgramRealtimeTranscriber(
-      (segment) => {
-        // 새 발화 추가
-        onRealtimeSegment?.(segment);
-        
-        // 전체 텍스트 업데이트
-        realtimeTextRef.current = transcriberRef.current?.getFullText() || '';
-        onTranscriptUpdate(realtimeTextRef.current);
-      },
-      onFullUpdate,
-      department
-    );
-    
-    // 전체 세그먼트 업데이트 콜백 (GPT 배치 분류 후)
-    transcriberRef.current.setOnSegmentsUpdate((segments) => {
-      onRealtimeSegmentsUpdate?.(segments);
-    });
-
-    // Deepgram WebSocket 연결
+  const startAudioAnalysis = useCallback((stream: MediaStream) => {
     try {
-      await transcriberRef.current.connect();
-      console.log('✅ Deepgram 연결 성공');
-    } catch (error) {
-      console.error('❌ Deepgram 연결 실패:', error);
-    }
-    
-    setIsConnecting(false);
-
-    // 타이머
-    timerRef.current = window.setInterval(() => {
-      setRecordingTime(prev => {
-        const newTime = prev + 1;
-        onRecordingProgress?.(newTime, currentAudioLevelRef.current, realtimeTextRef.current);
-        return newTime;
-      });
-    }, 1000);
-
-    // 마이크 접근
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-          sampleRate: 16000,
-        }
-      });
-      
-      streamRef.current = stream;
-      console.log('마이크 접근 성공!');
-
-      // 오디오 분석기 설정
-      audioContextRef.current = new AudioContext({ sampleRate: 16000 });
-      const source = audioContextRef.current.createMediaStreamSource(stream);
+      audioContextRef.current = new AudioContext();
       analyserRef.current = audioContextRef.current.createAnalyser();
+      const source = audioContextRef.current.createMediaStreamSource(stream);
+      source.connect(analyserRef.current);
       analyserRef.current.fftSize = 256;
-      
-      const gainNode = audioContextRef.current.createGain();
-      gainNode.gain.value = 2;
-      source.connect(gainNode);
-      gainNode.connect(analyserRef.current);
-      
-      updateWaveform();
 
-      // MediaRecorder 설정 (Deepgram은 다양한 형식 지원)
-      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') 
-        ? 'audio/webm;codecs=opus' 
-        : 'audio/webm';
-      
-      mediaRecorderRef.current = new MediaRecorder(stream, { mimeType });
+      const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
 
-      mediaRecorderRef.current.ondataavailable = async (event) => {
-        if (event.data.size > 0 && transcriberRef.current) {
-          // Deepgram에 오디오 청크 전송
-          await transcriberRef.current.addChunk(event.data);
+      const updateLevel = () => {
+        if (analyserRef.current) {
+          analyserRef.current.getByteFrequencyData(dataArray);
+          const average = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
+          setAudioLevel(average / 255);
         }
+        animationFrameRef.current = requestAnimationFrame(updateLevel);
       };
 
-      // 250ms마다 청크 생성 (더 빠른 실시간 응답)
-      mediaRecorderRef.current.start(250);
-      console.log('MediaRecorder 시작됨');
-
+      updateLevel();
     } catch (error) {
-      console.error('마이크 접근 실패:', error);
+      console.error('Audio analysis error:', error);
     }
-  };
+  }, []);
 
-  const handleStopRecording = async () => {
-    console.log('녹음 종료!');
-    setIsRecording(false);
-    isRecordingRef.current = false;
-    
-    // 타이머 정리
-    if (timerRef.current) window.clearInterval(timerRef.current);
-    if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
-
-    // MediaRecorder 정지
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-      mediaRecorderRef.current.stop();
+  const stopAudioAnalysis = useCallback(() => {
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
     }
-
-    // 처리 시작 알림
-    onProcessingStart?.();
-
-    // GPT 화자분류 처리
-    if (transcriberRef.current) {
-      console.log('🔚 GPT 화자분류 처리 시작...');
-      setIsTranscribing(true);
-      
-      try {
-        await transcriberRef.current.flush();
-        console.log('✅ 화자분류 완료!');
-      } catch (error) {
-        console.error('❌ 화자분류 오류:', error);
-      }
-      
-      setIsTranscribing(false);
-    }
-
-    // 오디오 컨텍스트 정리
     if (audioContextRef.current) {
       audioContextRef.current.close();
       audioContextRef.current = null;
     }
+    setAudioLevel(0);
+  }, []);
 
-    // 마이크 스트림 정리
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
-      streamRef.current = null;
+  const handleStartRecording = useCallback(async () => {
+    try {
+      fullTranscriptRef.current = '';
+      segmentsRef.current = [];
+      onTranscriptUpdate('');
+      onRealtimeSegmentsUpdate([]);
+
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaStreamRef.current = stream;
+
+      await connect(stream);
+
+      startAudioAnalysis(stream);
+      setIsRecording(true);
+      setRecordingTime(0);
+      onRecordingStart();
+
+      timerRef.current = window.setInterval(() => {
+        setRecordingTime((prev) => {
+          const newTime = prev + 1;
+          if (onRecordingProgress) {
+            const progress = Math.min((newTime / 300) * 100, 100);
+            onRecordingProgress(progress);
+          }
+          return newTime;
+        });
+      }, 1000);
+
+    } catch (error) {
+      console.error('Error starting recording:', error);
+      toast.error('마이크 권한을 허용해주세요');
+    }
+  }, [connect, startAudioAnalysis, onRecordingStart, onRecordingProgress, onTranscriptUpdate, onRealtimeSegmentsUpdate]);
+
+  const handleStopRecording = useCallback(async () => {
+    setIsRecording(false);
+    setIsTranscribing(true);
+    onProcessingStart();
+
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
     }
 
-    onRecordingComplete();
-  };
+    stopAudioAnalysis();
+    
+    // Stop media stream first
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach(track => track.stop());
+      mediaStreamRef.current = null;
+    }
+
+    // Wait for disconnect and get final results
+    const { transcript: finalTranscript, segments: finalSegments } = await disconnect();
+    
+    // Update refs
+    fullTranscriptRef.current = finalTranscript;
+    segmentsRef.current = finalSegments;
+
+    if (finalTranscript) {
+      try {
+        const result = await generateChartFromTranscript(finalTranscript, finalSegments, department);
+        onRecordingComplete(finalTranscript, result);
+      } catch (error) {
+        console.error('Chart generation error:', error);
+        toast.error('차트 생성 중 오류가 발생했습니다');
+        onRecordingComplete(finalTranscript, null);
+      }
+    } else {
+      toast.info('녹음된 내용이 없습니다');
+      onRecordingComplete('', null);
+    }
+
+    setIsTranscribing(false);
+  }, [stopAudioAnalysis, disconnect, onProcessingStart, onRecordingComplete, department]);
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  // Waveform bars
+  const bars = 5;
+  const getBarHeight = (index: number) => {
+    const baseHeight = 8;
+    const maxAdditional = 20;
+    const phase = (Date.now() / 200 + index * 0.5) % (Math.PI * 2);
+    const wave = Math.sin(phase) * 0.5 + 0.5;
+    return baseHeight + (audioLevel * maxAdditional * (0.5 + wave * 0.5));
   };
 
   return (
     <div className="flex items-center gap-4">
-      {/* 녹음 버튼 */}
-      {!isRecording ? (
-        <Button
-          onClick={handleStartRecording}
-          disabled={isTranscribing}
-          className="h-14 w-14 rounded-full bg-red-500 hover:bg-red-600 text-white shadow-lg"
-        >
-          {isTranscribing ? (
-            <Loader2 className="w-6 h-6 animate-spin" />
-          ) : (
-            <Mic className="w-6 h-6" />
-          )}
-        </Button>
-      ) : (
-        <Button
-          onClick={handleStopRecording}
-          className="h-14 w-14 rounded-full bg-gray-700 hover:bg-gray-800 text-white shadow-lg"
-        >
-          <Square className="w-5 h-5 fill-current" />
-        </Button>
-      )}
-
-      {/* 녹음 상태 표시 */}
-      <div className="flex flex-col">
-        <div className="flex items-center gap-2">
-          {isRecording && (
-            <>
-              <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
-              <span className="font-mono text-lg font-semibold">
-                {formatTime(recordingTime)}
+      {/* Recording Button */}
+      <div className="relative">
+        {!isRecording ? (
+          <Button
+            onClick={handleStartRecording}
+            disabled={isTranscribing || isConnecting}
+            className="h-16 w-16 rounded-full bg-gradient-to-br from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white shadow-xl shadow-red-500/30 relative overflow-hidden transition-all hover:scale-105 active:scale-95"
+          >
+            {isConnecting ? (
+              <Loader2 className="w-6 h-6 animate-spin" />
+            ) : isTranscribing ? (
+              <Mic className="w-6 h-6 opacity-50" />
+            ) : (
+              <Mic className="w-6 h-6" />
+            )}
+            {isConnecting && (
+              <span className="absolute inset-0 flex items-center justify-center text-xs font-medium bg-red-700/90">
+                연결중
               </span>
-              {isConnecting && (
-                <span className="text-xs text-muted-foreground">(연결 중...)</span>
-              )}
-            </>
-          )}
-          {isTranscribing && (
-            <span className="text-sm text-muted-foreground flex items-center gap-1">
-              <Loader2 className="w-3 h-3 animate-spin" />
-              AI 분석중...
-            </span>
-          )}
-          {!isRecording && !isTranscribing && (
-            <span className="text-sm text-muted-foreground">
-              녹음 시작을 눌러주세요
-            </span>
-          )}
-        </div>
-
-        {/* 파형 표시 */}
+            )}
+          </Button>
+        ) : (
+          <Button
+            onClick={handleStopRecording}
+            className="h-16 w-16 rounded-full bg-gradient-to-br from-slate-700 to-slate-800 hover:from-slate-800 hover:to-slate-900 text-white shadow-xl shadow-slate-700/30 transition-all hover:scale-105 active:scale-95"
+          >
+            <Square className="w-5 h-5 fill-current" />
+          </Button>
+        )}
+        
+        {/* Pulse animation when recording */}
         {isRecording && (
-          <div className="flex items-center gap-0.5 h-6 mt-1">
-            {waveformData.map((value, index) => (
-              <div
-                key={index}
-                className="w-1 bg-red-500 rounded-full transition-all duration-75"
-                style={{ height: `${Math.max(4, value * 24)}px` }}
-              />
-            ))}
-          </div>
+          <>
+            <span className="absolute inset-0 rounded-full bg-red-500/30 animate-ping pointer-events-none" />
+            <span className="absolute -inset-1 rounded-full bg-red-500/20 animate-pulse pointer-events-none" />
+          </>
+        )}
+      </div>
+
+      {/* Recording Status */}
+      <div className="flex flex-col items-start">
+        {isRecording ? (
+          <>
+            {/* Waveform */}
+            <div className="flex items-center gap-1 h-8 mb-1">
+              {Array.from({ length: bars }).map((_, i) => (
+                <div
+                  key={i}
+                  className="w-1 bg-gradient-to-t from-red-500 to-red-400 rounded-full transition-all duration-75"
+                  style={{ height: `${getBarHeight(i)}px` }}
+                />
+              ))}
+            </div>
+            {/* Timer */}
+            <div className="text-sm font-bold text-slate-900 tabular-nums">
+              {formatTime(recordingTime)}
+            </div>
+            <div className="text-xs text-red-500 font-medium flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+              녹음 중
+            </div>
+          </>
+        ) : isTranscribing ? (
+          <>
+            <div className="flex items-center gap-2 text-teal-600 mb-1">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span className="text-sm font-semibold">차트 생성 중...</span>
+            </div>
+            <div className="text-xs text-slate-500">잠시만 기다려주세요</div>
+          </>
+        ) : (
+          <>
+            <div className="text-sm font-semibold text-slate-700">마이크 버튼을</div>
+            <div className="text-sm font-semibold text-slate-700">눌러 녹음 시작</div>
+          </>
         )}
       </div>
     </div>

@@ -16,7 +16,7 @@ import { Switch } from '@/app/components/ui/switch';
 import { Badge } from '@/app/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/app/components/ui/tabs';
 import { ScrollArea } from '@/app/components/ui/scroll-area';
-import { Settings, Plus, GripVertical, Building2, Trash2, RotateCcw } from 'lucide-react';
+import { Settings, Plus, GripVertical, Building2, Trash2, RotateCcw, ChevronDown } from 'lucide-react';
 import {
   DndContext,
   closestCenter,
@@ -138,9 +138,10 @@ function SortableFieldItem({ field, index, onToggleRequired, onRemove }: Sortabl
 interface ChartSettingsModalProps {
   settings: ChartSettings;
   onSettingsChange: (settings: ChartSettings) => void;
+  departmentName?: string;
 }
 
-export function ChartSettingsModal({ settings, onSettingsChange }: ChartSettingsModalProps) {
+export function ChartSettingsModal({ settings, onSettingsChange, departmentName }: ChartSettingsModalProps) {
   const [open, setOpen] = useState(false);
   const [localSettings, setLocalSettings] = useState<ChartSettings>(settings);
   const [newFieldName, setNewFieldName] = useState('');
@@ -247,10 +248,12 @@ export function ChartSettingsModal({ settings, onSettingsChange }: ChartSettings
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant="outline" size="sm" className="gap-2">
-          <Settings className="w-4 h-4" />
-          차트 설정
-        </Button>
+        <button className="flex items-center gap-1.5 pl-3 pr-2 py-1.5 rounded-full bg-slate-100 hover:bg-slate-200 transition-all group border border-transparent hover:border-slate-300">
+          {departmentName && (
+            <span className="text-xs font-medium text-slate-600">{departmentName}</span>
+          )}
+          <ChevronDown className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-600 transition-colors" />
+        </button>
       </DialogTrigger>
       <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col">
         <DialogHeader>

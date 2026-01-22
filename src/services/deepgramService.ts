@@ -30,181 +30,45 @@ function filterHallucinations(text: string): string {
   return filtered.replace(/\s+/g, ' ').trim();
 }
 
-// GPT-4o 실시간 화자 분류 (정확도 최우선)
-async function classifySpeakersRealtime(
-  utterances: string[],
-  previousContext: string = ''
-): Promise<Array<'doctor' | 'patient'>> {
-  if (!OPENAI_API_KEY || utterances.length === 0) {
-    // API 키 없으면 휴리스틱 사용
-    return utterances.map((text, i) => estimateSpeakerHeuristic(text, i === 0 ? null : (i % 2 === 0 ? 'patient' : 'doctor')));
-  }
-
-  const prompt = `한국어 의료 상담 대화의 화자를 분류하세요.
-
-## 화자 구분 기준
-**의사(D)**:
-- 질문: "~세요?", "~나요?", "~죠?", "어떻게 오셨어요", "언제부터"
-- 선택지: "아니면~", "또는~", "~거나~"
-- 인사: "안녕하세요 담당 의사", "저는 ~과입니다"
-- 지시: "~해보세요", "~하시면 됩니다"
-
-**환자(P)**:
-- 증상: "~아파요", "~떨려요", "~이/가 ~해요"
-- 응답: "네", "예", "아니요", "그렇습니다", "맞습니다"
-- 기간: "~전부터", "~개월째", "~일 전부터"
-- 정보: "이름은~", "~번입니다", "~살입니다"
-
-${previousContext ? `## 이전 대화 (참고용)\n${previousContext}\n` : ''}
-## 분류할 발화
-${utterances.map((u, i) => `${i + 1}. "${u}"`).join('\n')}
-
-## 응답 형식
-${utterances.length}개의 화자를 쉼표로 구분: D 또는 P만 사용
-예: ${utterances.length === 1 ? 'D' : utterances.map(() => 'D').join(',')}`;
-
-  try {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${OPENAI_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o',
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0,
-        max_tokens: 50,
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`GPT API 오류: ${response.status}`);
-    }
-
-    const data = await response.json();
-    const content = data.choices[0]?.message?.content?.trim() || '';
-    
-    console.log(`🤖 GPT 응답: "${content}"`);
-    
-    // "D,P,D" 또는 "D, P, D" 또는 "D" 형식 파싱
-    const speakers = content.split(/[,\s]+/)
-      .map((s: string) => s.trim().toUpperCase())
-      .filter((s: string) => s === 'D' || s === 'P')
-      .map((s: string) => s === 'D' ? 'doctor' : 'patient') as Array<'doctor' | 'patient'>;
-
-    // 결과 개수가 맞지 않으면 휴리스틱으로 대체
-    if (speakers.length !== utterances.length) {
-      console.warn(`⚠️ GPT 결과 개수 불일치 (기대: ${utterances.length}, 실제: ${speakers.length}), 휴리스틱 사용`);
-      return utterances.map((text, i) => estimateSpeakerHeuristic(text, i === 0 ? null : (i % 2 === 0 ? 'patient' : 'doctor')));
-    }
-
-    return speakers;
-  } catch (error) {
-    console.error('❌ GPT-mini 화자 분류 오류:', error);
-    return utterances.map((text, i) => estimateSpeakerHeuristic(text, i === 0 ? null : (i % 2 === 0 ? 'patient' : 'doctor')));
-  }
-}
-
-// 휴리스틱 화자 추정 (GPT 실패 시 백업)
-function estimateSpeakerHeuristic(text: string, previousSpeaker: 'doctor' | 'patient' | null): 'doctor' | 'patient' {
-  // 의사 패턴 (질문, 지시, 인사)
-  const doctorPatterns = [
-    /세요\??$/,           // ~세요?
-    /나요\??$/,           // ~나요?
-    /시죠\??$/,           // ~시죠?
-    /ㄹ까요\??$/,         // ~ㄹ까요?
-    /있으세요/,           // 있으세요
-    /어떻게.*오셨/,       // 어떻게 오셨
-    /언제부터/,           // 언제부터
-    /어디.*아프/,         // 어디 아프
-    /아니면/,             // 아니면 (선택지)
-    /또는/,               // 또는 (선택지)
-    /안녕하세요.*의사/,   // 안녕하세요 의사
-    /담당.*의사/,         // 담당 의사
-    /저는.*과/,           // 저는 ~과입니다
-    /해보세요/,           // ~해보세요
-    /하시면/,             // ~하시면
-    /드릴게요/,           // ~드릴게요
-    /검사/,               // 검사
-  ];
-
-  // 환자 패턴 (증상, 응답, 정보)
-  const patientPatterns = [
-    /아파요/,             // 아파요
-    /아픕니다/,           // 아픕니다
-    /떨려요/,             // 떨려요
-    /떨립니다/,           // 떨립니다
-    /것 같아요/,          // ~것 같아요
-    /것 같습니다/,        // ~것 같습니다
-    /거 같아요/,          // ~거 같아요
-    /전부터/,             // ~전부터
-    /개월.*전/,           // 몇 개월 전
-    /^네[,.\s]?$/,        // 네
-    /^예[,.\s]?$/,        // 예
-    /^아니요/,            // 아니요
-    /맞습니다/,           // 맞습니다
-    /그렇습니다/,         // 그렇습니다
-    /번입니다/,           // ~번입니다 (등록번호)
-    /이름은/,             // 이름은
-    /살입니다/,           // ~살입니다
-    /왔습니다/,           // ~왔습니다
-    /있습니다$/,          // ~있습니다
-    /없습니다$/,          // ~없습니다
-  ];
-
-  let doctorScore = 0, patientScore = 0;
-  
-  for (const p of doctorPatterns) if (p.test(text)) doctorScore += 2;
-  for (const p of patientPatterns) if (p.test(text)) patientScore += 2;
-  
-  // 물음표로 끝나면 의사일 확률 높음
-  if (text.endsWith('?') || text.endsWith('요?')) doctorScore += 1;
-  
-  // 짧은 응답("네", "예", "아니요")은 환자일 확률 높음
-  if (text.length < 5) patientScore += 1;
-
-  if (doctorScore > patientScore) return 'doctor';
-  if (patientScore > doctorScore) return 'patient';
-  
-  // 동점이면 이전 화자 반대
-  if (previousSpeaker === 'doctor') return 'patient';
-  if (previousSpeaker === 'patient') return 'doctor';
-  
-  return 'doctor'; // 기본값
-}
-
-// GPT-4o 발화별 화자 분류 (번호 기반)
+// GPT-4o 전체 발화 재구성 + 화자 분류
 async function classifyUtterancesWithGPT(utterances: string[]): Promise<SpeakerSegment[]> {
   if (!OPENAI_API_KEY || utterances.length === 0) {
     console.warn('⚠️ OpenAI API 키 없음 또는 발화 없음');
     return utterances.map(text => ({ speaker: 'pending', text }));
   }
 
-  console.log('🤖 GPT-4o 발화별 화자 분류 시작...');
+  console.log(`🤖 GPT-4o 전체 ${utterances.length}개 발화 분류 시작...`);
 
   // 발화를 번호로 구분해서 전송
   const numberedUtterances = utterances.map((u, i) => `[${i + 1}] ${u}`).join('\n');
 
-  const prompt = `의료 상담 대화입니다. 각 발화의 화자(D=의사, P=환자)를 분류하세요.
+  const prompt = `의료 상담 대화입니다. 전체 발화를 재구성하고 화자(D=의사, P=환자)를 분류하세요.
 
 ## 화자 구분 기준
-- 의사(D): 질문("~세요?"), 설명, 지시, 안내, 배웅 인사("불편하시면 오세요", "건강하세요" 등)
-- 환자(P): 증상 설명, 대답("네", "아니요"), 감사("감사합니다", "알겠습니다"), 개인정보
+- 의사(D): 질문("~세요?"), 설명, 지시, 안내, 진료 관련 언급
+- 환자(P): 증상 설명, 대답("네", "아니요"), 감사 인사, 개인정보
 
-## 중요 규칙
-- 한 발화 안에 두 화자의 말이 섞여 있으면 **분리**하세요.
-- 예: "[1] 감사합니다 원장님 불편하시면 다시 오세요" 
-  → {"id": "1a", "speaker": "P", "text": "감사합니다 원장님"}, {"id": "1b", "speaker": "D", "text": "불편하시면 다시 오세요"}
+## 재구성 규칙 (중요!)
+1. **끊긴 문장 합치기**: 연속된 발화가 하나의 문장인데 중간에 끊긴 경우 합쳐서 출력
+   - 예: "[1] 안녕하세요 김서현님 오늘 어떤" + "[2] 불편함으로 오셨나요?"
+   → {"speaker": "D", "text": "안녕하세요 김서현님 오늘 어떤 불편함으로 오셨나요?"}
+
+2. **섞인 화자 분리**: 한 발화 안에 두 화자의 말이 섞여 있으면 분리
+   - 예: "[1] 감사합니다 원장님 불편하시면 다시 오세요"
+   → {"speaker": "P", "text": "감사합니다 원장님"}, {"speaker": "D", "text": "불편하시면 다시 오세요"}
+
+3. **같은 화자 연속 발화**: 같은 화자의 연속된 짧은 발화는 합쳐도 됨
+   - 예: "[1] 네 맞아요" + "[2] 평소에는 괜찮은데"
+   → {"speaker": "P", "text": "네 맞아요, 평소에는 괜찮은데"}
 
 ## 발화 목록
 ${numberedUtterances}
 
 ## 출력 형식 (JSON 배열만)
-- 분리 불필요: {"id": 1, "speaker": "D"}
-- 분리 필요: {"id": "1a", "speaker": "P", "text": "..."}, {"id": "1b", "speaker": "D", "text": "..."}
+[{"speaker": "D", "text": "재구성된 완전한 문장"}, ...]
 
-모든 발화를 빠짐없이 출력하세요.`;
+- 모든 내용을 빠짐없이 포함하세요
+- 자연스러운 대화 흐름으로 재구성하세요`;
 
   try {
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -233,21 +97,15 @@ ${numberedUtterances}
       throw new Error('GPT 응답에서 JSON 배열을 찾을 수 없음');
     }
 
-    const parsed: Array<{ id: number | string; speaker: string; text?: string }> = JSON.parse(jsonMatch[0]);
+    const parsed: Array<{ speaker: string; text: string }> = JSON.parse(jsonMatch[0]);
     
-    // id 기반으로 원래 발화 텍스트와 매칭
-    const result: SpeakerSegment[] = parsed.map((item) => {
-      const speaker = item.speaker === 'D' ? 'doctor' : 'patient';
-      
-      // 분리된 발화 (id가 "1a", "1b" 형태이고 text가 있음)
-      if (item.text) {
-        return { speaker, text: item.text };
-      }
-      
-      // 분리 안된 발화 (id가 숫자)
-      const idx = typeof item.id === 'number' ? item.id - 1 : parseInt(String(item.id)) - 1;
-      return { speaker, text: utterances[idx] || '' };
-    }).filter(seg => seg.text); // 빈 텍스트 제거
+    // 재구성된 발화 처리
+    const result: SpeakerSegment[] = parsed
+      .filter(item => item.text && item.text.trim())
+      .map((item) => ({
+        speaker: item.speaker === 'D' ? 'doctor' : 'patient',
+        text: item.text.trim()
+      }));
 
     console.log(`✅ GPT-4o 화자 분류 완료: 👨‍⚕️ 의사 ${result.filter(s => s.speaker === 'doctor').length}개, 🙋 환자 ${result.filter(s => s.speaker === 'patient').length}개`);
 
@@ -366,28 +224,37 @@ export class DeepgramRealtimeTranscriber {
   private async handleNewUtterance(text: string) {
     this.utterances.push(text);
     
-    // 새로 추가된 발화만 pending으로 표시
-    const pendingSegment: SpeakerSegment = {
-      speaker: 'pending',
-      text: text,
-    };
+    // 미분류 발화 개수 계산
+    const unclassifiedCount = this.utterances.length - this.classifiedUtteranceCount;
     
-    // 기존 분류된 세그먼트 + 새 발화만 pending으로
-    this.onSegmentsUpdate([...this.classifiedSegments, pendingSegment]);
+    // 미분류 발화들을 pending으로 표시
+    const pendingSegments: SpeakerSegment[] = this.utterances
+      .slice(this.classifiedUtteranceCount)
+      .map(t => ({ speaker: 'pending' as const, text: t }));
     
-    console.log(`📝 새 발화 #${this.utterances.length}: ${text.substring(0, 40)}...`);
+    // 기존 분류된 세그먼트 + 미분류 발화들을 pending으로
+    this.onSegmentsUpdate([...this.classifiedSegments, ...pendingSegments]);
+    
+    console.log(`📝 새 발화 #${this.utterances.length}: ${text.substring(0, 40)}... (미분류: ${unclassifiedCount}개)`);
 
-    // 디바운스: 2초 동안 새 발화 없으면 화자분류 실행
+    // 타이머 취소
     if (this.classifyTimer) {
       clearTimeout(this.classifyTimer);
     }
     
-    this.classifyTimer = setTimeout(() => {
+    // 미분류 발화가 3개 이상이면 즉시 분류 실행
+    if (unclassifiedCount >= 3) {
+      console.log(`⚡ 미분류 ${unclassifiedCount}개 → 즉시 화자분류 실행`);
       this.classifyRecentUtterances();
-    }, 2000);
+    } else {
+      // 아니면 1.5초 디바운스
+      this.classifyTimer = setTimeout(() => {
+        this.classifyRecentUtterances();
+      }, 1500);
+    }
   }
 
-  // 최근 N개 발화 기반 화자분류 (GPT-4o)
+  // 전체 발화 재분류 (GPT-4o) - 이전 오류도 수정 가능
   private async classifyRecentUtterances() {
     const unclassifiedCount = this.utterances.length - this.classifiedUtteranceCount;
     
@@ -396,41 +263,49 @@ export class DeepgramRealtimeTranscriber {
       return;
     }
     
-    // 분류 중이면 스킵
+    // 분류 중이면 스킵 (나중에 다시 시도됨)
     if (this.isClassifying) {
+      console.log('⏸️ 분류 중이므로 대기 (분류 완료 후 재시도됨)');
       return;
     }
 
     this.isClassifying = true;
-
-    // 최근 WINDOW_SIZE개 발화만 분류
-    const startIdx = Math.max(0, this.utterances.length - this.WINDOW_SIZE);
-    const recentUtterances = this.utterances.slice(startIdx);
     
-    console.log(`🤖 최근 ${recentUtterances.length}개 발화 화자분류 시작`);
-    console.log(`📤 [GPT 입력]`, recentUtterances);
+    // 분류 시작 시점의 발화 개수 저장 (분류 중 새 발화 감지용)
+    const utteranceCountAtStart = this.utterances.length;
+
+    console.log(`🤖 전체 ${this.utterances.length}개 발화 재분류 시작 (미분류: ${unclassifiedCount}개)`);
+    console.log(`📤 [GPT 입력 - 전체 발화]`, this.utterances);
 
     try {
-      const newSegments = await classifyUtterancesWithGPT(recentUtterances);
+      // 전체 발화를 GPT에 보내서 전체 재분류
+      const allSegments = await classifyUtterancesWithGPT(this.utterances);
       
-      console.log(`📥 [GPT 출력] ${newSegments.length}개 세그먼트:`);
-      newSegments.forEach((seg, i) => {
+      console.log(`📥 [GPT 출력] ${allSegments.length}개 세그먼트:`);
+      allSegments.forEach((seg, i) => {
         console.log(`   ${i+1}. [${seg.speaker}] "${seg.text}"`);
       });
       
-      if (newSegments.length > 0) {
-        // startIdx 이전 세그먼트는 유지, 이후는 새로 분류된 것으로 교체
-        const keepSegments = this.classifiedSegments.slice(0, startIdx);
-        this.classifiedSegments = [...keepSegments, ...newSegments];
-        
-        this.classifiedUtteranceCount = this.utterances.length;
+      if (allSegments.length > 0) {
+        // 전체 세그먼트 교체 (이전 오류도 수정됨)
+        this.classifiedSegments = allSegments;
+        this.classifiedUtteranceCount = utteranceCountAtStart;
         this.onSegmentsUpdate([...this.classifiedSegments]);
-        console.log(`✅ 화자분류 완료: ${this.classifiedSegments.length}개 세그먼트`);
+        console.log(`✅ 전체 재분류 완료: ${this.classifiedSegments.length}개 세그먼트`);
       }
     } catch (error) {
       console.error('❌ 화자분류 오류:', error);
     } finally {
       this.isClassifying = false;
+      
+      // 분류 완료 후 새로 들어온 발화가 있으면 다시 시도
+      const newUtterancesDuringClassify = this.utterances.length - utteranceCountAtStart;
+      if (newUtterancesDuringClassify > 0) {
+        console.log(`🔄 분류 중 새 발화 ${newUtterancesDuringClassify}개 추가됨 → 1초 후 재분류`);
+        setTimeout(() => {
+          this.classifyRecentUtterances();
+        }, 1000);
+      }
     }
   }
 
@@ -525,6 +400,113 @@ export class DeepgramRealtimeTranscriber {
   }
 }
 
+// React Hook for Deepgram
+import { useState, useRef, useCallback } from 'react';
+
+interface UseDeepgramOptions {
+  onTranscript: (text: string, isFinal: boolean) => void;
+  onSegmentsUpdate: (segments: SpeakerSegment[]) => void;
+  onFullUpdate: (transcript: string, segments: SpeakerSegment[]) => void;
+}
+
+interface DisconnectResult {
+  transcript: string;
+  segments: SpeakerSegment[];
+}
+
+export function useDeepgram(options: UseDeepgramOptions) {
+  const [isConnecting, setIsConnecting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const transcriberRef = useRef<DeepgramRealtimeTranscriber | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const optionsRef = useRef(options);
+  
+  // Keep options ref updated
+  optionsRef.current = options;
+
+  const connect = useCallback(async (stream: MediaStream) => {
+    setIsConnecting(true);
+    setError(null);
+
+    try {
+      // Create transcriber
+      transcriberRef.current = new DeepgramRealtimeTranscriber(
+        (segment) => {
+          optionsRef.current.onTranscript(segment.text, true);
+        },
+        (segments) => {
+          const transcript = segments.map(s => s.text).join(' ');
+          optionsRef.current.onFullUpdate(transcript, segments);
+        }
+      );
+
+      // Set segments update callback
+      transcriberRef.current.setOnSegmentsUpdate((segments) => {
+        optionsRef.current.onSegmentsUpdate(segments);
+      });
+
+      // Connect to Deepgram
+      await transcriberRef.current.connect();
+
+      // Setup MediaRecorder to send audio chunks
+      const mediaRecorder = new MediaRecorder(stream, {
+        mimeType: 'audio/webm;codecs=opus'
+      });
+
+      mediaRecorder.ondataavailable = async (event) => {
+        if (event.data.size > 0 && transcriberRef.current) {
+          await transcriberRef.current.addChunk(event.data);
+        }
+      };
+
+      mediaRecorder.start(100); // Send chunks every 100ms
+      mediaRecorderRef.current = mediaRecorder;
+
+      setIsConnecting(false);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : '연결 실패';
+      setError(errorMessage);
+      setIsConnecting(false);
+      throw err;
+    }
+  }, []);
+
+  const disconnect = useCallback(async (): Promise<DisconnectResult> => {
+    // Stop MediaRecorder
+    if (mediaRecorderRef.current) {
+      try {
+        mediaRecorderRef.current.stop();
+      } catch (e) {
+        // Ignore stop errors
+      }
+      mediaRecorderRef.current = null;
+    }
+
+    // Flush and close transcriber
+    if (transcriberRef.current) {
+      try {
+        const segments = await transcriberRef.current.flush();
+        const transcript = transcriberRef.current.getFullText();
+        transcriberRef.current = null;
+        return { transcript, segments };
+      } catch (e) {
+        console.error('Disconnect error:', e);
+        transcriberRef.current = null;
+      }
+    }
+    
+    return { transcript: '', segments: [] };
+  }, []);
+
+  return {
+    connect,
+    disconnect,
+    isConnecting,
+    error
+  };
+}
+
 export default {
   DeepgramRealtimeTranscriber,
+  useDeepgram,
 };
