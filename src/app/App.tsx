@@ -172,6 +172,7 @@ function MainApp() {
   const [mobileTab, setMobileTab] = useState<'transcript' | 'chart'>('transcript');
   const [remoteMicOpen, setRemoteMicOpen] = useState(false);
   const [isRemoteConnected, setIsRemoteConnected] = useState(false);
+  const [remoteRecordingTime, setRemoteRecordingTime] = useState(0);
   
   // 사용자 정보 상태
   const [userAge, setUserAge] = useState('');
@@ -209,6 +210,39 @@ function MainApp() {
     const timer = setTimeout(() => setPageAnimation(''), 500);
     return () => clearTimeout(timer);
   }, []);
+
+  // 탭 전환 시 녹음 중 경고
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.hidden && (isRecording || isRemoteRecording)) {
+        toast.warning('녹음 중입니다!', {
+          description: '탭을 전환하면 실시간 업데이트가 지연될 수 있습니다.',
+          duration: 4000,
+        });
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [isRecording, isRemoteRecording]);
+
+  // 모바일 녹음 시간 추적
+  useEffect(() => {
+    if (!isRemoteRecording) {
+      return;
+    }
+    
+    setRemoteRecordingTime(0);
+    const interval = setInterval(() => {
+      setRemoteRecordingTime(prev => prev + 1);
+    }, 1000);
+    
+    return () => {
+      clearInterval(interval);
+    };
+  }, [isRemoteRecording]);
 
   const handleTranscriptUpdate = useCallback((text: string) => {
     setFinalTranscript(text);
@@ -466,6 +500,9 @@ function MainApp() {
                   onRecordingComplete={handleRecordingComplete}
                   onRecordingProgress={handleRecordingProgress}
                   department={chartSettings.selectedDepartment}
+                  isRemoteRecording={isRemoteRecording}
+                  remoteRecordingTime={remoteRecordingTime}
+                  isExternalGenerating={isGeneratingChart}
                 />
                 <Button
                   variant="outline"

@@ -42,33 +42,33 @@ export interface ChartSettings {
 export const DEFAULT_FIELDS: ChartField[] = [
   // S - Korean
   { id: 'chiefComplaint', name: '주호소', nameEn: 'CC', type: 'textarea', required: true, description: '한국어. 환자 표현 그대로 인용.' },
-  { id: 'historyOfPresentIllness', name: '현병력(PI)', nameEn: 'PI', type: 'textarea', required: true, description: '한국어 서술형. 3-6문장. 없는 내용 금지.' },
-  { id: 'pertinentROS', name: 'ROS(관련 +/-)', nameEn: 'ROS (pertinent +/-)', type: 'textarea', required: false, description: '영어 약어. N/V(+), fever(-), CP(-) 형식.' },
+  { id: 'historyOfPresentIllness', name: '현병력', nameEn: 'PI', type: 'textarea', required: true, description: '한국어 서술형. 3-6문장. 없는 내용 금지.' },
+  { id: 'pertinentROS', name: '관련 증상', nameEn: 'ROS (+/-)', type: 'textarea', required: false, description: '영어 약어. N/V(+), fever(-), CP(-) 형식.' },
 
   // Background - English/abbreviations
-  { id: 'pastMedicalHistory', name: '과거력(PMH)', nameEn: 'PMH', type: 'tags', required: false, description: '영어. HTN, DM, s/p appendectomy.' },
-  { id: 'pastSurgicalHistory', name: '수술력(PSH)', nameEn: 'PSH', type: 'tags', required: false, description: '영어. 언급된 것만.' },
+  { id: 'pastMedicalHistory', name: '과거력', nameEn: 'PMH', type: 'tags', required: false, description: '영어. HTN, DM, s/p appendectomy.' },
+  { id: 'pastSurgicalHistory', name: '수술력', nameEn: 'PSH', type: 'tags', required: false, description: '영어. 언급된 것만.' },
   { id: 'medications', name: '복용약', nameEn: 'Meds', type: 'tags', required: false, description: '영어. 용량 포함.' },
   { id: 'allergies', name: '알레르기', nameEn: 'Allergies', type: 'tags', required: false, description: '영어. NKDA if none.' },
   { id: 'socialHistory', name: '사회력', nameEn: 'SHx', type: 'textarea', required: false, description: '영어. Smoking/EtOH/occupation.' },
   { id: 'familyHistory', name: '가족력', nameEn: 'FHx', type: 'textarea', required: false, description: '영어. 언급된 것만.' },
 
   // O - English
-  { id: 'vitalSigns', name: '활력징후(VS)', nameEn: 'VS', type: 'text', required: false, description: '영어. BP/HR/BT/RR/SpO2.' },
-  { id: 'physicalExam', name: '진찰(PE)', nameEn: 'PE', type: 'textarea', required: false, description: '영어. 언급된 소견만.' },
-  { id: 'labResults', name: '검사(Labs)', nameEn: 'Labs', type: 'textarea', required: false, description: '영어. 언급된 결과만.' },
-  { id: 'imaging', name: '영상(Imaging)', nameEn: 'Imaging', type: 'textarea', required: false, description: '영어. 언급된 것만.' },
+  { id: 'vitalSigns', name: '활력징후', nameEn: 'VS', type: 'text', required: false, description: '영어. BP/HR/BT/RR/SpO2.' },
+  { id: 'physicalExam', name: '진찰소견', nameEn: 'PE', type: 'textarea', required: false, description: '영어. 언급된 소견만.' },
+  { id: 'labResults', name: '검사결과', nameEn: 'Labs', type: 'textarea', required: false, description: '영어. 언급된 결과만.' },
+  { id: 'imaging', name: '영상검사', nameEn: 'Imaging', type: 'textarea', required: false, description: '영어. 언급된 것만.' },
 
   // A - English (Korean connectors OK)
-  { id: 'assessment', name: '평가(A)', nameEn: 'A', type: 'textarea', required: true, description: '영어 중심. [Summary] [Provider Impression] [AI DDx] 3단 구조.' },
+  { id: 'assessment', name: '평가', nameEn: 'Assessment', type: 'textarea', required: true, description: '영어 중심. [Summary] [Provider Impression] [AI DDx] 3단 구조.' },
 
   // Dx - English only
-  { id: 'diagnosisConfirmed', name: '진단(의사 언급)', nameEn: 'Dx (stated)', type: 'tags', required: false, description: '영어. 의사가 말한 Dx만.' },
-  { id: 'diagnosisInferred', name: '진단(AI 요약)', nameEn: 'Dx (AI)', type: 'textarea', required: false, description: 'ENGLISH. ONE LINE ONLY. Problem-oriented impression using "r/o X vs Y". Do NOT list.' },
+  { id: 'diagnosisConfirmed', name: '확정 진단', nameEn: 'Dx (stated)', type: 'tags', required: false, description: '영어. 의사가 말한 Dx만.' },
+  { id: 'diagnosisInferred', name: 'AI 추론', nameEn: 'Dx (AI)', type: 'textarea', required: false, description: 'ENGLISH. ONE LINE ONLY. Problem-oriented impression using "r/o X vs Y". Do NOT list.' },
 
   // P - English orders
-  { id: 'plan', name: '계획(P)', nameEn: 'P', type: 'textarea', required: true, description: '영어. 오더만. [Orders] [AI Suggestions optional]. 설명문 금지.' },
-  { id: 'followUp', name: '추적(F/U)', nameEn: 'F/U', type: 'textarea', required: false, description: '영어. 언급 없으면 비움. 일반적 문구 금지.' },
+  { id: 'plan', name: '계획', nameEn: 'Plan', type: 'textarea', required: true, description: '영어. 오더만. [Orders] [AI Suggestions optional]. 설명문 금지.' },
+  { id: 'followUp', name: '추적관찰', nameEn: 'F/U', type: 'textarea', required: false, description: '영어. 언급 없으면 비움. 일반적 문구 금지.' },
 
   { id: 'notes', name: '기타', nameEn: 'Notes', type: 'textarea', required: false, description: '메모.' },
 ];
@@ -82,13 +82,20 @@ CORE PHILOSOPHY:
 - Documentation is selection → interpretation → editing into clinically meaningful information.
 - Keep it concise and realistic for Korean EMR.
 - Do NOT invent facts. If not mentioned, leave blank.
+- "안 쓰는 용기" - It is BETTER to leave fields EMPTY than to guess.
+
+=== HALLUCINATION GUARDRAIL (CRITICAL) ===
+- NEVER add or reinterpret diseases, medications, or history.
+- If information is unclear or garbled, write "Unclear" or leave BLANK. Do NOT guess.
+- PI must be written ONLY from clearly stated conversation. If unclear, OMIT.
+- Do NOT "complete" or "fix" partial sentences - leave them out entirely.
 
 === LANGUAGE BALANCE (STRICT - MOST IMPORTANT) ===
 | Section           | Language                              |
 |-------------------|---------------------------------------|
 | CC                | Korean (환자 표현 그대로)              |
 | PI                | Korean (서술형)                       |
-| Pertinent +/-     | English abbreviations (N/V(+), CP(-)) |
+| ROS (+/-)         | English abbreviations (N/V(+), CP(-)) |
 | PMH / Meds / SHx  | English / abbreviations              |
 | PE                | English                              |
 | Assessment (A)    | ENGLISH (Korean connectors only)     |
@@ -108,12 +115,23 @@ CORE PHILOSOPHY:
 - Include pertinent positives/negatives only if asked/answered.
 - If missing, do NOT fill.
 
-=== DDx RULES (STRICT) ===
+=== DDx RULES (STRICT - FORMAT CRITICAL) ===
 - Limit DDx to top 1-2 most likely causes (max 3).
-- Use "r/o" or "DDx" style ONLY.
 - Avoid vague terms (e.g., "cardiac problem" ❌, "brain issue" ❌).
-- Each DDx MUST include a brief rationale (1 line).
-- Format: "r/o [diagnosis] - [brief reason]" or "DDx: [diagnosis] (reason)"
+
+AI DDx FORMAT (MUST FOLLOW EXACTLY):
+- Each DDx item must be ONE SINGLE bullet line.
+- Use EXACTLY this format:
+  "- r/o <diagnosis> (reason: <brief reason>)"
+- Do NOT create separate bullets for reasons.
+- Do NOT split diagnosis and reason into multiple lines.
+
+GOOD:
+- r/o vasovagal syncope (reason: sudden LOC with prodrome, quick recovery)
+
+BAD:
+- r/o syncope
+- sudden loss of consciousness with no prior history
 
 === Dx (AI) RULES (STRICT) ===
 - Do NOT repeat DDx as a comma-separated list.
@@ -131,37 +149,43 @@ CORE PHILOSOPHY:
 (1-2 sentences in English, Korean connectors OK)
 
 [Provider Impression]
-(What the doctor seemed to think - can infer from ordered tests)
-(If doctor said nothing, infer cautiously from orders)
+(ONLY if doctor ordered tests/treatments - otherwise LEAVE EMPTY)
 
 [AI DDx/r/o]
-- r/o [diagnosis] - [reason]
+- r/o <diagnosis> (reason: <brief reason>)
 
-=== PROVIDER IMPRESSION INFERENCE ===
-- You may infer provider impression based on ordered tests.
-- This must be cautious and directly tied to the orders.
-- Do NOT invent diagnoses.
-- Example: If doctor ordered brain CT → "Provider considering neurologic cause"
+=== PROVIDER IMPRESSION RULE (STRICT) ===
+- ONLY write Provider Impression if the doctor EXPLICITLY ordered tests or treatments.
+- If NO orders are mentioned in conversation, leave Provider Impression EMPTY.
+- Do NOT infer impression from symptoms alone.
+- Do NOT invent diagnoses or clinical thinking.
+
+GOOD (doctor ordered test):
+"Provider ordered brain CT → considering neurologic cause"
+
+BAD (no orders mentioned):
+"Provider considering neurologic causes given symptom pattern" ❌
 
 === PLAN RULES (STRICT) ===
-- Order-oriented ONLY. No explanatory sentences.
-- Prioritize provider orders.
-- AI suggestions are OPTIONAL:
+- Write ONLY explicit orders that the doctor actually stated.
+- If NO orders were mentioned, leave Plan EMPTY.
+- No explanatory sentences. Orders only.
+- AI suggestions are OPTIONAL and should be RARE:
   - Omit if not strongly justified
   - Max 1-2 lines if included
-  - Must have clear rationale
 
 [Orders]
-- [test/medication]
+- [test/medication] (only if stated)
 
-[AI Suggestions] (optional)
+[AI Suggestions] (optional, usually omit)
 - [suggestion] - if [condition]
 
-=== FOLLOW-UP RULE ===
+=== FOLLOW-UP RULE (STRICT) ===
 - Do NOT write generic follow-up statements.
-- Leave F/U empty if not explicitly discussed.
-- Bad: "검사 결과에 따라 f/u 결정" ❌
-- Good: "f/u 1wk" or leave empty
+- Leave F/U EMPTY if not explicitly discussed.
+- NEVER write: "검사 결과에 따라 f/u 결정" ❌
+- NEVER write: "경과 관찰 후 재평가" ❌
+- ONLY write specific F/U if stated: "f/u 1wk" or leave EMPTY
 
 === FORMATTING RULES ===
 - If you use bullets (-), ALWAYS insert a blank line between items.
@@ -211,18 +235,18 @@ INTERNAL MEDICINE EMPHASIS:
     name: '피부과',
     fields: [
       { id: 'chiefComplaint', name: '주호소', nameEn: 'CC', type: 'textarea', required: true, description: '한국어. 환자 표현 그대로 인용.' },
-      { id: 'historyOfPresentIllness', name: '현병력(PI)', nameEn: 'PI', type: 'textarea', required: true, description: '한국어 서술형. 3-6문장. 발생시기/경과/악화요인/동반증상.' },
+      { id: 'historyOfPresentIllness', name: '현병력', nameEn: 'PI', type: 'textarea', required: true, description: '한국어 서술형. 3-6문장. 발생시기/경과/악화요인/동반증상.' },
       { id: 'lesionDescription', name: '병변 기술', nameEn: 'Lesion', type: 'textarea', required: false, description: 'ENGLISH. Morphology/distribution mentioned only. No guessing.' },
-      { id: 'pertinentROS', name: 'ROS(관련 +/-)', nameEn: 'ROS (pertinent +/-)', type: 'textarea', required: false, description: 'ENGLISH. pruritus(+/-), pain(+/-), oozing(+/-), fever(-) etc.' },
-      { id: 'pastMedicalHistory', name: '과거력(PMH)', nameEn: 'PMH', type: 'tags', required: false, description: 'ENGLISH. Atopic dermatitis, eczema etc. if mentioned.' },
+      { id: 'pertinentROS', name: '관련 증상', nameEn: 'ROS (+/-)', type: 'textarea', required: false, description: 'ENGLISH. pruritus(+/-), pain(+/-), oozing(+/-), fever(-) etc.' },
+      { id: 'pastMedicalHistory', name: '과거력', nameEn: 'PMH', type: 'tags', required: false, description: 'ENGLISH. Atopic dermatitis, eczema etc. if mentioned.' },
       { id: 'medications', name: '복용약', nameEn: 'Meds', type: 'tags', required: false, description: 'ENGLISH. Mentioned meds only.' },
       { id: 'allergies', name: '알레르기', nameEn: 'Allergies', type: 'tags', required: false, description: 'ENGLISH. NKDA if none.' },
-      { id: 'physicalExam', name: '진찰(PE)', nameEn: 'PE', type: 'textarea', required: false, description: 'ENGLISH. Mentioned skin findings only.' },
-      { id: 'assessment', name: '평가(A)', nameEn: 'A', type: 'textarea', required: true, description: 'ENGLISH 중심. [Summary] [Provider Impression] [AI DDx/r/o]. Korean connectors only.' },
-      { id: 'diagnosisConfirmed', name: '진단(의사 언급)', nameEn: 'Dx (stated)', type: 'tags', required: false, description: 'ENGLISH. Provider-stated Dx only.' },
-      { id: 'diagnosisInferred', name: '진단(AI 요약)', nameEn: 'Dx (AI)', type: 'textarea', required: false, description: 'ENGLISH. ONE LINE ONLY. "r/o X vs Y" impression. Do NOT list.' },
-      { id: 'plan', name: '계획(P)', nameEn: 'P', type: 'textarea', required: true, description: 'ENGLISH. Orders only. [Orders] + optional [AI Suggestions]. No explanatory sentences.' },
-      { id: 'followUp', name: '추적(F/U)', nameEn: 'F/U', type: 'textarea', required: false, description: 'ENGLISH. If not discussed, leave empty.' },
+      { id: 'physicalExam', name: '진찰소견', nameEn: 'PE', type: 'textarea', required: false, description: 'ENGLISH. Mentioned skin findings only.' },
+      { id: 'assessment', name: '평가', nameEn: 'Assessment', type: 'textarea', required: true, description: 'ENGLISH 중심. [Summary] [Provider Impression] [AI DDx/r/o]. Korean connectors only.' },
+      { id: 'diagnosisConfirmed', name: '확정 진단', nameEn: 'Dx (stated)', type: 'tags', required: false, description: 'ENGLISH. Provider-stated Dx only.' },
+      { id: 'diagnosisInferred', name: 'AI 추론', nameEn: 'Dx (AI)', type: 'textarea', required: false, description: 'ENGLISH. ONE LINE ONLY. "r/o X vs Y" impression. Do NOT list.' },
+      { id: 'plan', name: '계획', nameEn: 'Plan', type: 'textarea', required: true, description: 'ENGLISH. Orders only. [Orders] + optional [AI Suggestions]. No explanatory sentences.' },
+      { id: 'followUp', name: '추적관찰', nameEn: 'F/U', type: 'textarea', required: false, description: 'ENGLISH. If not discussed, leave empty.' },
       { id: 'notes', name: '기타', nameEn: 'Notes', type: 'textarea', required: false, description: 'Notes.' },
     ],
     promptContext: `
@@ -376,7 +400,7 @@ export async function generateChart(
   const jsonSchema: Record<string, any> = {};
   allFields.forEach(field => {
     const isArray = field.type === 'tags' || field.type === 'list';
-    jsonSchema[field.id] = {
+    const baseSchema = {
       value: isArray ? [] : '',
       isConfirmed: false,
       source: 'stated',
@@ -384,6 +408,25 @@ export async function generateChart(
       rationale: '',
       evidence: []
     };
+    
+    // assessment 필드에는 ddxList 추가
+    if (field.id === 'assessment') {
+      jsonSchema[field.id] = {
+        ...baseSchema,
+        ddxList: [
+          {
+            id: "ddx_1",
+            diagnosis: "Diagnosis name in English",
+            reason: "Brief reason for this DDx",
+            confidence: "high|medium|low",
+            isConfirmed: false,
+            isRemoved: false
+          }
+        ]
+      };
+    } else {
+      jsonSchema[field.id] = baseSchema;
+    }
   });
 
   const fieldDescriptions = allFields.map(f =>
@@ -408,8 +451,9 @@ ${preset.promptContext || ''}
 - Do NOT translate diagnoses into Korean.
 
 === HARD DDx/Dx RULES ===
-- DDx: Max 1-2 items (at most 3). Use "r/o [diagnosis] - [reason]" format.
-- Dx (AI): ONE problem-oriented line. Use "r/o X vs Y" format.
+- DDx: Max 1-2 items (at most 3). Each DDx goes into assessment.ddxList array.
+- Each ddxList item must have: id (ddx_1, ddx_2...), diagnosis (English), reason (brief), confidence (high/medium/low), isConfirmed: false, isRemoved: false.
+- Dx (AI): ONE problem-oriented line in diagnosisInferred. Use "r/o X vs Y" format.
 - Do NOT list diagnoses in Korean.
 - Avoid vague terms (e.g., "cardiac problem", "brain issue").
 
@@ -469,7 +513,7 @@ LANGUAGE:
 - Assessment/DDx/Dx/Plan: 영어 (진단명 한국어 번역 금지)
 
 FORMAT:
-- DDx: Assessment 안에만. "r/o [diagnosis] - [reason]" (최대 2-3개)
+- DDx: assessment.ddxList 배열로 반환. 각 항목은 {id, diagnosis, reason, confidence, isConfirmed: false, isRemoved: false}
 - Dx (AI): diagnosisInferred에 한 줄 요약만. "r/o X vs Y". 리스트 금지.
 - Plan: 오더만 (설명문 금지)
 - Follow-up: 언급 없으면 비움 (일반적 문구 금지)
@@ -534,12 +578,26 @@ ${conversation}`
             confidence?: 'low' | 'medium' | 'high';
             rationale?: string;
             evidence?: unknown;
+            ddxList?: unknown[];
           };
 
           const source: 'stated' | 'inferred' = fv.source === 'inferred' ? 'inferred' : 'stated';
           const evidence = normalizeEvidence(fv.evidence);
           const rationale = typeof fv.rationale === 'string' ? cleanStringValue(fv.rationale) : '';
           const confidence = normalizeConfidence(fv.confidence);
+
+          // DDx 리스트 파싱 (assessment 필드용)
+          let ddxList: any[] | undefined = undefined;
+          if (field.id === 'assessment' && fv.ddxList && Array.isArray(fv.ddxList)) {
+            ddxList = fv.ddxList.map((item: any, index: number) => ({
+              id: item.id || `ddx_${index + 1}`,
+              diagnosis: typeof item.diagnosis === 'string' ? item.diagnosis : '',
+              reason: typeof item.reason === 'string' ? item.reason : '',
+              confidence: normalizeConfidence(item.confidence),
+              isConfirmed: item.isConfirmed === true,
+              isRemoved: item.isRemoved === true,
+            })).filter(item => item.diagnosis.trim() !== '');
+          }
 
           if (isArrayField) {
             const arr = normalizeArrayValue(fv.value);
@@ -551,6 +609,7 @@ ${conversation}`
               confidence,
               rationale,
               evidence,
+              ...(ddxList && { ddxList }),
             };
           } else {
             const str = typeof fv.value === 'string' ? cleanStringValue(fv.value) : '';
@@ -562,6 +621,7 @@ ${conversation}`
               confidence,
               rationale,
               evidence,
+              ...(ddxList && { ddxList }),
             };
           }
         } else {

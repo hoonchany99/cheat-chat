@@ -17,6 +17,16 @@ import {
 } from 'lucide-react';
 import { ChartField, DEPARTMENT_PRESETS } from '@/services/chartService';
 
+// DDx 개별 항목 인터페이스
+export interface DDxItem {
+  id: string;
+  diagnosis: string;
+  reason: string;
+  confidence: 'low' | 'medium' | 'high';
+  isConfirmed: boolean;
+  isRemoved: boolean;
+}
+
 // Full ChartFieldValue interface matching chartService
 export interface ChartFieldValue {
   value: string | string[];
@@ -25,6 +35,7 @@ export interface ChartFieldValue {
   confidence?: 'low' | 'medium' | 'high';
   rationale?: string;
   evidence?: string[];
+  ddxList?: DDxItem[]; // DDx 리스트 (assessment 필드용)
 }
 
 export interface ChartData {
@@ -74,6 +85,73 @@ export function ChartingResult({
       }
     }));
     toast.success('확정되었습니다');
+  }, []);
+
+  // DDx 개별 항목 확정
+  const handleConfirmDDx = useCallback((ddxId: string) => {
+    setEditableData(prev => {
+      const assessment = prev.assessment;
+      if (!assessment?.ddxList) return prev;
+      
+      const updatedDdxList = assessment.ddxList.map(item =>
+        item.id === ddxId ? { ...item, isConfirmed: true } : item
+      );
+      
+      // 확정된 DDx를 diagnosisConfirmed에 추가
+      const confirmedDdx = updatedDdxList.find(item => item.id === ddxId);
+      const currentConfirmed = prev.diagnosisConfirmed?.value || [];
+      const confirmedArray = Array.isArray(currentConfirmed) ? currentConfirmed : [currentConfirmed].filter(Boolean);
+      
+      return {
+        ...prev,
+        assessment: {
+          ...assessment,
+          ddxList: updatedDdxList,
+        },
+        diagnosisConfirmed: {
+          value: confirmedDdx ? [...confirmedArray, confirmedDdx.diagnosis] : confirmedArray,
+          isConfirmed: true,
+          source: 'stated' as const,
+        }
+      };
+    });
+    toast.success('진단이 확정되었습니다');
+  }, []);
+
+  // DDx 개별 항목 제외
+  const handleRemoveDDx = useCallback((ddxId: string) => {
+    setEditableData(prev => {
+      const assessment = prev.assessment;
+      if (!assessment?.ddxList) return prev;
+      
+      const updatedDdxList = assessment.ddxList.map(item =>
+        item.id === ddxId ? { ...item, isRemoved: true } : item
+      );
+      
+      return {
+        ...prev,
+        assessment: {
+          ...assessment,
+          ddxList: updatedDdxList,
+        }
+      };
+    });
+    toast.info('DDx가 제외되었습니다');
+  }, []);
+
+  // DDx 펼침/접기
+  const [expandedDDx, setExpandedDDx] = useState<Set<string>>(new Set());
+  
+  const toggleDDxDetails = useCallback((ddxId: string) => {
+    setExpandedDDx(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(ddxId)) {
+        newSet.delete(ddxId);
+      } else {
+        newSet.add(ddxId);
+      }
+      return newSet;
+    });
   }, []);
 
   const toggleFieldDetails = useCallback((fieldId: string) => {
@@ -174,6 +252,105 @@ export function ChartingResult({
     toast.success('차트가 클립보드에 복사되었습니다');
     setTimeout(() => setIsCopied(false), 2000);
   }, [editableData, displayFields]);
+
+  // DDx 리스트 렌더링
+  const renderDDxList = (ddxList: DDxItem[]) => {
+    const visibleItems = ddxList.filter(item => !item.isRemoved);
+    
+    if (visibleItems.length === 0) {
+      return <p className="text-sm text-slate-400 italic">DDx가 없거나 모두 제외되었습니다.</p>;
+    }
+
+    return (
+      <div className="space-y-2 mt-3">
+        <div className="text-xs font-semibold text-slate-600 mb-2 flex items-center gap-1">
+          <Sparkles className="w-3 h-3" />
+          AI DDx/r/o (개별 확정 가능)
+        </div>
+        {visibleItems.map((item) => {
+          const isExpanded = expandedDDx.has(item.id);
+          
+          return (
+            <div
+              key={item.id}
+              className={`rounded-lg p-3 transition-all ${
+                item.isConfirmed
+                  ? 'bg-teal-50 border border-teal-200'
+                  : 'bg-amber-50 border border-amber-200'
+              }`}
+            >
+              {/* DDx Header */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  {item.isConfirmed ? (
+                    <CheckCircle2 className="w-4 h-4 text-teal-600" />
+                  ) : (
+                    <AlertCircle className="w-4 h-4 text-amber-600" />
+                  )}
+                  <span className={`text-sm font-medium ${
+                    item.isConfirmed ? 'text-teal-800' : 'text-amber-800'
+                  }`}>
+                    r/o {item.diagnosis}
+                  </span>
+                  {/* 신뢰도 뱃지 */}
+                  <span className={`text-xs px-1.5 py-0.5 rounded ${
+                    item.confidence === 'high' ? 'bg-green-100 text-green-700' :
+                    item.confidence === 'medium' ? 'bg-amber-100 text-amber-700' :
+                    'bg-red-100 text-red-600'
+                  }`}>
+                    {item.confidence === 'high' ? '높음' : item.confidence === 'medium' ? '중간' : '낮음'}
+                  </span>
+                </div>
+                
+                {/* 버튼들 */}
+                <div className="flex items-center gap-1">
+                  {!item.isConfirmed && (
+                    <>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleConfirmDDx(item.id)}
+                        className="h-6 text-xs px-2 border-teal-300 text-teal-700 hover:bg-teal-100 bg-white"
+                      >
+                        <Check className="w-3 h-3 mr-1" />
+                        확정
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleRemoveDDx(item.id)}
+                        className="h-6 text-xs px-2 border-slate-300 text-slate-500 hover:bg-slate-100 bg-white"
+                      >
+                        제외
+                      </Button>
+                    </>
+                  )}
+                </div>
+              </div>
+              
+              {/* 근거 토글 */}
+              {item.reason && (
+                <button
+                  onClick={() => toggleDDxDetails(item.id)}
+                  className="text-xs text-slate-500 mt-1 flex items-center gap-1 hover:text-slate-700 transition-colors"
+                >
+                  {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                  {isExpanded ? '근거 닫기' : '근거 보기'}
+                </button>
+              )}
+              
+              {/* 근거 내용 */}
+              {isExpanded && item.reason && (
+                <div className="mt-2 p-2 bg-white/60 rounded text-xs text-slate-600 border border-slate-200/50">
+                  <span className="font-medium text-slate-500">추론 근거:</span> {item.reason}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
 
   const renderField = (field: ChartField) => {
     const fieldValue = editableData[field.id];
@@ -355,6 +532,11 @@ export function ChartingResult({
             className="min-h-[80px] bg-white border-slate-200"
             placeholder={field.description}
           />
+        )}
+
+        {/* Assessment 필드에 DDx 리스트가 있으면 표시 */}
+        {field.id === 'assessment' && fieldValue.ddxList && fieldValue.ddxList.length > 0 && (
+          renderDDxList(fieldValue.ddxList)
         )}
       </div>
     );

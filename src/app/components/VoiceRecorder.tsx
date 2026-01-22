@@ -20,6 +20,10 @@ interface VoiceRecorderProps {
   onRecordingComplete: (transcript: string, chartResult: ChartData | null) => void;
   onRecordingProgress?: (progress: number) => void;
   department?: string;
+  // 모바일 마이크 연동을 위한 외부 상태
+  isRemoteRecording?: boolean;
+  remoteRecordingTime?: number;
+  isExternalGenerating?: boolean;
 }
 
 export function VoiceRecorder({
@@ -31,7 +35,10 @@ export function VoiceRecorder({
   onProcessingStart,
   onRecordingComplete,
   onRecordingProgress,
-  department = 'internal'
+  department = 'internal',
+  isRemoteRecording = false,
+  remoteRecordingTime = 0,
+  isExternalGenerating = false
 }: VoiceRecorderProps) {
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
@@ -75,16 +82,16 @@ export function VoiceRecorder({
     }
   }, [deepgramError]);
 
-  // 파형 애니메이션을 위한 주기적 업데이트
+  // 파형 애니메이션을 위한 주기적 업데이트 (로컬 또는 원격 녹음 시)
   useEffect(() => {
-    if (!isRecording) return;
+    if (!isRecording && !isRemoteRecording) return;
     
     const interval = setInterval(() => {
       setWaveformTick(prev => prev + 1);
     }, 50); // 20fps로 파형 업데이트
     
     return () => clearInterval(interval);
-  }, [isRecording]);
+  }, [isRecording, isRemoteRecording]);
 
   const startAudioAnalysis = useCallback((stream: MediaStream) => {
     try {
@@ -215,25 +222,30 @@ export function VoiceRecorder({
     const phase1 = (time / 150 + index * 0.8) % (Math.PI * 2);
     const phase2 = (time / 100 + index * 1.2) % (Math.PI * 2);
     const wave = (Math.sin(phase1) * 0.4 + Math.sin(phase2) * 0.3 + 0.5);
-    // audioLevel을 증폭 + 기본 움직임 추가
-    const amplifiedLevel = Math.min(audioLevel * 2.5, 1);
+    // audioLevel을 증폭 + 기본 움직임 추가 (모바일일 경우 기본 움직임만)
+    const amplifiedLevel = isRemoteRecording ? 0.5 : Math.min(audioLevel * 2.5, 1);
     const minMovement = 0.3; // 소리가 작아도 최소 움직임
     return baseHeight + (Math.max(amplifiedLevel, minMovement) * maxAdditional * wave);
   };
+
+  // 통합된 녹음 상태 (로컬 또는 원격)
+  const isAnyRecording = isRecording || isRemoteRecording;
+  const isAnyGenerating = isTranscribing || isExternalGenerating;
+  const displayTime = isRemoteRecording ? remoteRecordingTime : recordingTime;
 
   return (
     <div className="flex items-center gap-4">
       {/* Recording Button */}
       <div className="relative">
-        {!isRecording ? (
+        {!isAnyRecording ? (
           <Button
             onClick={handleStartRecording}
-            disabled={isTranscribing || isConnecting}
-            className="h-16 w-16 rounded-full bg-gradient-to-br from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white shadow-xl shadow-red-500/30 relative overflow-hidden transition-all hover:scale-105 active:scale-95"
+            disabled={isAnyGenerating || isConnecting || isRemoteRecording}
+            className="h-16 w-16 rounded-full bg-gradient-to-br from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white shadow-xl shadow-red-500/30 relative overflow-hidden transition-all hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isConnecting ? (
               <Loader2 className="w-6 h-6 animate-spin" />
-            ) : isTranscribing ? (
+            ) : isAnyGenerating ? (
               <Mic className="w-6 h-6 opacity-50" />
             ) : (
               <Mic className="w-6 h-6" />
@@ -244,6 +256,11 @@ export function VoiceRecorder({
               </span>
             )}
           </Button>
+        ) : isRemoteRecording ? (
+          // 모바일 녹음 중일 때는 버튼 비활성화 (모바일에서만 정지 가능)
+          <div className="h-16 w-16 rounded-full bg-gradient-to-br from-red-500 to-red-600 text-white shadow-xl shadow-red-500/30 flex items-center justify-center">
+            <Mic className="w-6 h-6" />
+          </div>
         ) : (
           <Button
             onClick={handleStopRecording}
@@ -254,7 +271,7 @@ export function VoiceRecorder({
         )}
 
         {/* Pulse animation when recording */}
-        {isRecording && (
+        {isAnyRecording && (
           <>
             <span className="absolute inset-0 rounded-full bg-red-500/30 animate-ping pointer-events-none" />
             <span className="absolute -inset-1 rounded-full bg-red-500/20 animate-pulse pointer-events-none" />
@@ -264,7 +281,7 @@ export function VoiceRecorder({
 
       {/* Recording Status */}
       <div className="flex items-center gap-4">
-        {isRecording ? (
+        {isAnyRecording ? (
           <>
             {/* Waveform */}
             <div className="flex items-center gap-1 h-10">
@@ -279,15 +296,15 @@ export function VoiceRecorder({
             {/* Timer & Status */}
             <div className="flex flex-col">
               <div className="text-lg font-bold text-slate-900 tabular-nums">
-                {formatTime(recordingTime)}
+                {formatTime(displayTime)}
               </div>
               <div className="text-xs text-red-500 font-medium flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
-                녹음 중
+                {isRemoteRecording ? '휴대폰 녹음 중' : '녹음 중'}
               </div>
             </div>
           </>
-        ) : isTranscribing ? (
+        ) : isAnyGenerating ? (
           <div className="flex items-center gap-3">
             <Loader2 className="w-5 h-5 animate-spin text-teal-600" />
             <div>
