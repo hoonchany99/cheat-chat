@@ -30,8 +30,8 @@ function filterHallucinations(text: string): string {
   return filtered.replace(/\s+/g, ' ').trim();
 }
 
-// GPT-4o 전체 발화 재구성 + 화자 분류
-async function classifyUtterancesWithGPT(utterances: string[]): Promise<SpeakerSegment[]> {
+// GPT-4o 전체 발화 재구성 + 화자 분류 (export for use in remote mic)
+export async function classifyUtterancesWithGPT(utterances: string[]): Promise<SpeakerSegment[]> {
   if (!OPENAI_API_KEY || utterances.length === 0) {
     console.warn('⚠️ OpenAI API 키 없음 또는 발화 없음');
     return utterances.map(text => ({ speaker: 'pending', text }));

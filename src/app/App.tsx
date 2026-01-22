@@ -8,6 +8,7 @@ import { ChartSettingsModal } from './components/ChartSettingsModal';
 import { MobileMicPage } from './components/MobileMicPage';
 import { RemoteMicModal } from './components/RemoteMicModal';
 import { ChartSettings, DEFAULT_CHART_SETTINGS, DEPARTMENT_PRESETS, generateChartFromTranscript } from '@/services/chartService';
+import { classifyUtterancesWithGPT } from '@/services/deepgramService';
 import { Button } from '@/app/components/ui/button';
 import { Input } from '@/app/components/ui/input';
 import { Toaster } from '@/app/components/ui/sonner';
@@ -839,13 +840,24 @@ function MainApp() {
           setMobileTab('chart');
           
           // 수집된 세그먼트로 차트 생성
-          const transcriptText = realtimeSegments.map(s => s.text).join(' ');
-          if (transcriptText) {
+          const utterances = realtimeSegments.map(s => s.text);
+          if (utterances.length > 0) {
             try {
-              console.log('[Remote] Generating chart from segments:', realtimeSegments.length);
+              console.log('[Remote] Final GPT classification for', utterances.length, 'utterances');
+              
+              // 최종 GPT 분류 (pending 상태 해소)
+              const classifiedSegments = await classifyUtterancesWithGPT(utterances);
+              console.log('[Remote] Classified segments:', classifiedSegments.length);
+              
+              // 분류된 세그먼트로 UI 업데이트
+              setRealtimeSegments(classifiedSegments);
+              
+              // 차트 생성
+              const transcriptText = classifiedSegments.map(s => s.text).join(' ');
+              console.log('[Remote] Generating chart from classified segments');
               const result = await generateChartFromTranscript(
                 transcriptText, 
-                realtimeSegments, 
+                classifiedSegments, 
                 chartSettings.selectedDepartment
               );
               if (result) {
