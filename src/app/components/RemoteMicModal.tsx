@@ -89,9 +89,20 @@ export function RemoteMicModal({
             callbacksRef.current.onRemoteRecordingStart();
             break;
           case 'recording_stop':
-            console.log('[Modal] Recording stopped');
+            console.log('[Modal] Recording stopped - ending session');
             setIsRemoteRecording(false);
             callbacksRef.current.onRemoteRecordingStop();
+            // 녹음 종료 시 세션도 자동으로 종료
+            setTimeout(() => {
+              console.log('[Modal] Auto-disconnecting after recording stop');
+              if (hostRef.current) {
+                hostRef.current.stop();
+                hostRef.current = null;
+              }
+              setIsConnected(false);
+              callbacksRef.current.onConnectionChange(false);
+              toast.success('녹음이 완료되어 세션이 종료되었습니다');
+            }, 500); // 마지막 세그먼트 처리를 위한 짧은 딜레이
             break;
           case 'transcript':
             if (message.data?.text) {

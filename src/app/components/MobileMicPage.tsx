@@ -24,6 +24,7 @@ export function MobileMicPage({ sessionId }: MobileMicPageProps) {
   const [lastHostPing, setLastHostPing] = useState<number>(0);
   const [audioLevel, setAudioLevel] = useState(0);
   const [waveformTick, setWaveformTick] = useState(0);
+  const [isCompleted, setIsCompleted] = useState(false); // 녹음 완료 상태
   
   const clientRef = useRef<RemoteMicClient | null>(null);
   const timerRef = useRef<number | null>(null);
@@ -244,9 +245,15 @@ export function MobileMicPage({ sessionId }: MobileMicPageProps) {
     
     if (clientRef.current) {
       clientRef.current.notifyRecordingStop();
+      // 녹음 종료 후 잠시 후 연결 종료 및 완료 화면 표시
+      setTimeout(() => {
+        clientRef.current?.disconnect();
+        setIsCompleted(true);
+        setIsConnected(false);
+      }, 1000);
     }
     
-    toast.success('녹음이 종료되었습니다');
+    toast.success('녹음이 완료되었습니다');
   };
 
   const formatTime = (seconds: number) => {
@@ -278,6 +285,41 @@ export function MobileMicPage({ sessionId }: MobileMicPageProps) {
             <Loader2 className="w-12 h-12 animate-spin text-teal-600 mx-auto mb-4" />
             <h2 className="text-lg font-semibold text-slate-800 mb-2">연결 중...</h2>
             <p className="text-sm text-slate-500">세션 코드: <span className="font-mono font-bold">{sessionId}</span></p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // 녹음 완료 화면
+  if (isCompleted) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-teal-600 to-teal-700 flex items-center justify-center p-4">
+        <Toaster position="top-center" richColors />
+        <Card className="w-full max-w-sm">
+          <CardContent className="pt-8 pb-8 text-center">
+            <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-4">
+              <CheckCircle2 className="w-8 h-8 text-green-600" />
+            </div>
+            <h2 className="text-lg font-semibold text-slate-800 mb-2">녹음 완료!</h2>
+            <p className="text-sm text-slate-500 mb-1">녹음된 내용이 데스크톱으로 전송되었습니다.</p>
+            <p className="text-xs text-slate-400 mb-6">데스크톱에서 차트를 확인해주세요.</p>
+            
+            <div className="space-y-3">
+              <p className="text-sm text-slate-600">
+                녹음 시간: <span className="font-semibold">{formatTime(recordingTime)}</span>
+              </p>
+              <Button 
+                onClick={() => window.close()}
+                variant="outline"
+                className="w-full"
+              >
+                창 닫기
+              </Button>
+              <p className="text-xs text-slate-400">
+                새로운 녹음을 하려면 데스크톱에서 다시 연결해주세요.
+              </p>
+            </div>
           </CardContent>
         </Card>
       </div>
