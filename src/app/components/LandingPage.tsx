@@ -15,8 +15,75 @@ import {
   Play,
   Copy,
   Zap,
-  ChevronRight
+  ChevronRight,
+  Square,
+  User,
+  Activity,
+  CheckCircle2,
+  HelpCircle
 } from 'lucide-react';
+
+// ============ 데모 자동 재생 데이터 ============
+
+interface DemoConversation {
+  speaker: 'doctor' | 'patient';
+  text: string;
+  delay: number;
+}
+
+interface ChartFieldData {
+  value: string;
+  isConfirmed: boolean;
+}
+
+// 데모 대화 스크립트
+const DEMO_CONVERSATION: DemoConversation[] = [
+  { speaker: 'doctor', text: '안녕하세요, 오늘은 어떻게 오셨어요?', delay: 0 },
+  { speaker: 'patient', text: '3일 전부터 두통이 있어서요.', delay: 1200 },
+  { speaker: 'doctor', text: '어떤 느낌의 두통인가요?', delay: 2400 },
+  { speaker: 'patient', text: '머리 전체가 조이는 느낌이에요. 오후에 심해져요.', delay: 3800 },
+  { speaker: 'doctor', text: '어지러움이나 메스꺼움은요?', delay: 5200 },
+  { speaker: 'patient', text: '살짝 메스꺼운 느낌은 있는데 어지럽진 않아요.', delay: 6600 },
+];
+
+// 진료과별 차트 데이터
+const DEMO_CHARTS: Record<string, { 
+  fields: { id: string; label: string }[]; 
+  data: Record<string, ChartFieldData> 
+}> = {
+  general: {
+    fields: [
+      { id: 'cc', label: 'C.C.' },
+      { id: 'pi', label: 'P.I.' },
+      { id: 'ros', label: 'R.O.S.' },
+      { id: 'assessment', label: 'A' },
+      { id: 'plan', label: 'P' },
+    ],
+    data: {
+      cc: { value: '두통 3일', isConfirmed: true },
+      pi: { value: '3d onset, squeezing type, p.m. aggravation, N(+)/V(-)', isConfirmed: true },
+      ros: { value: 'Dz(-), visual Sx(-)', isConfirmed: true },
+      assessment: { value: 'TTH, r/o migraine', isConfirmed: false },
+      plan: { value: '1. Tylenol 500mg prn\n2. f/u 1wk', isConfirmed: false },
+    },
+  },
+  internal: {
+    fields: [
+      { id: 'cc', label: 'C.C.' },
+      { id: 'pi', label: 'P.I.' },
+      { id: 'assessment', label: 'A' },
+      { id: 'plan', label: 'P' },
+    ],
+    data: {
+      cc: { value: '두통 3일', isConfirmed: true },
+      pi: { value: '3d h/o diffuse HA, afternoon aggravation, N(+)/V(-)', isConfirmed: true },
+      assessment: { value: 'TTH (Tension-type HA)', isConfirmed: false },
+      plan: { value: '1. AAP 500mg prn\n2. f/u 1wk', isConfirmed: false },
+    },
+  },
+};
+
+type DemoPhase = 'idle' | 'recording' | 'generating' | 'confirming';
 
 // 스크롤 애니메이션 훅
 function useScrollAnimation() {
@@ -180,6 +247,15 @@ const animationStyles = `
   .stagger-2 { transition-delay: 0.2s; }
   .stagger-3 { transition-delay: 0.3s; }
   .stagger-4 { transition-delay: 0.4s; }
+  
+  /* 스크롤바 숨김 */
+  .hide-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .hide-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
 `;
 
 interface LandingPageProps {
@@ -190,7 +266,18 @@ export function LandingPage({ onStart }: LandingPageProps) {
   const [email, setEmail] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubscribed, setIsSubscribed] = useState(false);
-  const [showDemo, setShowDemo] = useState(false);
+
+  // ============ 데모 자동 재생 상태 ============
+  const [isRecording, setIsRecording] = useState(false);
+  const [currentConversation, setCurrentConversation] = useState<DemoConversation[]>([]);
+  const [showChart, setShowChart] = useState(false);
+  const [chartProgress, setChartProgress] = useState(0);
+  const [chartData, setChartData] = useState<Record<string, ChartFieldData>>({});
+  const [demoPhase, setDemoPhase] = useState<DemoPhase>('idle');
+  const [copied, setCopied] = useState(false);
+  const demoScrollRef = useRef<HTMLDivElement>(null);
+  const timeoutRefs = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const intervalRefs = useRef<ReturnType<typeof setInterval>[]>([]);
 
   // 스크롤 애니메이션
   const demoSection = useScrollAnimation();
@@ -198,10 +285,117 @@ export function LandingPage({ onStart }: LandingPageProps) {
   const benefitsSection = useScrollAnimation();
   const ctaSection = useScrollAnimation();
 
-  // 데모 대화 순차 표시
+  // 타이머 헬퍼
+  const addTimeout = (callback: () => void, delay: number) => {
+    const timeout = setTimeout(callback, delay);
+    timeoutRefs.current.push(timeout);
+    return timeout;
+  };
+  const addInterval = (callback: () => void, delay: number) => {
+    const interval = setInterval(callback, delay);
+    intervalRefs.current.push(interval);
+    return interval;
+  };
+  const clearAllTimers = () => {
+    timeoutRefs.current.forEach(clearTimeout);
+    intervalRefs.current.forEach(clearInterval);
+    timeoutRefs.current = [];
+    intervalRefs.current = [];
+  };
+
+  // 리셋
+  const resetDemo = () => {
+    clearAllTimers();
+    setIsRecording(false);
+    setCurrentConversation([]);
+    setShowChart(false);
+    setChartProgress(0);
+    setChartData({});
+    setCopied(false);
+    setDemoPhase('idle');
+  };
+
+  // 차트 생성 애니메이션
+  const startChartGeneration = (deptId: string, onComplete: () => void) => {
+    const chartConfig = DEMO_CHARTS[deptId] || DEMO_CHARTS.general;
+    setChartData({ ...chartConfig.data });
+    setShowChart(true);
+    
+    let progress = 0;
+    const interval = addInterval(() => {
+      progress += 15;
+      setChartProgress(Math.min(progress, 100));
+      if (progress >= 100) {
+        clearInterval(interval);
+        onComplete();
+      }
+    }, 120);
+  };
+
+  // 확정 애니메이션
+  const startConfirmAnimation = (deptId: string, onComplete: () => void) => {
+    const chartConfig = DEMO_CHARTS[deptId] || DEMO_CHARTS.general;
+    const unconfirmedFields = chartConfig.fields.filter(f => !chartConfig.data[f.id]?.isConfirmed);
+    
+    if (unconfirmedFields.length > 0) {
+      addTimeout(() => {
+        setChartData(prev => ({
+          ...prev,
+          [unconfirmedFields[0].id]: { ...prev[unconfirmedFields[0].id], isConfirmed: true }
+        }));
+        addTimeout(onComplete, 1000);
+      }, 600);
+    } else {
+      addTimeout(onComplete, 800);
+    }
+  };
+
+  // 자동 데모 시작
   useEffect(() => {
-    const timer = setTimeout(() => setShowDemo(true), 800);
-    return () => clearTimeout(timer);
+    const startDemo = () => {
+      resetDemo();
+      
+      addTimeout(() => {
+        setDemoPhase('recording');
+        setIsRecording(true);
+        
+        DEMO_CONVERSATION.forEach((conv) => {
+          addTimeout(() => {
+            setCurrentConversation(prev => [...prev, conv]);
+            setTimeout(() => {
+              if (demoScrollRef.current) {
+                demoScrollRef.current.scrollTo({
+                  top: demoScrollRef.current.scrollHeight,
+                  behavior: 'smooth'
+                });
+              }
+            }, 100);
+          }, conv.delay);
+        });
+        
+        const lastDelay = DEMO_CONVERSATION[DEMO_CONVERSATION.length - 1].delay;
+        addTimeout(() => {
+          setIsRecording(false);
+          setDemoPhase('generating');
+          
+          startChartGeneration('internal', () => {
+            setDemoPhase('confirming');
+            
+            startConfirmAnimation('internal', () => {
+              setCopied(true);
+              addTimeout(() => {
+                setCopied(false);
+                // 대기 후 반복
+                addTimeout(() => startDemo(), 2500);
+              }, 1500);
+            });
+          });
+        }, lastDelay + 1500);
+      }, 1000);
+    };
+
+    startDemo();
+    return () => clearAllTimers();
   }, []);
 
   const handleEmailSubmit = async (e: React.FormEvent) => {
@@ -294,67 +488,178 @@ export function LandingPage({ onStart }: LandingPageProps) {
         </div>
       </section>
 
-      {/* Demo Preview */}
+      {/* Demo Preview - 풀 자동 재생 */}
       <section ref={demoSection.ref} className="py-16 px-4">
         <div className={`container mx-auto max-w-5xl scroll-scale-hidden ${demoSection.isVisible ? 'scroll-scale-visible' : ''}`}>
+          {/* 녹음 컨트롤 헤더 */}
           <Card className="border-0 shadow-2xl shadow-slate-200/50 overflow-hidden">
-            <CardContent className="!p-0">
-              <div className="grid md:grid-cols-2">
-                {/* Left - Recording */}
-                <div className="p-6 bg-white">
-                  <div className="flex items-center gap-2 h-8 mb-4">
-                    <div className="w-3 h-3 rounded-full bg-red-500 animate-pulse shadow-lg shadow-red-500/50" />
-                    <span className="text-sm font-semibold text-red-600">녹음 중</span>
+            <div className="bg-white border-b border-slate-100 px-6 py-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  {/* 녹음 버튼 */}
+                  <div className={`relative w-12 h-12 rounded-full flex items-center justify-center transition-all shadow-lg ${
+                    isRecording 
+                      ? 'bg-red-500 shadow-red-500/30' 
+                      : 'bg-gradient-to-br from-teal-500 to-teal-600 shadow-teal-500/30'
+                  }`}>
+                    {isRecording ? (
+                      <Square className="w-4 h-4 text-white fill-white" />
+                    ) : (
+                      <Mic className="w-5 h-5 text-white" />
+                    )}
+                    {isRecording && (
+                      <span className="absolute inset-0 rounded-full bg-red-500 animate-ping opacity-30" />
+                    )}
                   </div>
-                  <div className="bg-slate-50 rounded-xl px-4 py-4 border border-slate-100 flex items-center">
-                    {showDemo && (
-                      <div className="space-y-2 w-full">
-                        <div className="animate-slide-in-left flex items-start gap-2.5">
-                          <span className="text-xs font-semibold text-teal-700 bg-teal-50 px-2 py-0.5 rounded-md shrink-0">의사</span>
-                          <p className="text-sm text-slate-700">"어디가 불편해서 오셨나요?"</p>
-                        </div>
-                        <div className="animate-slide-in-left delay-300 flex items-start gap-2.5">
-                          <span className="text-xs font-semibold text-slate-600 bg-slate-200 px-2 py-0.5 rounded-md shrink-0">환자</span>
-                          <p className="text-sm text-slate-700">"3일 전부터 두통이 있어서요."</p>
-                        </div>
-                        <div className="animate-slide-in-left delay-600 flex items-start gap-2.5">
-                          <span className="text-xs font-semibold text-teal-700 bg-teal-50 px-2 py-0.5 rounded-md shrink-0">의사</span>
-                          <p className="text-sm text-slate-700">"어지러움은 없으셨나요?"</p>
-                        </div>
+                  <div>
+                    <div className="font-semibold text-slate-800 text-sm">
+                      {demoPhase === 'recording' && '녹음 중...'}
+                      {demoPhase === 'generating' && '차트 생성 중...'}
+                      {demoPhase === 'confirming' && '내용 확인 중...'}
+                      {demoPhase === 'idle' && '대기 중...'}
+                    </div>
+                    <div className="text-xs text-slate-500">
+                      {demoPhase === 'recording' && '실시간 대화 변환'}
+                      {demoPhase === 'generating' && 'AI 자동 차팅'}
+                      {demoPhase === 'confirming' && 'AI 추측 확정'}
+                      {demoPhase === 'idle' && '데모 시작 대기'}
+                    </div>
+                  </div>
+                </div>
+                
+                {/* 진료과 표시 */}
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-medium bg-slate-100 border-slate-200 text-slate-600">
+                  내과
+                </div>
+              </div>
+            </div>
+
+            <CardContent className="!p-0">
+              <div className="grid md:grid-cols-2 min-h-[320px]">
+                {/* Left - 실시간 대화 */}
+                <div className="p-5 bg-white border-r border-slate-100 flex flex-col">
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-cyan-500 to-cyan-600 flex items-center justify-center">
+                      <Activity className="w-3.5 h-3.5 text-white" />
+                    </div>
+                    <span className="text-sm font-semibold text-slate-700">실시간 대화</span>
+                    {isRecording && (
+                      <div className="flex items-center gap-1 ml-auto px-2 py-0.5 rounded-full bg-red-50 border border-red-100">
+                        <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+                        <span className="text-[10px] font-medium text-red-600">REC</span>
+                      </div>
+                    )}
+                  </div>
+                  
+                  <div 
+                    ref={demoScrollRef}
+                    className="flex-1 bg-slate-50 rounded-xl border border-slate-100 p-3 max-h-[220px] overflow-y-scroll hide-scrollbar pointer-events-none"
+                  >
+                    {currentConversation.length === 0 ? (
+                      <div className="h-full flex items-center justify-center text-slate-400 text-xs">
+                        녹음이 시작되면 대화가 표시됩니다
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {currentConversation.map((conv, index) => (
+                          <div key={index} className={`flex ${conv.speaker === 'doctor' ? 'justify-end' : 'justify-start'}`}>
+                            <div className={`max-w-[85%] rounded-xl px-3 py-2 ${
+                              conv.speaker === 'doctor'
+                                ? 'bg-gradient-to-br from-teal-500 to-teal-600 text-white'
+                                : 'bg-white border border-slate-200'
+                            }`}>
+                              <div className={`text-[10px] mb-0.5 font-medium flex items-center gap-1 ${
+                                conv.speaker === 'doctor' ? 'text-teal-100' : 'text-slate-500'
+                              }`}>
+                                {conv.speaker === 'doctor' ? (
+                                  <><Stethoscope className="w-2.5 h-2.5" /> 의사</>
+                                ) : (
+                                  <><User className="w-2.5 h-2.5" /> 환자</>
+                                )}
+                              </div>
+                              <div className={`text-xs leading-relaxed ${
+                                conv.speaker === 'doctor' ? 'text-white' : 'text-slate-700'
+                              }`}>
+                                {conv.text}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     )}
                   </div>
                 </div>
 
-                {/* Right - Chart Result */}
-                <div className="p-6 bg-gradient-to-br from-teal-50 to-cyan-50">
-                  <div className="flex items-center justify-between h-8 mb-4">
+                {/* Right - AI 차트 */}
+                <div className="p-5 bg-gradient-to-br from-teal-50/50 to-cyan-50/50 flex flex-col">
+                  <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2">
-                      <FileText className="w-4 h-4 text-teal-600" />
-                      <span className="text-sm font-semibold text-teal-700">AI 생성 차트</span>
+                      <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-teal-500 to-teal-600 flex items-center justify-center">
+                        <FileText className="w-3.5 h-3.5 text-white" />
+                      </div>
+                      <span className="text-sm font-semibold text-slate-700">AI 생성 차트</span>
                     </div>
-                    {showDemo && (
-                      <Button size="sm" variant="outline" className="animate-fade-in delay-800 text-xs h-7 border-teal-200 text-teal-700 hover:bg-teal-50 hover:scale-105 transition-transform">
-                        <Copy className="w-3 h-3 mr-1.5" />
-                        EMR에 복사
-                      </Button>
+                    {showChart && chartProgress >= 100 && (
+                      <div className={`h-6 px-2 rounded text-[10px] font-medium flex items-center gap-1 transition-all ${
+                        copied ? 'bg-teal-600 text-white' : 'bg-white border border-slate-200 text-slate-600'
+                      }`}>
+                        {copied ? <><Check className="w-3 h-3" /> 복사됨</> : <><Copy className="w-3 h-3" /> EMR에 복사</>}
+                      </div>
                     )}
                   </div>
-                  <div className="bg-white rounded-xl px-4 py-4 border border-teal-100 flex items-center">
-                    {showDemo && (
-                      <div className="animate-slide-in-right delay-400 space-y-2 w-full">
-                        <div className="animate-fade-in delay-500 text-sm">
-                          <span className="font-semibold text-teal-700">C.C.</span>
-                          <span className="ml-2 text-slate-700">두통이 있어서 왔어요</span>
-                        </div>
-                        <div className="animate-fade-in delay-600 text-sm">
-                          <span className="font-semibold text-teal-700">P.I.</span>
-                          <span className="ml-2 text-slate-700">3d ago onset, a.m. aggravation</span>
-                        </div>
-                        <div className="animate-fade-in delay-700 text-sm">
-                          <span className="font-semibold text-teal-700">R.O.S.</span>
-                          <span className="ml-2 text-slate-700">Dz(-), N/V(-), visual Sx(-)</span>
-                        </div>
+                  
+                  <div className="flex-1 bg-white rounded-xl border border-teal-100 p-3 overflow-y-auto max-h-[220px]">
+                    {!showChart ? (
+                      <div className="h-full flex items-center justify-center text-slate-400 text-xs">
+                        녹음 종료 후 AI가 차트를 생성합니다
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {(() => {
+                          const chartConfig = DEMO_CHARTS.internal;
+                          const { fields } = chartConfig;
+                          const progressPerField = 100 / fields.length;
+                          
+                          return fields.map((field, index) => {
+                            if (chartProgress < (index + 1) * progressPerField) return null;
+                            
+                            const fieldData = chartData[field.id];
+                            const isConfirmed = fieldData?.isConfirmed ?? false;
+                            const value = fieldData?.value || '-';
+                            
+                            return (
+                              <div 
+                                key={field.id} 
+                                className={`p-2 rounded-lg border transition-all ${
+                                  isConfirmed 
+                                    ? 'bg-teal-50/50 border-teal-200' 
+                                    : 'bg-amber-50/50 border-amber-200'
+                                }`}
+                              >
+                                <div className="flex items-center gap-1.5 mb-0.5">
+                                  {isConfirmed ? (
+                                    <CheckCircle2 className="w-3 h-3 text-teal-600" />
+                                  ) : (
+                                    <HelpCircle className="w-3 h-3 text-amber-500" />
+                                  )}
+                                  <span className={`text-[10px] font-bold uppercase ${
+                                    isConfirmed ? 'text-teal-700' : 'text-amber-700'
+                                  }`}>
+                                    {field.label}
+                                  </span>
+                                  <span className={`text-[9px] ml-auto ${
+                                    isConfirmed ? 'text-teal-500' : 'text-amber-500'
+                                  }`}>
+                                    {isConfirmed ? '확정' : 'AI 추측'}
+                                  </span>
+                                </div>
+                                <p className="text-[11px] text-slate-700 whitespace-pre-line pl-4">
+                                  {value}
+                                </p>
+                              </div>
+                            );
+                          });
+                        })()}
                       </div>
                     )}
                   </div>

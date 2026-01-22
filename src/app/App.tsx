@@ -3,6 +3,7 @@ import { VoiceRecorder } from './components/VoiceRecorder';
 import { TranscriptViewer } from './components/TranscriptViewer';
 import { ChartingResult, ChartData } from './components/ChartingResult';
 import { LandingPage } from './components/LandingPage';
+import { DemoPage } from './components/DemoPage';
 import { ChartSettingsModal } from './components/ChartSettingsModal';
 import { ChartSettings, DEFAULT_CHART_SETTINGS, DEPARTMENT_PRESETS } from '@/services/chartService';
 import { Button } from '@/app/components/ui/button';
@@ -52,7 +53,7 @@ interface Segment {
 }
 
 export default function App() {
-  const [showLanding, setShowLanding] = useState(true);
+  const [currentPage, setCurrentPage] = useState<'landing' | 'app' | 'demo'>('landing');
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [pageAnimation, setPageAnimation] = useState<'enter' | 'exit' | ''>('');
   const [finalTranscript, setFinalTranscript] = useState('');
@@ -72,14 +73,14 @@ export default function App() {
   const selectedDepartmentName = selectedDepartment?.name || '내과';
 
   // 페이지 전환 핸들러
-  const handlePageTransition = useCallback((toPage: 'landing' | 'app') => {
+  const handlePageTransition = useCallback((toPage: 'landing' | 'app' | 'demo') => {
     if (isTransitioning) return;
     
     setIsTransitioning(true);
     setPageAnimation('exit');
     
     setTimeout(() => {
-      setShowLanding(toPage === 'landing');
+      setCurrentPage(toPage);
       setPageAnimation('enter');
       
       setTimeout(() => {
@@ -172,12 +173,28 @@ export default function App() {
     setFeedbackOpen(false);
   };
 
-  if (showLanding) {
+  // 랜딩 페이지
+  if (currentPage === 'landing') {
     return (
       <>
         <style>{pageTransitionStyles}</style>
         <div className={pageAnimation === 'enter' ? 'page-enter' : pageAnimation === 'exit' ? 'page-exit' : ''}>
-          <LandingPage onStart={() => handlePageTransition('app')} />
+          <LandingPage 
+            onStart={() => handlePageTransition('app')}
+          />
+        </div>
+        <Toaster position="top-center" richColors />
+      </>
+    );
+  }
+
+  // 데모 페이지
+  if (currentPage === 'demo') {
+    return (
+      <>
+        <style>{pageTransitionStyles}</style>
+        <div className={pageAnimation === 'enter' ? 'page-enter' : pageAnimation === 'exit' ? 'page-exit' : ''}>
+          <DemoPage onBack={() => handlePageTransition('landing')} />
         </div>
         <Toaster position="top-center" richColors />
       </>

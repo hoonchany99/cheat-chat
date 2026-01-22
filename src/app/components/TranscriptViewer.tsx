@@ -1,5 +1,4 @@
 import { useRef, useEffect } from 'react';
-import { ScrollArea } from '@/app/components/ui/scroll-area';
 import { MessageSquare, Stethoscope, User, Loader2 } from 'lucide-react';
 
 interface Segment {
@@ -17,11 +16,13 @@ export function TranscriptViewer({
   isRecording,
   realtimeSegments
 }: TranscriptViewerProps) {
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const scrollEndRef = useRef<HTMLDivElement>(null);
 
+  // 새 메시지가 추가될 때마다 스크롤을 맨 아래로
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    if (scrollEndRef.current) {
+      scrollEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [realtimeSegments]);
 
@@ -52,7 +53,7 @@ export function TranscriptViewer({
 
       {/* Content */}
       <div className="flex-1 overflow-hidden">
-        <ScrollArea className="h-full" ref={scrollRef}>
+        <div className="h-full overflow-y-auto" ref={scrollContainerRef}>
           <div className="p-4">
             {!hasContent ? (
               <div className="h-full flex flex-col items-center justify-center text-center py-16">
@@ -124,10 +125,12 @@ export function TranscriptViewer({
                     </div>
                   </div>
                 )}
+                {/* 스크롤 타겟 */}
+                <div ref={scrollEndRef} />
               </div>
             )}
           </div>
-        </ScrollArea>
+        </div>
       </div>
     </div>
   );
