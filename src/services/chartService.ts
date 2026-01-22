@@ -40,37 +40,37 @@ export interface ChartSettings {
 // - Assessment/Plan 한국어 + 약어
 
 export const DEFAULT_FIELDS: ChartField[] = [
-  // S
-  { id: 'chiefComplaint', name: '주호소', nameEn: 'CC', type: 'textarea', required: true, description: '환자 표현 그대로(한국어). 가능하면 따옴표 인용.' },
-  { id: 'historyOfPresentIllness', name: '현병력(PI)', nameEn: 'PI', type: 'textarea', required: true, description: '한국어 서술형. 시간 흐름. OLDCARTS는 내부 체크, 출력은 문장. 없는 내용 만들지 않기.' },
-  { id: 'pertinentROS', name: '동반증상/관련음성', nameEn: 'Pertinent +/-', type: 'textarea', required: false, description: '관련 증상 +/-만 짧게. 예) N/V(+), fever(-), CP(-), SOB(-).' },
+  // S - Korean
+  { id: 'chiefComplaint', name: '주호소', nameEn: 'CC', type: 'textarea', required: true, description: '한국어. 환자 표현 그대로 인용.' },
+  { id: 'historyOfPresentIllness', name: '현병력(PI)', nameEn: 'PI', type: 'textarea', required: true, description: '한국어 서술형. 3-6문장. 없는 내용 금지.' },
+  { id: 'pertinentROS', name: '동반증상/관련음성', nameEn: 'Pertinent +/-', type: 'textarea', required: false, description: '영어 약어. N/V(+), fever(-), CP(-) 형식.' },
 
-  // Background (언급된 것만)
-  { id: 'pastMedicalHistory', name: '과거력(PMH)', nameEn: 'PMH', type: 'tags', required: false, description: '언급된 과거력만. 예) HTN, DM.' },
-  { id: 'pastSurgicalHistory', name: '수술력(PSH)', nameEn: 'PSH', type: 'tags', required: false, description: '언급된 수술/시술력만.' },
-  { id: 'medications', name: '복용약', nameEn: 'Meds', type: 'tags', required: false, description: '언급된 약만(가능하면 용량/용법 포함).' },
-  { id: 'allergies', name: '알레르기', nameEn: 'Allergies', type: 'tags', required: false, description: '언급된 알레르기만.' },
-  { id: 'socialHistory', name: '사회력', nameEn: 'SHx', type: 'textarea', required: false, description: '흡연/음주/직업 등 언급된 것만.' },
-  { id: 'familyHistory', name: '가족력', nameEn: 'FHx', type: 'textarea', required: false, description: '언급된 가족력만.' },
+  // Background - English/abbreviations
+  { id: 'pastMedicalHistory', name: '과거력(PMH)', nameEn: 'PMH', type: 'tags', required: false, description: '영어. HTN, DM, s/p appendectomy.' },
+  { id: 'pastSurgicalHistory', name: '수술력(PSH)', nameEn: 'PSH', type: 'tags', required: false, description: '영어. 언급된 것만.' },
+  { id: 'medications', name: '복용약', nameEn: 'Meds', type: 'tags', required: false, description: '영어. 용량 포함.' },
+  { id: 'allergies', name: '알레르기', nameEn: 'Allergies', type: 'tags', required: false, description: '영어. NKDA if none.' },
+  { id: 'socialHistory', name: '사회력', nameEn: 'SHx', type: 'textarea', required: false, description: '영어. Smoking/EtOH/occupation.' },
+  { id: 'familyHistory', name: '가족력', nameEn: 'FHx', type: 'textarea', required: false, description: '영어. 언급된 것만.' },
 
-  // O (언급된 것만)
-  { id: 'vitalSigns', name: '활력징후(VS)', nameEn: 'VS', type: 'text', required: false, description: 'BP/HR/BT/RR/SpO2 언급된 수치만.' },
-  { id: 'physicalExam', name: '진찰(PE)', nameEn: 'PE', type: 'textarea', required: false, description: '언급된 소견만. WNL 남발 금지.' },
-  { id: 'labResults', name: '검사(Labs)', nameEn: 'Labs', type: 'textarea', required: false, description: '언급된 결과/검사만.' },
-  { id: 'imaging', name: '영상(Imaging)', nameEn: 'Imaging', type: 'textarea', required: false, description: '언급된 영상검사/소견만.' },
+  // O - English
+  { id: 'vitalSigns', name: '활력징후(VS)', nameEn: 'VS', type: 'text', required: false, description: '영어. BP/HR/BT/RR/SpO2.' },
+  { id: 'physicalExam', name: '진찰(PE)', nameEn: 'PE', type: 'textarea', required: false, description: '영어. 언급된 소견만.' },
+  { id: 'labResults', name: '검사(Labs)', nameEn: 'Labs', type: 'textarea', required: false, description: '영어. 언급된 결과만.' },
+  { id: 'imaging', name: '영상(Imaging)', nameEn: 'Imaging', type: 'textarea', required: false, description: '영어. 언급된 것만.' },
 
-  // A
-  { id: 'assessment', name: '평가(A)', nameEn: 'A', type: 'textarea', required: true, description: '한국어 기반 + 약어 섞기. 확정/언급 vs AI 감별(DDx/r/o) 분리.' },
+  // A - English (Korean connectors OK)
+  { id: 'assessment', name: '평가(A)', nameEn: 'A', type: 'textarea', required: true, description: '영어 중심. [Summary] [Provider Impression] [AI DDx] 3단 구조.' },
 
-  // Dx split
-  { id: 'diagnosisConfirmed', name: '진단(의사 언급/확정)', nameEn: 'Dx (stated)', type: 'tags', required: false, description: '의사가 직접 언급/확정한 Dx만.' },
-  { id: 'diagnosisInferred', name: '진단(AI 추론/DDx)', nameEn: 'Dx (AI)', type: 'list', required: false, description: 'AI 추론/감별/의심(r/o). 항목에 confidence + 근거(짧게) 포함.' },
+  // Dx - English only
+  { id: 'diagnosisConfirmed', name: '진단(의사 언급)', nameEn: 'Dx (stated)', type: 'tags', required: false, description: '영어. 의사가 말한 Dx만.' },
+  { id: 'diagnosisInferred', name: '진단(AI DDx)', nameEn: 'Dx (AI)', type: 'list', required: false, description: '영어. 한 줄 요약 "r/o X vs Y". 리스트 금지.' },
 
-  // P
-  { id: 'plan', name: '계획(P)', nameEn: 'P', type: 'textarea', required: true, description: '오더 중심. [의사 오더] vs [AI 제안(참고)] 분리. 불릿/번호는 한 줄 띄움.' },
-  { id: 'followUp', name: '추적/주의(F/U)', nameEn: 'F/U', type: 'textarea', required: false, description: 'f/u 시점, ER return precautions 등 언급된 것 위주.' },
+  // P - English orders
+  { id: 'plan', name: '계획(P)', nameEn: 'P', type: 'textarea', required: true, description: '영어. 오더만. [Orders] [AI Suggestions optional]. 설명문 금지.' },
+  { id: 'followUp', name: '추적(F/U)', nameEn: 'F/U', type: 'textarea', required: false, description: '영어. 언급 없으면 비움. 일반적 문구 금지.' },
 
-  { id: 'notes', name: '기타', nameEn: 'Notes', type: 'textarea', required: false, description: '특이사항/메모.' },
+  { id: 'notes', name: '기타', nameEn: 'Notes', type: 'textarea', required: false, description: '메모.' },
 ];
 
 // ==================== 과별 프리셋 ====================
@@ -83,62 +83,94 @@ CORE PHILOSOPHY:
 - Keep it concise and realistic for Korean EMR.
 - Do NOT invent facts. If not mentioned, leave blank.
 
-LANGUAGE RULES (KOREAN + ABBREVIATIONS):
-- chiefComplaint (CC): KOREAN, patient's own words as closely as possible (prefer quoting).
-- historyOfPresentIllness (PI): KOREAN narrative (서술형). Use time flow. You may mix common abbreviations naturally (N/V, SOB, CP, HTN, DM, NRS, f/u, PRN).
-- Other fields: Korean base is acceptable, but keep it short and EMR-like; you can mix common abbreviations.
+=== LANGUAGE BALANCE (STRICT - MOST IMPORTANT) ===
+| Section           | Language                              |
+|-------------------|---------------------------------------|
+| CC                | Korean (환자 표현 그대로)              |
+| PI                | Korean (서술형)                       |
+| Pertinent +/-     | English abbreviations (N/V(+), CP(-)) |
+| PMH / Meds / SHx  | English / abbreviations              |
+| PE                | English                              |
+| Assessment (A)    | ENGLISH (Korean connectors only)     |
+| DDx / r/o         | ENGLISH 100%                         |
+| Dx                | ENGLISH 100%                         |
+| Plan (P)          | ENGLISH orders                       |
+| F/U               | English or leave empty               |
 
-FORMATTING RULES (VERY IMPORTANT):
-- If you use numbered lists (1., 2., 3.) or bullets (-), ALWAYS insert a blank line between items.
-- Avoid compact blocks. Make it readable like Korean hospital EMR.
+- Do NOT translate diagnoses into Korean.
+- DDx, r/o, Dx terms must remain in English.
+- Korean may be used ONLY for short connectors in Assessment (e.g., "~로 판단됨").
 
-PI QUALITY RULES:
-- Narrative, NOT a checklist.
-- Use only relevant OLDCARTS elements if present (onset/course/location/quality/severity/aggravating/relieving/associated).
+=== PI QUALITY RULES ===
+- Korean narrative (서술형), NOT a checklist.
+- 3-6 sentences max.
+- Use only relevant OLDCARTS elements if present.
 - Include pertinent positives/negatives only if asked/answered.
 - If missing, do NOT fill.
 
-INFERENCE POLICY (KOREAN CLINICIAN-FRIENDLY):
-- Inference is ALLOWED ONLY for: assessment, diagnosisInferred, and plan (AI suggestion section only).
-- For inferred content:
-  - isConfirmed MUST be false
-  - source MUST be "inferred"
-  - confidence MUST be low/medium/high
-  - rationale MUST be 1–2 short lines
-  - evidence MUST include 1–2 short quotes from the conversation
-- Never present inferred diagnosis as definitive. Use DDx/r/o/c/w style cautious language.
+=== DDx RULES (STRICT) ===
+- Limit DDx to top 1-2 most likely causes (max 3).
+- Use "r/o" or "DDx" style ONLY.
+- Avoid vague terms (e.g., "cardiac problem" ❌, "brain issue" ❌).
+- Each DDx MUST include a brief rationale (1 line).
+- Format: "r/o [diagnosis] - [brief reason]" or "DDx: [diagnosis] (reason)"
 
-ASSESSMENT/PLAN STYLE:
-- assessment should be structured like:
+=== Dx (AI) RULES (STRICT) ===
+- Do NOT repeat DDx as a comma-separated list.
+- Summarize into ONE problem-oriented line.
+- Use "r/o" or "vs" format ONLY.
+- Good: "Syncope, r/o hypoglycemia vs neurologic cause"
+- Bad: "저혈당, 뇌혈관 사고, 심장 문제"
 
-[요약]
-(1–2문장)
+=== ASSESSMENT STRUCTURE (3-PART) ===
+[Summary]
+(1-2 sentences in English, Korean connectors OK)
 
-[의사 인상/언급]
-(의사가 말한 경우만)
+[Provider Impression]
+(What the doctor seemed to think - can infer from ordered tests)
+(If doctor said nothing, infer cautiously from orders)
 
-[AI 감별/의심(DDx/r/o)]
-- ...
+[AI DDx/r/o]
+- r/o [diagnosis] - [reason]
 
-- plan should be structured like:
+=== PROVIDER IMPRESSION INFERENCE ===
+- You may infer provider impression based on ordered tests.
+- This must be cautious and directly tied to the orders.
+- Do NOT invent diagnoses.
+- Example: If doctor ordered brain CT → "Provider considering neurologic cause"
 
-[의사 오더]
-- ...
+=== PLAN RULES (STRICT) ===
+- Order-oriented ONLY. No explanatory sentences.
+- Prioritize provider orders.
+- AI suggestions are OPTIONAL:
+  - Omit if not strongly justified
+  - Max 1-2 lines if included
+  - Must have clear rationale
 
-[AI 제안(참고)]
-- ...
+[Orders]
+- [test/medication]
 
-GOOD EXAMPLE (spacing):
-- Abdominal US
+[AI Suggestions] (optional)
+- [suggestion] - if [condition]
 
-- NPO
+=== FOLLOW-UP RULE ===
+- Do NOT write generic follow-up statements.
+- Leave F/U empty if not explicitly discussed.
+- Bad: "검사 결과에 따라 f/u 결정" ❌
+- Good: "f/u 1wk" or leave empty
 
-- IVF
+=== FORMATTING RULES ===
+- If you use bullets (-), ALWAYS insert a blank line between items.
+- Keep it readable like Korean hospital EMR.
 
-BAD EXAMPLE:
-- Abdominal US
-- NPO
-- IVF
+GOOD:
+- Blood glucose
+
+- Brain CT
+
+BAD:
+- Blood glucose
+- Brain CT
 `.trim();
 
 export const DEPARTMENT_PRESETS: DepartmentPreset[] = [
@@ -358,53 +390,57 @@ export async function generateChart(
   console.log('🏥 진료과:', preset.name);
   console.log('📝 필드 수:', allFields.length);
 
-  // ✅ Quality-focused system prompt (Korean EMR + abbreviations)
+  // ✅ Quality-focused system prompt (Korean EMR style)
   const systemPrompt = `
 You are an experienced ${preset.name !== '일반' ? preset.name : 'physician'} documenting a Korean hospital outpatient EMR note.
 
 ${preset.promptContext || ''}
 
-HARD LANGUAGE OVERRIDE:
-- chiefComplaint (CC) MUST be KOREAN (patient's wording).
-- historyOfPresentIllness (PI) MUST be KOREAN narrative.
-- Do NOT write PI in English.
+=== HARD LANGUAGE RULES (MOST IMPORTANT) ===
+- CC: KOREAN (patient's exact wording)
+- PI: KOREAN narrative (3-6 sentences)
+- Assessment/DDx/Dx/Plan: MEDICAL ENGLISH (no Korean diagnoses)
+- Korean connectors OK in Assessment (e.g., "~로 판단됨")
+- Do NOT translate diagnoses into Korean.
 
-HARD FORMATTING OVERRIDE:
-- If using bullets or numbered lists, ALWAYS put a blank line between items.
+=== HARD DDx/Dx RULES ===
+- DDx: Max 1-2 items (at most 3). Use "r/o [diagnosis] - [reason]" format.
+- Dx (AI): ONE problem-oriented line. Use "r/o X vs Y" format.
+- Do NOT list diagnoses in Korean.
+- Avoid vague terms (e.g., "cardiac problem", "brain issue").
 
-POPULAR KOREAN EMR DEFAULTS (BE CONSERVATIVE):
-- Keep PI (historyOfPresentIllness) to 3–6 short sentences.
-- Keep assessment summary to 1–2 sentences.
-- Plan: prioritize provider orders. Do NOT add AI suggestions unless strongly justified.
-- Keep Plan to 3–7 lines.
-- AI suggestions: at most 0–3 lines; omit if not strongly supported.
-- Avoid excessive abbreviations. Use only common ones: N/V, CP, SOB, HA, r/o, DDx, c/w, f/u, PRN, PO.
-- diagnosisInferred: maximum 3 items, MUST be DDx/r/o style (not definitive).
-${settings.additionalPrompt ? `\nADDITIONAL INSTRUCTIONS FROM USER:\n${settings.additionalPrompt}\n` : ''}
+=== HARD PLAN RULES ===
+- Orders in ENGLISH.
+- AI suggestions: OPTIONAL, max 1-2 lines, omit if weak evidence.
+- No explanatory sentences.
+
+=== HARD F/U RULE ===
+- Leave empty if not discussed.
+- No generic statements like "검사 결과에 따라 f/u".
+
+=== FORMATTING ===
+- Bullets must have blank line between items.
+${settings.additionalPrompt ? `\nADDITIONAL INSTRUCTIONS:\n${settings.additionalPrompt}\n` : ''}
 
 FIELDS TO FILL:
 ${fieldDescriptions}
 
-CONFIDENCE & INFERENCE (STRICT):
-- Default: isConfirmed=false.
-- isConfirmed=true ONLY if explicitly stated in the conversation.
-- For inferred content (allowed only in assessment, diagnosisInferred, and plan[AI 제안]):
-  - isConfirmed MUST be false
-  - source MUST be "inferred"
-  - confidence MUST be low/medium/high
-  - rationale MUST be 1–2 short lines
-  - evidence MUST include 1–2 short quotes from conversation
-- For stated content:
-  - source="stated"
-  - evidence is recommended if important
+CONFIDENCE & INFERENCE:
+- isConfirmed=true ONLY if explicitly stated.
+- For inferred content (assessment, diagnosisInferred, plan AI suggestions):
+  - isConfirmed=false, source="inferred"
+  - confidence: low/medium/high
+  - rationale: 1-2 short lines
+  - evidence: 1-2 quotes from conversation
+- For stated content: source="stated"
 
 OUTPUT FORMAT (PURE JSON ONLY):
 ${JSON.stringify(jsonSchema, null, 2)}
 
 CRITICAL:
-- Output ONLY valid JSON (no markdown, no explanations)
-- Always include all keys and all subkeys for every field
-- If not mentioned, keep empty ("") or [] with isConfirmed=false
+- Output ONLY valid JSON (no markdown)
+- Include all keys for every field
+- Empty if not mentioned ("" or [])
 `.trim();
 
   try {
@@ -422,10 +458,16 @@ CRITICAL:
             role: 'user',
             content:
 `다음 진료 대화를 바탕으로 한국 병원 외래 EMR처럼 작성해줘.
-- 없는 정보는 만들지 마.
-- CC/PI는 한국어.
-- Assessment/Plan은 한국어 기반 + 영어 약어(DDx/r/o/c/w, f/u, PRN 등) 자연스럽게 섞어.
-- 불릿/번호 항목은 반드시 한 줄씩 띄워.
+
+LANGUAGE:
+- CC/PI: 한국어
+- Assessment/DDx/Dx/Plan: 영어 (진단명 한국어 번역 금지)
+
+FORMAT:
+- DDx: "r/o [diagnosis] - [reason]" (최대 2-3개)
+- Dx (AI): 한 줄 요약 "r/o X vs Y"
+- Plan: 오더만 (설명문 금지)
+- 불릿 항목은 한 줄씩 띄워
 
 [진료 대화]
 ${conversation}`
