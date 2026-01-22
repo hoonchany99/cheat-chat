@@ -772,17 +772,12 @@ export function ChartingResult({
                 </div>
                 <p className="text-slate-700 font-semibold mb-1">AI 차트 생성 중...</p>
                 <p className="text-sm text-slate-500">대화를 분석하고 있습니다</p>
-                <div className="w-56 h-2 bg-slate-100 rounded-full mt-5 overflow-hidden shadow-inner">
-                  <div 
-                    className="h-full bg-gradient-to-r from-teal-500 via-cyan-400 to-teal-500 rounded-full transition-all duration-500 ease-out relative"
-                    style={{ 
-                      width: `${Math.max(recordingProgress, 15)}%`,
-                      backgroundSize: '200% 100%',
-                      animation: 'shimmer 2s ease-in-out infinite'
-                    }}
-                  />
+                {/* 로딩 도트 애니메이션 */}
+                <div className="flex items-center gap-1.5 mt-4">
+                  <div className="w-2 h-2 rounded-full bg-teal-500 animate-bounce" style={{ animationDelay: '0ms' }} />
+                  <div className="w-2 h-2 rounded-full bg-teal-500 animate-bounce" style={{ animationDelay: '150ms' }} />
+                  <div className="w-2 h-2 rounded-full bg-teal-500 animate-bounce" style={{ animationDelay: '300ms' }} />
                 </div>
-                <p className="text-xs text-slate-400 mt-2">{Math.round(recordingProgress)}% 완료</p>
               </div>
             ) : hasChartData ? (
               <div className="space-y-3">
