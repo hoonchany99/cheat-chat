@@ -113,6 +113,21 @@ export function ChartingResult({
   }, [chartData]);
 
   const handleCopyChart = useCallback(() => {
+    // 번호/항목 패턴을 줄바꿈으로 포맷팅
+    const formatContent = (text: string): string => {
+      // 번호 패턴 (1. 2. 등) 또는 대시/불릿 패턴 감지
+      const hasNumberedItems = /(?:^|\s)(\d+\.|\-|•)\s/.test(text);
+      
+      if (hasNumberedItems) {
+        // 번호나 대시/불릿 앞에서 줄바꿈 (첫 번째 제외)
+        return text
+          .replace(/(?<!^)\s*(\d+\.)\s*/g, '\n$1 ')
+          .replace(/(?<!^)\s*(\-|•)\s*/g, '\n$1 ')
+          .trim();
+      }
+      return text;
+    };
+
     const chartText = displayFields.map(field => {
       const fieldValue = editableData[field.id];
       if (!fieldValue) return null;
@@ -126,8 +141,11 @@ export function ChartingResult({
         : field.name;
       // 추측 필드에는 (?) 표시 추가
       const uncertainMarker = fieldValue.isConfirmed ? '' : ' (?)';
-      return `[${fieldLabel}] ${displayValue}${uncertainMarker}`;
-    }).filter(Boolean).join('\n');
+      // 내용 포맷팅 (번호 항목이면 줄바꿈)
+      const formattedContent = formatContent(displayValue);
+      // [필드명] 다음에 줄바꿈
+      return `[${fieldLabel}]${uncertainMarker}\n${formattedContent}`;
+    }).filter(Boolean).join('\n\n');
 
     navigator.clipboard.writeText(chartText);
     setIsCopied(true);
@@ -264,7 +282,7 @@ export function ChartingResult({
             </div>
             <div>
               <h3 className="font-semibold text-sm text-slate-800">AI 차트</h3>
-              <p className="text-xs text-slate-500">자동 생성 결과</p>
+              <p className="text-xs text-slate-500">AI가 대화를 분석하여 차트를 작성합니다</p>
             </div>
           </div>
           {hasChartData && (

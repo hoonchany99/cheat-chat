@@ -13,6 +13,88 @@ import { toast } from 'sonner';
 import { RotateCcw, Stethoscope, FileText, Mail, Loader2, MessageSquare, Send, ChevronRight, MessageCircle } from 'lucide-react';
 import { Textarea } from '@/app/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/app/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel } from '@/app/components/ui/select';
+
+// Google Sheets API URL
+const GOOGLE_SHEETS_URL = 'https://script.google.com/macros/s/AKfycbw5uH766QFw6m0kLchHySCPH7UUXX1F0TCxZe4ygqRiGEvhcSKKSr_nQ0gs_88GCDA/exec';
+
+// 사용자 정보 옵션
+const AGE_OPTIONS = [
+  { value: '20s', label: '20대' },
+  { value: '30s', label: '30대' },
+  { value: '40s', label: '40대' },
+  { value: '50s+', label: '50대 이상' },
+];
+
+const JOB_OPTIONS = [
+  { value: 'medical_student', label: '의대생/본과생' },
+  { value: 'resident', label: '전공의/레지던트' },
+  { value: 'fellow', label: '펠로우/전임의' },
+  { value: 'pay_doctor', label: '페이닥터' },
+  { value: 'private_practice', label: '개원의' },
+  { value: 'professor', label: '대학병원 교수' },
+  { value: 'nurse', label: '간호사' },
+  { value: 'other', label: '기타' },
+];
+
+const SPECIALTY_OPTIONS = [
+  // 내과계
+  { group: '내과계', items: [
+    { value: 'internal', label: '내과 (일반)' },
+    { value: 'cardiology', label: '순환기내과' },
+    { value: 'gastroenterology', label: '소화기내과' },
+    { value: 'pulmonology', label: '호흡기내과' },
+    { value: 'nephrology', label: '신장내과' },
+    { value: 'endocrinology', label: '내분비내과' },
+    { value: 'hematology_oncology', label: '혈액종양내과' },
+    { value: 'infectious', label: '감염내과' },
+    { value: 'rheumatology', label: '류마티스내과' },
+    { value: 'neurology', label: '신경과' },
+  ]},
+  // 외과계
+  { group: '외과계', items: [
+    { value: 'surgery', label: '외과 (일반)' },
+    { value: 'thoracic', label: '흉부외과' },
+    { value: 'neurosurgery', label: '신경외과' },
+    { value: 'orthopedic', label: '정형외과' },
+    { value: 'plastic', label: '성형외과' },
+    { value: 'urology', label: '비뇨의학과' },
+    { value: 'obgyn', label: '산부인과' },
+  ]},
+  // 기타 진료과
+  { group: '기타 진료과', items: [
+    { value: 'pediatrics', label: '소아청소년과' },
+    { value: 'psychiatry', label: '정신건강의학과' },
+    { value: 'dermatology', label: '피부과' },
+    { value: 'ophthalmology', label: '안과' },
+    { value: 'ent', label: '이비인후과' },
+    { value: 'family', label: '가정의학과' },
+    { value: 'emergency', label: '응급의학과' },
+    { value: 'anesthesiology', label: '마취통증의학과' },
+    { value: 'radiology', label: '영상의학과' },
+    { value: 'rehabilitation', label: '재활의학과' },
+    { value: 'occupational', label: '직업환경의학과' },
+    { value: 'pathology', label: '병리과' },
+    { value: 'laboratory', label: '진단검사의학과' },
+    { value: 'nuclear', label: '핵의학과' },
+    { value: 'preventive', label: '예방의학과' },
+  ]},
+  // 치과
+  { group: '치과', items: [
+    { value: 'dentistry', label: '치과 (일반)' },
+    { value: 'oral_surgery', label: '구강악안면외과' },
+    { value: 'orthodontics', label: '치과교정과' },
+    { value: 'prosthodontics', label: '치과보철과' },
+    { value: 'periodontics', label: '치주과' },
+    { value: 'endodontics', label: '치과보존과' },
+    { value: 'pediatric_dentistry', label: '소아치과' },
+  ]},
+  // 기타
+  { group: '기타', items: [
+    { value: 'undecided', label: '해당없음/미정' },
+    { value: 'other_specialty', label: '기타' },
+  ]},
+];
 
 // 페이지 전환 애니메이션 스타일
 const pageTransitionStyles = `
@@ -68,7 +150,18 @@ export default function App() {
   const [feedback, setFeedback] = useState('');
   const [isSendingFeedback, setIsSendingFeedback] = useState(false);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [feedbackStep, setFeedbackStep] = useState<'input' | 'info'>('input');
+  const [subscribeOpen, setSubscribeOpen] = useState(false);
   const [mobileTab, setMobileTab] = useState<'transcript' | 'chart'>('transcript');
+  
+  // 사용자 정보 상태
+  const [userAge, setUserAge] = useState('');
+  const [userJob, setUserJob] = useState('');
+  const [userSpecialty, setUserSpecialty] = useState('');
+  const [feedbackAge, setFeedbackAge] = useState('');
+  const [feedbackJob, setFeedbackJob] = useState('');
+  const [feedbackSpecialty, setFeedbackSpecialty] = useState('');
+  const [feedbackEmail, setFeedbackEmail] = useState('');
 
   const selectedDepartment = DEPARTMENT_PRESETS.find(d => d.id === chartSettings.selectedDepartment);
   const selectedDepartmentName = selectedDepartment?.name || '내과';
@@ -150,32 +243,136 @@ export default function App() {
     setRecordingProgress(0);
   }, []);
 
-  const handleEmailSubscribe = async (e: React.FormEvent) => {
+  // 이메일 입력 후 모달 열기
+  const handleEmailInputSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !email.includes('@')) {
       toast.error('올바른 이메일을 입력해주세요');
       return;
     }
-    setIsSubscribing(true);
-    await new Promise(resolve => setTimeout(resolve, 800));
-    toast.success('구독해주셔서 감사합니다!');
-    setEmail('');
-    setIsSubscribing(false);
+    setSubscribeOpen(true);
   };
 
-  const handleFeedbackSubmit = async (e: React.FormEvent) => {
+  // 모달에서 최종 구독 완료
+  const handleEmailSubscribe = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!userAge || !userJob || !userSpecialty) {
+      toast.error('모든 필드를 선택해주세요');
+      return;
+    }
+    setIsSubscribing(true);
+    
+    const subscribeData = {
+      type: 'subscribe',
+      email,
+      age: userAge,
+      job: userJob,
+      specialty: userSpecialty,
+      timestamp: new Date().toISOString(),
+      source: 'app'
+    };
+    
+    try {
+      await fetch(GOOGLE_SHEETS_URL, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(subscribeData),
+      });
+      toast.success('구독해주셔서 감사합니다!');
+      setEmail('');
+      setUserAge('');
+      setUserJob('');
+      setUserSpecialty('');
+      setSubscribeOpen(false);
+    } catch (error) {
+      console.error('Subscribe error:', error);
+      toast.error('오류가 발생했습니다. 다시 시도해주세요.');
+    } finally {
+      setIsSubscribing(false);
+    }
+  };
+
+  // 피드백 다음 단계로
+  const handleFeedbackNext = () => {
     if (!feedback.trim()) {
       toast.error('피드백을 입력해주세요');
       return;
     }
+    setFeedbackStep('info');
+  };
+
+  // 피드백 최종 제출
+  const handleFeedbackSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
     setIsSendingFeedback(true);
-    await new Promise(resolve => setTimeout(resolve, 800));
-    console.log('Feedback:', feedback);
-    toast.success('피드백 감사합니다!');
-    setFeedback('');
-    setIsSendingFeedback(false);
-    setFeedbackOpen(false);
+    
+    const feedbackData = {
+      type: 'feedback',
+      feedback,
+      email: feedbackEmail || '',
+      age: feedbackAge || '',
+      job: feedbackJob || '',
+      specialty: feedbackSpecialty || '',
+      timestamp: new Date().toISOString(),
+      source: 'app'
+    };
+    
+    try {
+      await fetch(GOOGLE_SHEETS_URL, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(feedbackData),
+      });
+      toast.success('피드백 감사합니다!');
+      setFeedback('');
+      setFeedbackEmail('');
+      setFeedbackAge('');
+      setFeedbackJob('');
+      setFeedbackSpecialty('');
+      setFeedbackOpen(false);
+      setFeedbackStep('input');
+    } catch (error) {
+      console.error('Feedback error:', error);
+      toast.error('오류가 발생했습니다. 다시 시도해주세요.');
+    } finally {
+      setIsSendingFeedback(false);
+    }
+  };
+
+  // 피드백 건너뛰기 (추가 정보 없이 제출)
+  const handleFeedbackSkip = async () => {
+    setIsSendingFeedback(true);
+    
+    const feedbackData = {
+      type: 'feedback',
+      feedback,
+      email: '',
+      age: '',
+      job: '',
+      specialty: '',
+      timestamp: new Date().toISOString(),
+      source: 'app'
+    };
+    
+    try {
+      await fetch(GOOGLE_SHEETS_URL, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(feedbackData),
+      });
+      toast.success('피드백 감사합니다!');
+      setFeedback('');
+      setFeedbackOpen(false);
+      setFeedbackStep('input');
+    } catch (error) {
+      console.error('Feedback error:', error);
+      toast.error('오류가 발생했습니다. 다시 시도해주세요.');
+    } finally {
+      setIsSendingFeedback(false);
+    }
   };
 
   // 랜딩 페이지
@@ -364,8 +561,11 @@ export default function App() {
                 </div>
               </div>
               <div className="flex items-center gap-3">
-                {/* Feedback Button */}
-                <Dialog open={feedbackOpen} onOpenChange={setFeedbackOpen}>
+                {/* Feedback Button & Modal */}
+                <Dialog open={feedbackOpen} onOpenChange={(open) => {
+                  setFeedbackOpen(open);
+                  if (!open) setFeedbackStep('input');
+                }}>
                   <DialogTrigger asChild>
                     <Button variant="outline" size="sm" className="text-slate-600">
                       <MessageSquare className="w-4 h-4 mr-1.5" />
@@ -376,35 +576,109 @@ export default function App() {
                     <DialogHeader>
                       <DialogTitle className="flex items-center gap-2">
                         <MessageSquare className="w-5 h-5 text-teal-600" />
-                        피드백 보내기
+                        {feedbackStep === 'input' ? '피드백 보내기' : '추가 정보 (선택)'}
                       </DialogTitle>
                     </DialogHeader>
-                    <form onSubmit={handleFeedbackSubmit} className="space-y-4">
-                      <Textarea
-                        placeholder="개선사항이나 의견을 자유롭게 남겨주세요..."
-                        value={feedback}
-                        onChange={(e) => setFeedback(e.target.value)}
-                        className="min-h-[120px] resize-none"
-                      />
-                      <div className="flex justify-end gap-2">
-                        <Button type="button" variant="outline" onClick={() => setFeedbackOpen(false)}>
-                          취소
-                        </Button>
-                        <Button 
-                          type="submit" 
-                          disabled={isSendingFeedback}
-                          className="bg-teal-600 hover:bg-teal-700"
-                        >
-                          {isSendingFeedback ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Send className="w-4 h-4 mr-2" />}
-                          보내기
-                        </Button>
+                    
+                    {feedbackStep === 'input' ? (
+                      <div className="space-y-4">
+                        <Textarea
+                          placeholder="개선사항이나 의견을 자유롭게 남겨주세요..."
+                          value={feedback}
+                          onChange={(e) => setFeedback(e.target.value)}
+                          className="min-h-[120px] resize-none"
+                        />
+                        <div className="flex justify-end gap-2">
+                          <Button type="button" variant="outline" onClick={() => setFeedbackOpen(false)}>
+                            취소
+                          </Button>
+                          <Button 
+                            onClick={handleFeedbackNext}
+                            className="bg-teal-600 hover:bg-teal-700"
+                          >
+                            다음
+                            <ChevronRight className="w-4 h-4 ml-1" />
+                          </Button>
+                        </div>
                       </div>
-                    </form>
+                    ) : (
+                      <form onSubmit={handleFeedbackSubmit} className="space-y-4">
+                        <p className="text-sm text-slate-500">
+                          더 나은 서비스를 위해 간단한 정보를 입력해주세요. 건너뛰셔도 됩니다.
+                        </p>
+                        <div className="grid grid-cols-2 gap-3">
+                          <Select value={feedbackAge} onValueChange={setFeedbackAge}>
+                            <SelectTrigger className="w-full">
+                              <SelectValue placeholder="연령대" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {AGE_OPTIONS.map(opt => (
+                                <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          
+                          <Select value={feedbackJob} onValueChange={setFeedbackJob}>
+                            <SelectTrigger className="w-full">
+                              <SelectValue placeholder="직업" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {JOB_OPTIONS.map(opt => (
+                                <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        
+                        <Select value={feedbackSpecialty} onValueChange={setFeedbackSpecialty}>
+                          <SelectTrigger className="w-full">
+                            <SelectValue placeholder="전공과" />
+                          </SelectTrigger>
+                          <SelectContent className="max-h-[300px]">
+                            {SPECIALTY_OPTIONS.map(group => (
+                              <SelectGroup key={group.group}>
+                                <SelectLabel>{group.group}</SelectLabel>
+                                {group.items.map(opt => (
+                                  <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                                ))}
+                              </SelectGroup>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        
+                        <Input
+                          type="email"
+                          placeholder="답변받을 이메일 (선택)"
+                          value={feedbackEmail}
+                          onChange={(e) => setFeedbackEmail(e.target.value)}
+                        />
+                        
+                        <div className="flex justify-between">
+                          <Button 
+                            type="button" 
+                            variant="ghost" 
+                            onClick={handleFeedbackSkip}
+                            disabled={isSendingFeedback}
+                            className="text-slate-500"
+                          >
+                            건너뛰기
+                          </Button>
+                          <Button 
+                            type="submit" 
+                            disabled={isSendingFeedback}
+                            className="bg-teal-600 hover:bg-teal-700"
+                          >
+                            {isSendingFeedback ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Send className="w-4 h-4 mr-2" />}
+                            보내기
+                          </Button>
+                        </div>
+                      </form>
+                    )}
                   </DialogContent>
                 </Dialog>
 
-                {/* Subscribe Form */}
-                <form onSubmit={handleEmailSubscribe} className="flex gap-2">
+                {/* Subscribe Form (inline) + Modal */}
+                <form onSubmit={handleEmailInputSubmit} className="flex gap-2">
                   <Input
                     type="email"
                     placeholder="your@email.com"
@@ -414,12 +688,83 @@ export default function App() {
                   />
                   <Button 
                     type="submit" 
-                    disabled={isSubscribing}
                     className="bg-teal-600 hover:bg-teal-700 px-5"
                   >
-                    {isSubscribing ? <Loader2 className="w-4 h-4 animate-spin" /> : '구독'}
+                    구독
                   </Button>
                 </form>
+                
+                {/* Subscribe Info Modal */}
+                <Dialog open={subscribeOpen} onOpenChange={setSubscribeOpen}>
+                  <DialogContent className="sm:max-w-md">
+                    <DialogHeader>
+                      <DialogTitle className="flex items-center gap-2">
+                        <Mail className="w-5 h-5 text-teal-600" />
+                        조금만 더 알려주세요!
+                      </DialogTitle>
+                    </DialogHeader>
+                    <form onSubmit={handleEmailSubscribe} className="space-y-4">
+                      <p className="text-sm text-slate-500">
+                        <span className="font-medium text-slate-700">{email}</span>로 알림을 보내드립니다.
+                        <br />더 나은 서비스를 위해 간단한 정보를 입력해주세요.
+                      </p>
+                      
+                      <div className="grid grid-cols-2 gap-3">
+                        <Select value={userAge} onValueChange={setUserAge}>
+                          <SelectTrigger className="w-full">
+                            <SelectValue placeholder="연령대 *" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {AGE_OPTIONS.map(opt => (
+                              <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        
+                        <Select value={userJob} onValueChange={setUserJob}>
+                          <SelectTrigger className="w-full">
+                            <SelectValue placeholder="직업 *" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {JOB_OPTIONS.map(opt => (
+                              <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      
+                      <Select value={userSpecialty} onValueChange={setUserSpecialty}>
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="전공과 *" />
+                        </SelectTrigger>
+                        <SelectContent className="max-h-[300px]">
+                          {SPECIALTY_OPTIONS.map(group => (
+                            <SelectGroup key={group.group}>
+                              <SelectLabel>{group.group}</SelectLabel>
+                              {group.items.map(opt => (
+                                <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                              ))}
+                            </SelectGroup>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      
+                      <div className="flex justify-end gap-2">
+                        <Button type="button" variant="outline" onClick={() => setSubscribeOpen(false)}>
+                          취소
+                        </Button>
+                        <Button 
+                          type="submit" 
+                          disabled={isSubscribing}
+                          className="bg-teal-600 hover:bg-teal-700"
+                        >
+                          {isSubscribing ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Mail className="w-4 h-4 mr-2" />}
+                          완료
+                        </Button>
+                      </div>
+                    </form>
+                  </DialogContent>
+                </Dialog>
               </div>
             </div>
           </div>

@@ -399,23 +399,6 @@ export function ChartSettingsModal({ settings, onSettingsChange, departmentName 
 
             {/* 고급 설정 탭 */}
             <TabsContent value="advanced" className="mt-0 space-y-4 pr-3">
-              {/* SOAP 포함 여부 */}
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label htmlFor="include-soap">SOAP 형식 탭 포함</Label>
-                  <p className="text-sm text-muted-foreground">
-                    구조화 양식 외에 SOAP 형식 탭도 표시합니다
-                  </p>
-                </div>
-                <Switch
-                  id="include-soap"
-                  checked={localSettings.includeSOAP}
-                  onCheckedChange={(checked) =>
-                    setLocalSettings(prev => ({ ...prev, includeSOAP: checked }))
-                  }
-                />
-              </div>
-
               {/* 추가 프롬프트 */}
               <div className="space-y-2">
                 <Label htmlFor="additional-prompt">추가 지시사항</Label>

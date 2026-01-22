@@ -798,7 +798,7 @@ export function DemoPage({ onBack }: DemoPageProps) {
                       </div>
                       <div>
                         <h3 className="font-semibold text-sm text-slate-800">실시간 대화</h3>
-                        <p className="text-xs text-slate-500">의사/환자 자동 구분</p>
+                        <p className="text-xs text-slate-500">AI가 실시간으로 대화를 듣고 정리해줍니다</p>
                       </div>
                     </div>
                     {isRecording && (

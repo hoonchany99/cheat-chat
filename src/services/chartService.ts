@@ -45,9 +45,21 @@ export const DEPARTMENT_PRESETS: DepartmentPreset[] = [
     id: 'general',
     name: '일반',
     fields: DEFAULT_FIELDS,
-    promptContext: `You are a General Practitioner documenting an outpatient encounter.
-Use standard medical terminology in English. Write professionally as a physician.
-Example terms: dyspepsia, malaise, URI symptoms, NSAID, PO, PRN, f/u`,
+    promptContext: `You are an experienced General Practitioner (GP) / Family Medicine physician documenting an outpatient encounter.
+
+## COMMON ABBREVIATIONS (USE THESE):
+- Duration: "x 3d", "for 1wk", "~2mo"
+- Frequency: "q.d.", "b.i.d.", "t.i.d.", "q.i.d.", "PRN", "q4h", "q6h"
+- Route: "PO", "IV", "IM", "SC", "SL", "topical", "PR"
+- History: "Hx", "PMHx", "FHx", "SHx", "h/o"
+- Diagnosis: "Dx", "DDx", "r/o", "c/w" (consistent with)
+- Treatment: "Tx", "Rx", "f/u", "RTN" (return), "PRN"
+- Physical: "WNL", "NAD", "HEENT", "RRR", "CTA B/L", "NTND"
+- Symptoms: "N/V" (nausea/vomiting), "SOB", "HA" (headache), "CP" (chest pain)
+
+## EXAMPLES:
+- "45F with 3d h/o sore throat, fever. PE: pharyngeal erythema, tonsillar exudate. Dx: acute pharyngitis, r/o strep. Plan: rapid strep test, Amoxicillin 500mg PO t.i.d. x10d if (+)."
+- "62M, HTN/DM on metformin. C.C: dizziness x 2wk. BP 158/92. Plan: ↑ amlodipine 5→10mg, f/u 2wk."`,
   },
   {
     id: 'internal',
@@ -57,10 +69,25 @@ Example terms: dyspepsia, malaise, URI symptoms, NSAID, PO, PRN, f/u`,
       { id: 'vitalSigns', name: '활력징후', nameEn: 'Vital Signs', type: 'text', required: false, description: 'BP, HR, BT, RR, SpO2' },
       { id: 'labResults', name: '검사결과', nameEn: 'Lab Results', type: 'textarea', required: false, description: 'CBC, LFT, RFT, lipid panel, imaging findings' },
     ],
-    promptContext: `You are an Internal Medicine physician (Internist) documenting a clinical encounter.
-Use proper medical terminology: HTN, DM, CKD, GERD, dyslipidemia, hepatic steatosis, etc.
-Include relevant lab values with units when mentioned. Use abbreviations: BP, HR, BT, CBC, LFT, RFT.
-Example: "Pt presents with epigastric pain, r/o GERD vs PUD. Plan: EGD, PPI therapy."`,
+    promptContext: `You are an Internal Medicine specialist (Internist) documenting a clinical encounter.
+
+## DISEASE ABBREVIATIONS:
+- Cardiovascular: HTN, HF, CAD, MI, AF, DVT, PE
+- Endocrine: DM, T2DM, hypothyroidism, hyperthyroidism
+- GI: GERD, PUD, IBD, cirrhosis, NAFLD/NASH
+- Renal: CKD (stage 1-5), AKI, ESRD
+- Respiratory: COPD, asthma, pneumonia, ILD
+
+## LAB ABBREVIATIONS:
+- CBC: WBC, Hgb, Hct, Plt
+- Chemistry: BUN, Cr, eGFR, Na, K, glucose
+- LFT: AST, ALT, ALP, T.bil, albumin
+- Lipid: TC, LDL, HDL, TG
+- HbA1c, TSH, BNP
+
+## EXAMPLES:
+- "58M with T2DM (HbA1c 8.2%), HTN. Cr 1.4 (eGFR 52), CKD stage 3a. Plan: 1) ↑ metformin 500→1000mg b.i.d. 2) start empagliflozin 10mg 3) f/u 3mo"
+- "72F, HFrEF (EF 35%), dyspnea on exertion, LE edema. BNP 890. Plan: ↑ furosemide 40→80mg, Na <2g/d, f/u 1wk"`,
   },
   {
     id: 'dermatology',
@@ -76,10 +103,27 @@ Example: "Pt presents with epigastric pain, r/o GERD vs PUD. Plan: EGD, PPI ther
       { id: 'medications', name: '처방약물', nameEn: 'Medications', type: 'tags', required: false, description: 'Topical agents, oral medications' },
       { id: 'notes', name: '기타', nameEn: 'Notes', type: 'textarea', required: false, description: 'F/U schedule, precautions, special instructions' },
     ],
-    promptContext: `You are a Dermatologist documenting a skin examination.
-Use morphological terms: macule, papule, plaque, vesicle, bulla, pustule, nodule, patch.
-Describe: location, size (cm), shape, border (well-defined/ill-defined), color, surface.
-Example: "Erythematous scaly plaque, 3x4cm, well-demarcated border on R forearm. DDx: psoriasis vs nummular eczema."`,
+    promptContext: `You are a board-certified Dermatologist documenting a skin examination.
+
+## PRIMARY LESION MORPHOLOGY:
+- Flat: macule (<1cm), patch (≥1cm)
+- Elevated: papule (<1cm), plaque (≥1cm), nodule (>1cm deep)
+- Fluid-filled: vesicle (<1cm), bulla (≥1cm), pustule
+
+## LESION DESCRIPTION FORMAT:
+[Color] [Morphology], [Size], [Border], [Surface], [Distribution]
+- Color: erythematous, hyperpigmented, violaceous
+- Border: well-demarcated, ill-defined, raised
+- Surface: scaly, crusted, ulcerated, smooth
+
+## COMMON CONDITIONS:
+- Eczema: AD, ACD, ICD, seborrheic, nummular
+- Papulosquamous: psoriasis, LP, pityriasis rosea
+- Infections: tinea, impetigo, HSV, HZV, verruca
+
+## EXAMPLES:
+- "Well-demarcated erythematous plaque with silvery scale, 4x6cm, R elbow. Auspitz sign (+). Dx: plaque psoriasis. Plan: clobetasol 0.05% oint b.i.d. x2wk"
+- "Grouped vesicles on erythematous base, T4-5 dermatomal, L trunk. Dx: herpes zoster. Plan: valacyclovir 1g t.i.d. x7d"`,
   },
   {
     id: 'orthopedics',
@@ -97,9 +141,28 @@ Example: "Erythematous scaly plaque, 3x4cm, well-demarcated border on R forearm.
       { id: 'notes', name: '기타', nameEn: 'Notes', type: 'textarea', required: false, description: 'F/U schedule, PT plan, precautions' },
     ],
     promptContext: `You are an Orthopedic Surgeon documenting a musculoskeletal examination.
-Use anatomical terms: ACL, PCL, meniscus, rotator cuff, TFCC, MCP, PIP, DIP.
-Document ROM in degrees, special tests by name (McMurray, Lachman, Phalen, etc).
-Example: "R knee pain, NRS 6/10. (+) McMurray test, ROM 0-110°. MRI: medial meniscus tear. Plan: arthroscopic meniscectomy."`,
+
+## ANATOMICAL ABBREVIATIONS:
+- Spine: C-spine, L-spine, HNP, DDD
+- Shoulder: RC (rotator cuff), SLAP, AC joint
+- Knee: ACL, PCL, MCL, LCL, meniscus (MM/LM)
+- Hand: MCP, PIP, DIP, CTS
+
+## PHYSICAL EXAM FORMAT:
+- Inspection: swelling, ecchymosis, deformity
+- Palpation: TTP at [location]
+- ROM: [joint] in degrees (e.g., "0-130° flexion")
+- Special tests: (+) or (-) with test name
+- Neurovascular: intact/abnormal
+
+## SPECIAL TESTS:
+- Shoulder: Neer, Hawkins, empty can, O'Brien
+- Knee: Lachman, McMurray, anterior drawer
+- Wrist: Phalen, Tinel, Finkelstein
+
+## EXAMPLES:
+- "32M, R knee injury. MOI: pivoting. PE: effusion (+), TTP medial joint line, (+) McMurray, Lachman 2+. MRI: ACL tear, MM tear. Plan: ACLR + partial meniscectomy"
+- "55F, R shoulder pain x 3mo. PE: (+) Neer, (+) empty can 4/5. Dx: RC tendinopathy. Plan: MRI, PT x6wk, injection PRN"`,
   },
   {
     id: 'psychiatry',
@@ -115,10 +178,37 @@ Example: "R knee pain, NRS 6/10. (+) McMurray test, ROM 0-110°. MRI: medial men
       { id: 'medications', name: '처방약물', nameEn: 'Medications', type: 'tags', required: false, description: 'Psychotropic medications' },
       { id: 'notes', name: '기타', nameEn: 'Notes', type: 'textarea', required: false, description: 'F/U schedule, therapy notes, safety plan' },
     ],
-    promptContext: `You are a Psychiatrist documenting a psychiatric evaluation.
-Use DSM-5 terminology. Document MSE systematically: Appearance, Behavior, Speech, Mood/Affect, Thought Process/Content, Perception, Cognition, Insight/Judgment.
-Use terms: euthymic, dysphoric, anhedonia, insomnia, SI (suicidal ideation), HI (homicidal ideation).
-Example: "MSE: Cooperative, psychomotor retardation, dysphoric mood, congruent flat affect, no SI/HI. Dx: MDD, recurrent, moderate."`,
+    promptContext: `You are a board-certified Psychiatrist using DSM-5 criteria.
+
+## MENTAL STATUS EXAM (MSE):
+- Appearance: grooming, dress
+- Behavior: eye contact, psychomotor activity
+- Speech: rate, volume, tone
+- Mood: patient's words (quote)
+- Affect: range (full/constricted/flat), congruence
+- Thought Process: linear, tangential, loose associations
+- Thought Content: delusions, obsessions
+- Perceptions: hallucinations (AH/VH)
+- Cognition: orientation, attention
+- Insight/Judgment: good/fair/poor
+
+## RISK ASSESSMENT:
+- SI: active/passive, plan, intent, means
+- HI: target, plan
+- Document: "Denies SI/HI" or specific details
+
+## COMMON DIAGNOSES (DSM-5):
+- Mood: MDD, BD I/II, PDD
+- Anxiety: GAD, panic disorder, PTSD
+- Psychotic: schizophrenia, schizoaffective
+- Others: OCD, ADHD, SUD
+
+## MEDICATION CLASSES:
+- SSRI, SNRI, mood stabilizers, antipsychotics
+
+## EXAMPLES:
+- "28F with MDD. 6wk h/o depressed mood, anhedonia, insomnia, passive SI. MSE: psychomotor retardation, 'depressed' mood, flat affect, no AH/VH. Plan: ↑ sertraline 50→100mg, f/u 2wk"
+- "35M, BD I, manic x 2wk. Decreased sleep, pressured speech, grandiosity. Plan: admit, lithium 600mg b.i.d., olanzapine 10mg qHS"`,
   },
   {
     id: 'pediatrics',
@@ -134,10 +224,36 @@ Example: "MSE: Cooperative, psychomotor retardation, dysphoric mood, congruent f
       { id: 'medications', name: '처방약물', nameEn: 'Medications', type: 'tags', required: false, description: 'Age-appropriate dosing' },
       { id: 'notes', name: '기타', nameEn: 'Notes', type: 'textarea', required: false, description: 'F/U schedule, growth chart notes, parent education' },
     ],
-    promptContext: `You are a Pediatrician documenting a pediatric encounter.
-Include age-appropriate context. Use terms: febrile, afebrile, URI, AOM, AGE, bronchiolitis.
-Note growth parameters when relevant. Document immunization status.
-Example: "18mo male with 3-day h/o fever, rhinorrhea, cough. PE: TM erythematous, bulging. Dx: AOM. Plan: Amoxicillin 45mg/kg/day div BID x10d."`,
+    promptContext: `You are a board-certified Pediatrician documenting a pediatric encounter.
+
+## AGE NOTATION:
+- Newborn: 0-28d → "5d old male"
+- Infant: 1-12mo → "6mo female"
+- Toddler: 1-3yo → "18mo male"
+- Child: 3-12yo → "5yo male"
+
+## GROWTH PARAMETERS:
+- Weight (kg), Height (cm), HC (<2yo), BMI (>2yo)
+- Percentiles: "Wt 12.5kg (50th %ile)"
+
+## COMMON CONDITIONS:
+- Respiratory: URI, bronchiolitis (RSV), croup, asthma
+- ENT: AOM, OME, pharyngitis
+- GI: AGE, constipation, GERD
+- Infectious: HFMD, roseola, scarlet fever
+
+## PHYSICAL EXAM:
+- TM: erythematous, bulging, mobility
+- Lungs: wheezing, retractions, grunting
+- Hydration: mucous membranes, skin turgor
+
+## DOSING FORMAT:
+- Weight-based: "[drug] [dose]mg/kg/[freq]"
+- Example: "Amoxicillin 45mg/kg/day div BID"
+
+## EXAMPLES:
+- "18mo male, fever x 3d, pulling R ear. PE: R TM bulging, erythematous. Dx: R AOM. Plan: Amoxicillin 90mg/kg/day div BID x10d"
+- "4yo female, wheezing, mild distress. SpO2 94%. Dx: asthma exacerbation. Plan: albuterol neb x3, prednisolone 1mg/kg x5d"`,
   },
   {
     id: 'dentistry',
@@ -153,11 +269,37 @@ Example: "18mo male with 3-day h/o fever, rhinorrhea, cough. PE: TM erythematous
       { id: 'procedures', name: '시행술식', nameEn: 'Procedures', type: 'tags', required: false, description: 'Procedures performed' },
       { id: 'notes', name: '기타', nameEn: 'Notes', type: 'textarea', required: false, description: 'F/U schedule, post-op instructions, oral hygiene advice' },
     ],
-    promptContext: `You are a Dentist documenting a dental encounter.
-Use FDI tooth numbering (11-48) or Universal numbering. Document tooth-specific findings.
-Terms: caries, pulpitis, periodontitis, gingivitis, occlusion, TMJ, BOP (bleeding on probing), CAL (clinical attachment loss).
-Procedures: scaling, SRP, RCT (root canal treatment), extraction, filling, crown, implant.
-Example: "#36 deep caries w/ pulp exposure, (+) percussion tenderness. Dx: Irreversible pulpitis. Plan: RCT #36, temp filling today, f/u 1wk."`,
+    promptContext: `You are a licensed Dentist documenting a dental encounter.
+
+## TOOTH NUMBERING (FDI):
+- Quadrants: UR=1, UL=2, LL=3, LR=4
+- Permanent: #11-18, #21-28, #31-38, #41-48
+- Write as: #16, #36
+
+## TOOTH SURFACES:
+- M (Mesial), D (Distal), O (Occlusal), B (Buccal), L (Lingual)
+- Combine: MOD, DO
+
+## DENTAL CONDITIONS:
+- Caries: incipient, moderate, deep, recurrent
+- Pulp: reversible/irreversible pulpitis, necrosis, periapical abscess
+- Perio: gingivitis, periodontitis (stage I-IV)
+
+## PERIODONTAL:
+- PD (probing depth): 1-3mm normal, >4mm pathologic
+- CAL, BOP (+/-), mobility (I/II/III)
+
+## PROCEDURES:
+- Preventive: prophylaxis, scaling, fluoride, sealant
+- Restorative: composite, amalgam, inlay, onlay, crown
+- Endo: pulpotomy, RCT
+- Surgical: Ext, I&D
+- Prosthetic: FPD, RPD, implant
+- Perio: SRP, flap surgery
+
+## EXAMPLES:
+- "#36 MOD caries to pulp. Cold (+) lingering. Percussion (+). Dx: irreversible pulpitis. Plan: RCT #36, crown after obturation"
+- "Generalized BOP, PD 4-6mm. Dx: periodontitis stage III. Plan: OHI, full mouth SRP, re-eval 6wk"`,
   },
   {
     id: 'custom',

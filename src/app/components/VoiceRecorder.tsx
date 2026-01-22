@@ -37,6 +37,7 @@ export function VoiceRecorder({
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const [audioLevel, setAudioLevel] = useState(0);
+  const [waveformTick, setWaveformTick] = useState(0);
   const timerRef = useRef<number | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
@@ -73,6 +74,17 @@ export function VoiceRecorder({
       toast.error(`연결 오류: ${deepgramError}`);
     }
   }, [deepgramError]);
+
+  // 파형 애니메이션을 위한 주기적 업데이트
+  useEffect(() => {
+    if (!isRecording) return;
+    
+    const interval = setInterval(() => {
+      setWaveformTick(prev => prev + 1);
+    }, 50); // 20fps로 파형 업데이트
+    
+    return () => clearInterval(interval);
+  }, [isRecording]);
 
   const startAudioAnalysis = useCallback((stream: MediaStream) => {
     try {
@@ -194,13 +206,19 @@ export function VoiceRecorder({
   };
 
   // Waveform bars
-  const bars = 5;
+  const bars = 7;
   const getBarHeight = (index: number) => {
-    const baseHeight = 8;
-    const maxAdditional = 20;
-    const phase = (Date.now() / 200 + index * 0.5) % (Math.PI * 2);
-    const wave = Math.sin(phase) * 0.5 + 0.5;
-    return baseHeight + (audioLevel * maxAdditional * (0.5 + wave * 0.5));
+    const baseHeight = 6;
+    const maxAdditional = 28;
+    // waveformTick을 사용하여 애니메이션 동기화
+    const time = waveformTick * 50; // 50ms interval
+    const phase1 = (time / 150 + index * 0.8) % (Math.PI * 2);
+    const phase2 = (time / 100 + index * 1.2) % (Math.PI * 2);
+    const wave = (Math.sin(phase1) * 0.4 + Math.sin(phase2) * 0.3 + 0.5);
+    // audioLevel을 증폭 + 기본 움직임 추가
+    const amplifiedLevel = Math.min(audioLevel * 2.5, 1);
+    const minMovement = 0.3; // 소리가 작아도 최소 움직임
+    return baseHeight + (Math.max(amplifiedLevel, minMovement) * maxAdditional * wave);
   };
 
   return (
@@ -245,41 +263,42 @@ export function VoiceRecorder({
       </div>
 
       {/* Recording Status */}
-      <div className="flex flex-col items-start">
+      <div className="flex items-center gap-4">
         {isRecording ? (
           <>
             {/* Waveform */}
-            <div className="flex items-center gap-1 h-8 mb-1">
+            <div className="flex items-center gap-1 h-10">
               {Array.from({ length: bars }).map((_, i) => (
                 <div
                   key={i}
-                  className="w-1 bg-gradient-to-t from-red-500 to-red-400 rounded-full transition-all duration-75"
+                  className="w-1.5 bg-gradient-to-t from-red-500 to-red-400 rounded-full transition-all duration-75"
                   style={{ height: `${getBarHeight(i)}px` }}
                 />
               ))}
             </div>
-            {/* Timer */}
-            <div className="text-sm font-bold text-slate-900 tabular-nums">
-              {formatTime(recordingTime)}
-            </div>
-            <div className="text-xs text-red-500 font-medium flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
-              녹음 중
+            {/* Timer & Status */}
+            <div className="flex flex-col">
+              <div className="text-lg font-bold text-slate-900 tabular-nums">
+                {formatTime(recordingTime)}
+              </div>
+              <div className="text-xs text-red-500 font-medium flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+                녹음 중
+              </div>
             </div>
           </>
         ) : isTranscribing ? (
-          <>
-            <div className="flex items-center gap-2 text-teal-600 mb-1">
-              <Loader2 className="w-4 h-4 animate-spin" />
-              <span className="text-sm font-semibold">차트 생성 중...</span>
+          <div className="flex items-center gap-3">
+            <Loader2 className="w-5 h-5 animate-spin text-teal-600" />
+            <div>
+              <div className="text-sm font-semibold text-teal-600">차트 생성 중...</div>
+              <div className="text-xs text-slate-500">잠시만 기다려주세요</div>
             </div>
-            <div className="text-xs text-slate-500">잠시만 기다려주세요</div>
-          </>
+          </div>
         ) : (
-          <>
-            <div className="text-sm font-semibold text-slate-700">마이크 버튼을</div>
-            <div className="text-sm font-semibold text-slate-700">눌러 녹음 시작</div>
-          </>
+          <div className="text-sm font-medium text-slate-600">
+            마이크 버튼을 눌러 녹음 시작
+          </div>
         )}
       </div>
     </div>
