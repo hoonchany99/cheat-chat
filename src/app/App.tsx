@@ -10,7 +10,7 @@ import { Button } from '@/app/components/ui/button';
 import { Input } from '@/app/components/ui/input';
 import { Toaster } from '@/app/components/ui/sonner';
 import { toast } from 'sonner';
-import { RotateCcw, Stethoscope, FileText, Mail, Loader2, MessageSquare, Send, X, Mic, Sparkles, ClipboardList, ChevronRight } from 'lucide-react';
+import { RotateCcw, Stethoscope, FileText, Mail, Loader2, MessageSquare, Send, ChevronRight, MessageCircle } from 'lucide-react';
 import { Textarea } from '@/app/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/app/components/ui/dialog';
 
@@ -68,6 +68,7 @@ export default function App() {
   const [feedback, setFeedback] = useState('');
   const [isSendingFeedback, setIsSendingFeedback] = useState(false);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [mobileTab, setMobileTab] = useState<'transcript' | 'chart'>('transcript');
 
   const selectedDepartment = DEPARTMENT_PRESETS.find(d => d.id === chartSettings.selectedDepartment);
   const selectedDepartmentName = selectedDepartment?.name || '내과';
@@ -117,6 +118,7 @@ export default function App() {
     setIsRecording(true);
     setChartData(null);
     setRecordingProgress(0);
+    setMobileTab('transcript'); // 녹음 시작 시 실시간 대화 탭으로 전환
   }, []);
 
   const handleProcessingStart = useCallback(() => {
@@ -129,6 +131,7 @@ export default function App() {
     
     if (result) {
       setChartData(result);
+      setMobileTab('chart'); // 차트 생성 완료 시 차트 탭으로 전환
     }
     setIsGeneratingChart(false);
   }, []);
@@ -281,7 +284,40 @@ export default function App() {
           </div>
 
           {/* Content Area */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Mobile Tab Switcher */}
+          <div className="lg:hidden flex gap-2 bg-white rounded-xl border border-slate-200 p-1.5">
+            <button
+              onClick={() => setMobileTab('transcript')}
+              className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                mobileTab === 'transcript'
+                  ? 'bg-teal-500 text-white shadow-sm'
+                  : 'text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              <MessageCircle className="w-4 h-4" />
+              실시간 대화
+              {isRecording && mobileTab !== 'transcript' && (
+                <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+              )}
+            </button>
+            <button
+              onClick={() => setMobileTab('chart')}
+              className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                mobileTab === 'chart'
+                  ? 'bg-teal-500 text-white shadow-sm'
+                  : 'text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              <FileText className="w-4 h-4" />
+              AI 차트
+              {chartData && mobileTab !== 'chart' && (
+                <span className="w-2 h-2 rounded-full bg-teal-500" />
+              )}
+            </button>
+          </div>
+
+          {/* Desktop: Grid Layout */}
+          <div className="hidden lg:grid lg:grid-cols-2 gap-6">
             <TranscriptViewer
               finalTranscript={finalTranscript}
               isRecording={isRecording}
@@ -293,6 +329,24 @@ export default function App() {
               recordingProgress={recordingProgress}
               isRecording={isRecording}
             />
+          </div>
+
+          {/* Mobile: Tab Content */}
+          <div className="lg:hidden">
+            {mobileTab === 'transcript' ? (
+              <TranscriptViewer
+                finalTranscript={finalTranscript}
+                isRecording={isRecording}
+                realtimeSegments={realtimeSegments}
+              />
+            ) : (
+              <ChartingResult
+                chartData={chartData}
+                isGenerating={isGeneratingChart}
+                recordingProgress={recordingProgress}
+                isRecording={isRecording}
+              />
+            )}
           </div>
 
           {/* Email Subscribe Section */}
