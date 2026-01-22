@@ -128,7 +128,9 @@ export class DeepgramRealtimeTranscriber {
   private classifiedUtteranceCount: number = 0; // 분류 완료된 발화 개수
   private isClassifying: boolean = false;
   private classifyTimer: ReturnType<typeof setTimeout> | null = null;
+  private keepAliveInterval: ReturnType<typeof setInterval> | null = null; // KeepAlive 타이머
   private readonly WINDOW_SIZE = 5; // 한 번에 분류할 발화 개수
+  private readonly KEEPALIVE_INTERVAL_MS = 10000; // 10초마다 KeepAlive 전송
   
   constructor(
     onRealtimeSegment: (segment: SpeakerSegment) => void,
@@ -144,6 +146,34 @@ export class DeepgramRealtimeTranscriber {
   // 전체 세그먼트 업데이트 콜백 설정
   setOnSegmentsUpdate(callback: (segments: SpeakerSegment[]) => void) {
     this.onSegmentsUpdate = callback;
+  }
+
+  // KeepAlive 타이머 시작 (연결이 끊기지 않도록 주기적으로 신호 전송)
+  private startKeepAlive() {
+    this.stopKeepAlive(); // 기존 타이머 정리
+    
+    this.keepAliveInterval = setInterval(() => {
+      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+        try {
+          // Deepgram KeepAlive 메시지 전송
+          this.ws.send(JSON.stringify({ type: 'KeepAlive' }));
+          console.log('💓 KeepAlive 전송');
+        } catch (e) {
+          console.error('KeepAlive 전송 실패:', e);
+        }
+      }
+    }, this.KEEPALIVE_INTERVAL_MS);
+    
+    console.log(`⏰ KeepAlive 타이머 시작 (${this.KEEPALIVE_INTERVAL_MS / 1000}초 간격)`);
+  }
+
+  // KeepAlive 타이머 중지
+  private stopKeepAlive() {
+    if (this.keepAliveInterval) {
+      clearInterval(this.keepAliveInterval);
+      this.keepAliveInterval = null;
+      console.log('⏰ KeepAlive 타이머 중지');
+    }
   }
 
   // WebSocket 연결 시작
@@ -178,6 +208,10 @@ export class DeepgramRealtimeTranscriber {
         clearTimeout(timeout);
         this.isConnected = true;
         console.log('✅ Deepgram WebSocket 연결됨');
+        
+        // KeepAlive 타이머 시작 (연결 유지를 위해 주기적으로 KeepAlive 전송)
+        this.startKeepAlive();
+        
         resolve();
       };
 
@@ -349,6 +383,9 @@ export class DeepgramRealtimeTranscriber {
       clearTimeout(this.classifyTimer);
       this.classifyTimer = null;
     }
+    
+    // KeepAlive 타이머 중지
+    this.stopKeepAlive();
 
     // WebSocket 닫기
     if (this.ws) {
