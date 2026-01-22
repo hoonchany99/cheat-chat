@@ -7,7 +7,7 @@ import { DemoPage } from './components/DemoPage';
 import { ChartSettingsModal } from './components/ChartSettingsModal';
 import { MobileMicPage } from './components/MobileMicPage';
 import { RemoteMicModal } from './components/RemoteMicModal';
-import { ChartSettings, DEFAULT_CHART_SETTINGS, DEPARTMENT_PRESETS } from '@/services/chartService';
+import { ChartSettings, DEFAULT_CHART_SETTINGS, DEPARTMENT_PRESETS, generateChartFromTranscript } from '@/services/chartService';
 import { Button } from '@/app/components/ui/button';
 import { Input } from '@/app/components/ui/input';
 import { Toaster } from '@/app/components/ui/sonner';
@@ -833,8 +833,31 @@ function MainApp() {
           setRecordingProgress(0);
           setMobileTab('transcript');
         }}
-        onRemoteRecordingStop={() => {
+        onRemoteRecordingStop={async () => {
           setIsRemoteRecording(false);
+          setIsGeneratingChart(true);
+          setMobileTab('chart');
+          
+          // 수집된 세그먼트로 차트 생성
+          const transcriptText = realtimeSegments.map(s => s.text).join(' ');
+          if (transcriptText) {
+            try {
+              console.log('[Remote] Generating chart from segments:', realtimeSegments.length);
+              const result = await generateChartFromTranscript(
+                transcriptText, 
+                realtimeSegments, 
+                chartSettings.selectedDepartment
+              );
+              if (result) {
+                setChartData(result);
+                toast.success('차트가 생성되었습니다');
+              }
+            } catch (error) {
+              console.error('Remote chart generation error:', error);
+              toast.error('차트 생성 중 오류가 발생했습니다');
+            }
+          }
+          setIsGeneratingChart(false);
         }}
       />
     </div>
