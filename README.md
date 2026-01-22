@@ -154,6 +154,7 @@ cheat-chat/
 │   ├── app/
 │   │   ├── App.tsx                    # 메인 앱 컴포넌트 (상태 관리)
 │   │   └── components/
+│   │       ├── LandingPage.tsx        # 랜딩 페이지 (서비스 소개)
 │   │       ├── VoiceRecorder.tsx      # 녹음 UI + MediaRecorder
 │   │       ├── TranscriptViewer.tsx   # 실시간/최종 대화 표시
 │   │       ├── ChartingResult.tsx     # 생성된 차트 표시/편집
@@ -290,3 +291,4 @@ npm run build
 ## 📝 라이선스
 
 MIT License
+  
