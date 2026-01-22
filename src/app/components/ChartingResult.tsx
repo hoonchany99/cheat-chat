@@ -20,6 +20,42 @@ import { ChartField, DEPARTMENT_PRESETS, DdxItem, ChartFieldValue } from '@/serv
 // ChartData는 여기서 export (chartService의 타입 활용)
 export type { DdxItem, ChartFieldValue };
 
+// 필드별 placeholder (영어 설명 + 예시)
+const FIELD_PLACEHOLDERS: Record<string, string> = {
+  // S - Subjective
+  chiefComplaint: "Main symptom in patient's words (e.g., 가슴이 아파요, 머리가 아파요)",
+  historyOfPresentIllness: "Detailed illness history: onset, duration, severity, progression",
+  pertinentROS: "Review of systems (e.g., N/V(-), fever(-), CP(-), SOB(-))",
+  
+  // History
+  pastMedicalHistory: "Past diagnoses (e.g., HTN, DM, asthma, CAD)",
+  pastSurgicalHistory: "Surgical history (e.g., s/p appendectomy, s/p CABG)",
+  medications: "Current medications (e.g., metformin 500mg, lisinopril 10mg)",
+  allergies: "Drug/food allergies (e.g., PCN, shellfish) or NKDA",
+  socialHistory: "Lifestyle (e.g., smoking 1ppd x 10yrs, EtOH social, retired)",
+  familyHistory: "Family history (e.g., father-MI at 55, mother-DM)",
+  
+  // O - Objective
+  vitalSigns: "Vital signs (e.g., BP 120/80, HR 72, BT 36.8, RR 16, SpO2 98%)",
+  physicalExam: "Physical exam findings (e.g., lungs clear, RRR, soft NT abdomen)",
+  labResults: "Lab results (e.g., WBC 12.0, Hgb 14.2, Cr 1.0, Trop <0.01)",
+  imaging: "Imaging findings (e.g., CXR-no infiltrate, CT-no acute findings)",
+  
+  // A - Assessment
+  assessment: "[Summary]\nBrief clinical summary\n\n[Provider Impression]\nOrders-based impression only",
+  diagnosisConfirmed: "Confirmed Dx (e.g., pneumonia, CHF exacerbation, cellulitis)",
+  diagnosisInferred: "AI impression (e.g., r/o ACS vs GERD, r/o PE vs pneumonia)",
+  
+  // P - Plan
+  plan: "[Orders]\n- Specific orders only\n\n[AI Suggestions]\n- Optional AI recommendations",
+  followUp: "Follow-up if discussed (e.g., f/u 1wk, PCP in 3d, RTC if worse)",
+  
+  // Other
+  notes: "Additional notes or comments",
+  problemList: "Problem list (e.g., 1) Acute bronchitis 2) HTN - controlled)",
+  lesionDescription: "Lesion morphology/distribution (e.g., erythematous papules on trunk)",
+};
+
 export interface ChartData {
   [key: string]: ChartFieldValue;
 }
@@ -575,7 +611,7 @@ export function ChartingResult({
                   value={textValue}
                   onChange={(e) => handleFieldChange(field.id, e.target.value)}
                   className="min-h-[60px] bg-white border-slate-200 whitespace-pre-wrap"
-                  placeholder={field.description ? `${field.description} (콤마로 구분)` : '콤마(,)로 구분하여 입력'}
+                  placeholder={FIELD_PLACEHOLDERS[field.id] || "Separate with commas (,)"}
                 />
               </>
             );
@@ -584,7 +620,7 @@ export function ChartingResult({
           <Input
             value={stringValue}
             onChange={(e) => handleFieldChange(field.id, e.target.value)}
-            placeholder={field.description}
+            placeholder={FIELD_PLACEHOLDERS[field.id] || field.description}
             className="bg-white border-slate-200"
           />
         ) : (
@@ -592,7 +628,7 @@ export function ChartingResult({
             value={stringValue}
             onChange={(e) => handleFieldChange(field.id, e.target.value)}
             className="min-h-[80px] bg-white border-slate-200 whitespace-pre-wrap"
-            placeholder={field.description}
+            placeholder={FIELD_PLACEHOLDERS[field.id] || field.description}
           />
         )}
 
