@@ -108,8 +108,7 @@ const FIELD_PLACEHOLDERS: Record<string, string> = {
   
   // A - Assessment
   assessment: "[Summary]\nBrief clinical summary\n\n[Provider Impression]\nOrders-based impression only",
-  diagnosisConfirmed: "Confirmed Dx (e.g., pneumonia, CHF exacerbation, cellulitis)",
-  diagnosisInferred: "AI impression (e.g., r/o ACS vs GERD, r/o PE vs pneumonia)",
+  diagnosisConfirmed: "Confirmed Dx - DDx 확정 시 자동 추가 (e.g., pneumonia, CHF)",
   
   // P - Plan
   plan: "[Orders]\n- Specific orders only\n\n[AI Suggestions]\n- Optional AI recommendations",
@@ -777,8 +776,8 @@ export function ChartingResult({
                   <div className="w-2 h-2 rounded-full bg-teal-500 animate-bounce" style={{ animationDelay: '0ms' }} />
                   <div className="w-2 h-2 rounded-full bg-teal-500 animate-bounce" style={{ animationDelay: '150ms' }} />
                   <div className="w-2 h-2 rounded-full bg-teal-500 animate-bounce" style={{ animationDelay: '300ms' }} />
-                </div>
-              </div>
+          </div>
+          </div>
             ) : hasChartData ? (
               <div className="space-y-3">
                 {displayFields.map((field, index) => renderField(field, index))}
@@ -801,15 +800,15 @@ export function ChartingResult({
               <div className="flex flex-col items-center justify-center py-16 text-center">
                 <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center mb-4">
                   <FileText className="w-7 h-7 text-slate-400" />
-                </div>
+          </div>
                 <p className="text-slate-700 font-medium mb-1">차트가 여기에 생성됩니다</p>
                 <p className="text-sm text-slate-400">녹음 완료 후 AI가 자동 생성합니다</p>
-              </div>
+            </div>
             )}
           </div>
         </ScrollArea>
-      </div>
-    </div>
+          </div>
+          </div>
     </>
   );
 }

@@ -1,7 +1,7 @@
 // 차트 설정 및 생성 서비스 (Korean hospital style)
 // - CC/PI: 한국어 (PI는 서술형)
 // - Assessment/DDx/Dx/Plan: 영어 중심 + 한국어 연결어만 허용
-// - Dx 2트랙: diagnosisConfirmed(의사 언급) / diagnosisInferred(AI 추론)
+// - Dx: diagnosisConfirmed만 사용 (DDx 확정 시 이동)
 // - 추론은 허용된 필드에서만 수행 + 근거/신뢰도 표시
 
 const OPENAI_API_KEY = import.meta.env.VITE_OPENAI_API_KEY || '';
@@ -55,7 +55,7 @@ export interface ChartSettings {
 
 // ==================== 기본 프리셋 ====================
 // ✅ 한국 병원 외래 EMR에 가까운 구성
-// - Dx 2트랙: diagnosisConfirmed(의사 언급) / diagnosisInferred(AI 추론)
+// - Dx: diagnosisConfirmed만 사용 (DDx 확정 → Dx로 이동)
 // - PI(현병력)는 한국어 서술형
 // - Assessment/Plan: 영어 중심 + 한국어 연결어만 허용
 
@@ -83,8 +83,7 @@ export const DEFAULT_FIELDS: ChartField[] = [
   { id: 'assessment', name: '평가', nameEn: 'Assessment', type: 'textarea', required: true, description: '영어 중심. [Summary] [Provider Impression] [AI DDx] 3단 구조.' },
 
   // Dx - English only
-  { id: 'diagnosisConfirmed', name: '확정 진단', nameEn: 'Dx (stated)', type: 'tags', required: false, description: '영어. 의사가 말한 Dx만.' },
-  { id: 'diagnosisInferred', name: 'AI 추론', nameEn: 'Dx (AI)', type: 'textarea', required: false, description: 'ENGLISH. ONE LINE ONLY. Problem-oriented impression using "r/o X vs Y". Do NOT list.' },
+  { id: 'diagnosisConfirmed', name: '확정 진단', nameEn: 'Dx (stated)', type: 'tags', required: false, description: '영어. DDx 확정 시 자동 추가됨.' },
 
   // P - English orders
   { id: 'plan', name: '계획', nameEn: 'Plan', type: 'textarea', required: true, description: '영어. 오더만. [Orders] [AI Suggestions optional]. 설명문 금지.' },
@@ -160,7 +159,7 @@ BAD assessment.value:
 
 === ROLE SEPARATION (IMPORTANT) ===
 - Put DDx/r/o list ONLY inside Assessment under [AI DDx/r/o].
-- Put ONE-LINE impression ONLY in diagnosisInferred (Dx AI). Do NOT duplicate DDx list there.
+- Do NOT generate diagnosisInferred field. DDx list in Assessment is sufficient.
 
 === ASSESSMENT STRUCTURE (LINE BREAKS REQUIRED) ===
 MUST USE THIS EXACT FORMAT WITH LINE BREAKS:
@@ -267,8 +266,7 @@ INTERNAL MEDICINE EMPHASIS:
       { id: 'allergies', name: '알레르기', nameEn: 'Allergies', type: 'tags', required: false, description: 'ENGLISH. NKDA if none.' },
       { id: 'physicalExam', name: '진찰소견', nameEn: 'PE', type: 'textarea', required: false, description: 'ENGLISH. Mentioned skin findings only.' },
       { id: 'assessment', name: '평가', nameEn: 'Assessment', type: 'textarea', required: true, description: 'ENGLISH 중심. [Summary] [Provider Impression] [AI DDx/r/o]. Korean connectors only.' },
-      { id: 'diagnosisConfirmed', name: '확정 진단', nameEn: 'Dx (stated)', type: 'tags', required: false, description: 'ENGLISH. Provider-stated Dx only.' },
-      { id: 'diagnosisInferred', name: 'AI 추론', nameEn: 'Dx (AI)', type: 'textarea', required: false, description: 'ENGLISH. ONE LINE ONLY. "r/o X vs Y" impression. Do NOT list.' },
+      { id: 'diagnosisConfirmed', name: '확정 진단', nameEn: 'Dx (stated)', type: 'tags', required: false, description: 'ENGLISH. DDx 확정 시 자동 추가됨.' },
       { id: 'plan', name: '계획', nameEn: 'Plan', type: 'textarea', required: true, description: 'ENGLISH. Orders only. [Orders] + optional [AI Suggestions]. No explanatory sentences.' },
       { id: 'followUp', name: '추적관찰', nameEn: 'F/U', type: 'textarea', required: false, description: 'ENGLISH. If not discussed, leave empty.' },
       { id: 'notes', name: '기타', nameEn: 'Notes', type: 'textarea', required: false, description: 'Notes.' },
@@ -279,7 +277,7 @@ ${BASE_CHARTING_STYLE}
 DERM NOTES:
 - Do not hallucinate morphology. Only document what is described.
 - If the provider names a diagnosis, put it into diagnosisConfirmed (ENGLISH).
-- AI DDx goes to Assessment [AI DDx/r/o] section. ONE-LINE summary goes to diagnosisInferred.
+- AI DDx goes to Assessment [AI DDx/r/o] section via ddxList array. Do NOT generate diagnosisInferred.
 `.trim(),
   },
   {
@@ -599,7 +597,7 @@ ${preset.promptContext || ''}
 === HARD DDx/Dx RULES ===
 - DDx: Max 1-2 items (at most 3). Each DDx goes into assessment.ddxList array.
 - Each ddxList item must have: id (ddx_1, ddx_2...), diagnosis (English), reason (brief), confidence (high/medium/low), isConfirmed: false, isRemoved: false.
-- Dx (AI): ONE problem-oriented line in diagnosisInferred. Use "r/o X vs Y" format.
+- Do NOT generate diagnosisInferred field. DDx list is sufficient for AI differential.
 - Do NOT list diagnoses in Korean.
 - Avoid vague terms (e.g., "cardiac problem", "brain issue").
 
@@ -629,7 +627,7 @@ RULES:
   - isConfirmed=true ONLY if clearly stated and medically meaningful
   - If unclear/garbled (e.g., "소아잠도" instead of "소아당뇨"), leave blank or write "Unclear" with isConfirmed=false
 - Assessment [Summary]: isConfirmed=true, source="stated"
-- Assessment [AI DDx], diagnosisInferred, Plan [AI Suggestions]: isConfirmed=false, source="inferred"
+- Assessment [AI DDx], Plan [AI Suggestions]: isConfirmed=false, source="inferred"
 - Provider Impression: isConfirmed=true ONLY if doctor explicitly stated; isConfirmed=false if inferred
 
 OUTPUT FORMAT (PURE JSON ONLY):
@@ -663,7 +661,7 @@ LANGUAGE:
 
 FORMAT:
 - DDx: assessment.ddxList 배열로 반환. 각 항목은 {id, diagnosis, reason, confidence, isConfirmed: false, isRemoved: false}
-- Dx (AI): diagnosisInferred에 한 줄 요약만. "r/o X vs Y". 리스트 금지.
+- diagnosisInferred 필드는 생성하지 않음 (DDx 리스트로 충분)
 - Plan: 오더만 (설명문 금지)
 - Follow-up: 언급 없으면 비움 (일반적 문구 금지)
 - 불릿 항목은 한 줄씩 띄워
