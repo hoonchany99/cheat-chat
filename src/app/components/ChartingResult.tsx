@@ -124,7 +124,9 @@ export function ChartingResult({
       const fieldLabel = field.nameEn && field.nameEn !== field.name 
         ? field.nameEn 
         : field.name;
-      return `[${fieldLabel}] ${displayValue}`;
+      // 추측 필드에는 (?) 표시 추가
+      const uncertainMarker = fieldValue.isConfirmed ? '' : ' (?)';
+      return `[${fieldLabel}] ${displayValue}${uncertainMarker}`;
     }).filter(Boolean).join('\n');
 
     navigator.clipboard.writeText(chartText);
@@ -195,9 +197,9 @@ export function ChartingResult({
 
         {isArray ? (
           <>
-            {arrayValue.length > 0 && (
+            {arrayValue.filter(item => item).length > 0 && (
               <div className="flex flex-wrap gap-1.5 mb-2">
-                {arrayValue.map((item, index) => (
+                {arrayValue.filter(item => item).map((item, index) => (
                   <Badge
                     key={index}
                     variant={isConfirmed ? "secondary" : "outline"}
@@ -213,10 +215,16 @@ export function ChartingResult({
             )}
             <Textarea
               value={arrayValue.join(', ')}
-              onChange={(e) => handleFieldChange(
-                field.id,
-                e.target.value.split(',').map(s => s.trim()).filter(s => s)
-              )}
+              onChange={(e) => {
+                // 입력 중에는 빈 문자열 유지 (콤마 입력 허용)
+                const items = e.target.value.split(',').map(s => s.trim());
+                handleFieldChange(field.id, items);
+              }}
+              onBlur={(e) => {
+                // 포커스 해제 시 빈 문자열 제거
+                const items = e.target.value.split(',').map(s => s.trim()).filter(s => s);
+                handleFieldChange(field.id, items);
+              }}
               className="min-h-[60px] bg-white border-slate-200"
               placeholder="콤마(,)로 구분하여 입력"
             />

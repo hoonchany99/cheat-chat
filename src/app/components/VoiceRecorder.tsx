@@ -146,10 +146,8 @@ export function VoiceRecorder({
   }, [connect, startAudioAnalysis, onRecordingStart, onRecordingProgress, onTranscriptUpdate, onRealtimeSegmentsUpdate]);
 
   const handleStopRecording = useCallback(async () => {
-    console.log('⏹️ handleStopRecording called');
     setIsRecording(false);
     setIsTranscribing(true);
-    console.log('📤 Calling onProcessingStart...');
     onProcessingStart();
 
     if (timerRef.current) {
