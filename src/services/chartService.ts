@@ -43,7 +43,7 @@ export const DEFAULT_FIELDS: ChartField[] = [
   // S - Korean
   { id: 'chiefComplaint', name: '주호소', nameEn: 'CC', type: 'textarea', required: true, description: '한국어. 환자 표현 그대로 인용.' },
   { id: 'historyOfPresentIllness', name: '현병력(PI)', nameEn: 'PI', type: 'textarea', required: true, description: '한국어 서술형. 3-6문장. 없는 내용 금지.' },
-  { id: 'pertinentROS', name: '동반증상/관련음성', nameEn: 'Pertinent +/-', type: 'textarea', required: false, description: '영어 약어. N/V(+), fever(-), CP(-) 형식.' },
+  { id: 'pertinentROS', name: 'ROS(관련 +/-)', nameEn: 'ROS (pertinent +/-)', type: 'textarea', required: false, description: '영어 약어. N/V(+), fever(-), CP(-) 형식.' },
 
   // Background - English/abbreviations
   { id: 'pastMedicalHistory', name: '과거력(PMH)', nameEn: 'PMH', type: 'tags', required: false, description: '영어. HTN, DM, s/p appendectomy.' },
@@ -213,7 +213,7 @@ INTERNAL MEDICINE EMPHASIS:
       { id: 'chiefComplaint', name: '주호소', nameEn: 'CC', type: 'textarea', required: true, description: '한국어. 환자 표현 그대로 인용.' },
       { id: 'historyOfPresentIllness', name: '현병력(PI)', nameEn: 'PI', type: 'textarea', required: true, description: '한국어 서술형. 3-6문장. 발생시기/경과/악화요인/동반증상.' },
       { id: 'lesionDescription', name: '병변 기술', nameEn: 'Lesion', type: 'textarea', required: false, description: 'ENGLISH. Morphology/distribution mentioned only. No guessing.' },
-      { id: 'pertinentROS', name: '동반증상/관련음성', nameEn: 'Pertinent +/-', type: 'textarea', required: false, description: 'ENGLISH. pruritus(+/-), pain(+/-), oozing(+/-), fever(-) etc.' },
+      { id: 'pertinentROS', name: 'ROS(관련 +/-)', nameEn: 'ROS (pertinent +/-)', type: 'textarea', required: false, description: 'ENGLISH. pruritus(+/-), pain(+/-), oozing(+/-), fever(-) etc.' },
       { id: 'pastMedicalHistory', name: '과거력(PMH)', nameEn: 'PMH', type: 'tags', required: false, description: 'ENGLISH. Atopic dermatitis, eczema etc. if mentioned.' },
       { id: 'medications', name: '복용약', nameEn: 'Meds', type: 'tags', required: false, description: 'ENGLISH. Mentioned meds only.' },
       { id: 'allergies', name: '알레르기', nameEn: 'Allergies', type: 'tags', required: false, description: 'ENGLISH. NKDA if none.' },
