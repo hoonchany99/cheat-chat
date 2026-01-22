@@ -1,8 +1,8 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/app/components/ui/dialog';
 import { Button } from '@/app/components/ui/button';
-import { Smartphone, Wifi, WifiOff, Loader2, Copy, Check, X, Mic } from 'lucide-react';
+import { Smartphone, Wifi, Loader2, Copy, Check, X, Mic } from 'lucide-react';
 import { RemoteMicHost, generateSessionId, getSessionUrl, RemoteMicMessage } from '@/services/remoteMicService';
 import { toast } from 'sonner';
 
@@ -35,10 +35,37 @@ export function RemoteMicModal({
   const [isConnected, setIsConnected] = useState(false);
   const [isRemoteRecording, setIsRemoteRecording] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [host, setHost] = useState<RemoteMicHost | null>(null);
+  const hostRef = useRef<RemoteMicHost | null>(null);
 
-  // 세션 시작
+  // 콜백 함수들을 ref로 저장하여 안정화
+  const callbacksRef = useRef({
+    onSegmentsUpdate,
+    onTranscriptUpdate,
+    onRemoteRecordingStart,
+    onRemoteRecordingStop,
+    onConnectionChange,
+  });
+
+  // 콜백이 변경될 때마다 ref 업데이트
+  useEffect(() => {
+    callbacksRef.current = {
+      onSegmentsUpdate,
+      onTranscriptUpdate,
+      onRemoteRecordingStart,
+      onRemoteRecordingStop,
+      onConnectionChange,
+    };
+  }, [onSegmentsUpdate, onTranscriptUpdate, onRemoteRecordingStart, onRemoteRecordingStop, onConnectionChange]);
+
+  // 세션 시작 (의존성 없는 안정된 함수)
   const startSession = useCallback(() => {
+    // 기존 호스트가 있으면 정리
+    if (hostRef.current) {
+      console.log('[Modal] Stopping existing host before creating new session');
+      hostRef.current.stop();
+      hostRef.current = null;
+    }
+
     const newSessionId = generateSessionId();
     const url = getSessionUrl(newSessionId);
     setSessionId(newSessionId);
@@ -46,71 +73,66 @@ export function RemoteMicModal({
     setIsConnected(false);
     setIsRemoteRecording(false);
 
+    console.log('[Modal] Creating new host with session:', newSessionId);
+
     const newHost = new RemoteMicHost(
       newSessionId,
       (message: RemoteMicMessage) => {
+        console.log('[Modal] Received message:', message.type);
         switch (message.type) {
           case 'connected':
             toast.success('휴대폰이 연결되었습니다!');
             break;
           case 'recording_start':
+            console.log('[Modal] Recording started');
             setIsRemoteRecording(true);
-            onRemoteRecordingStart();
+            callbacksRef.current.onRemoteRecordingStart();
             break;
           case 'recording_stop':
+            console.log('[Modal] Recording stopped');
             setIsRemoteRecording(false);
-            onRemoteRecordingStop();
+            callbacksRef.current.onRemoteRecordingStop();
             break;
           case 'transcript':
             if (message.data?.text) {
-              onTranscriptUpdate(message.data.text);
+              callbacksRef.current.onTranscriptUpdate(message.data.text);
             }
             break;
           case 'segment':
             if (message.data?.segments) {
-              onSegmentsUpdate(message.data.segments);
+              callbacksRef.current.onSegmentsUpdate(message.data.segments);
             }
             break;
         }
       },
       (connected) => {
+        console.log('[Modal] Connection changed:', connected);
         setIsConnected(connected);
-        onConnectionChange(connected);
-        if (!connected && isRemoteRecording) {
-          setIsRemoteRecording(false);
-          onRemoteRecordingStop();
-        }
+        callbacksRef.current.onConnectionChange(connected);
       }
     );
 
     newHost.start();
-    setHost(newHost);
-  }, [onSegmentsUpdate, onTranscriptUpdate, onRemoteRecordingStart, onRemoteRecordingStop, onConnectionChange, isRemoteRecording]);
+    hostRef.current = newHost;
+  }, []); // 의존성 없음 - 안정된 함수
 
   // 모달 열릴 때 세션 시작
   useEffect(() => {
-    if (open && !host) {
+    if (open && !hostRef.current) {
+      console.log('[Modal] Modal opened, starting session');
       startSession();
     }
-    
-    return () => {
-      if (!open && host) {
-        host.stop();
-        setHost(null);
-        setIsConnected(false);
-        setIsRemoteRecording(false);
-      }
-    };
-  }, [open, host, startSession]);
+  }, [open, startSession]);
 
-  // 모달 닫힐 때 - 연결 안 된 상태면 정리
+  // 모달이 닫힐 때 처리 (연결 안 된 상태면 정리)
   useEffect(() => {
-    if (!open && host && !isConnected) {
-      host.stop();
-      setHost(null);
-      onConnectionChange(false);
+    if (!open && hostRef.current && !isConnected) {
+      console.log('[Modal] Modal closed without connection, cleaning up');
+      hostRef.current.stop();
+      hostRef.current = null;
+      callbacksRef.current.onConnectionChange(false);
     }
-  }, [open, host, isConnected, onConnectionChange]);
+  }, [open, isConnected]);
 
   const handleCopyCode = () => {
     navigator.clipboard.writeText(sessionId);
@@ -120,28 +142,26 @@ export function RemoteMicModal({
   };
 
   const handleNewSession = () => {
-    if (host) {
-      host.stop();
-      setHost(null);
-      onConnectionChange(false);
-    }
-    startSession();
+    console.log('[Modal] Creating new session');
+    startSession(); // startSession 내부에서 기존 host 정리함
   };
 
   // 연결 끊기 (완전 종료)
   const handleDisconnect = () => {
-    if (host) {
-      host.stop();
-      setHost(null);
+    console.log('[Modal] Disconnecting');
+    if (hostRef.current) {
+      hostRef.current.stop();
+      hostRef.current = null;
     }
     setIsConnected(false);
     setIsRemoteRecording(false);
-    onConnectionChange(false);
+    callbacksRef.current.onConnectionChange(false);
     onOpenChange(false);
   };
 
   // 모달만 닫기 (연결 유지)
   const handleCloseKeepConnection = () => {
+    console.log('[Modal] Closing modal but keeping connection');
     onOpenChange(false);
   };
 
