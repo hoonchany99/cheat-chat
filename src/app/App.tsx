@@ -5,12 +5,14 @@ import { ChartingResult, ChartData } from './components/ChartingResult';
 import { LandingPage } from './components/LandingPage';
 import { DemoPage } from './components/DemoPage';
 import { ChartSettingsModal } from './components/ChartSettingsModal';
+import { MobileMicPage } from './components/MobileMicPage';
+import { RemoteMicModal } from './components/RemoteMicModal';
 import { ChartSettings, DEFAULT_CHART_SETTINGS, DEPARTMENT_PRESETS } from '@/services/chartService';
 import { Button } from '@/app/components/ui/button';
 import { Input } from '@/app/components/ui/input';
 import { Toaster } from '@/app/components/ui/sonner';
 import { toast } from 'sonner';
-import { RotateCcw, Stethoscope, FileText, Mail, Loader2, MessageSquare, Send, ChevronRight, MessageCircle } from 'lucide-react';
+import { RotateCcw, Stethoscope, FileText, Mail, Loader2, MessageSquare, Send, ChevronRight, MessageCircle, Smartphone } from 'lucide-react';
 import { Textarea } from '@/app/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/app/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel } from '@/app/components/ui/select';
@@ -135,12 +137,26 @@ interface Segment {
 }
 
 export default function App() {
+  // URL 파라미터에서 모바일 마이크 세션 확인
+  const urlParams = new URLSearchParams(window.location.search);
+  const micSessionId = urlParams.get('mic');
+  
+  // 모바일 마이크 페이지인 경우 바로 렌더링
+  if (micSessionId) {
+    return <MobileMicPage sessionId={micSessionId} />;
+  }
+
+  return <MainApp />;
+}
+
+function MainApp() {
   const [currentPage, setCurrentPage] = useState<'landing' | 'app' | 'demo'>('landing');
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [pageAnimation, setPageAnimation] = useState<'enter' | 'exit' | ''>('');
   const [finalTranscript, setFinalTranscript] = useState('');
   const [realtimeSegments, setRealtimeSegments] = useState<Segment[]>([]);
   const [isRecording, setIsRecording] = useState(false);
+  const [isRemoteRecording, setIsRemoteRecording] = useState(false);
   const [chartData, setChartData] = useState<ChartData | null>(null);
   const [isGeneratingChart, setIsGeneratingChart] = useState(false);
   const [recordingProgress, setRecordingProgress] = useState(0);
@@ -153,6 +169,7 @@ export default function App() {
   const [feedbackStep, setFeedbackStep] = useState<'input' | 'info'>('input');
   const [subscribeOpen, setSubscribeOpen] = useState(false);
   const [mobileTab, setMobileTab] = useState<'transcript' | 'chart'>('transcript');
+  const [remoteMicOpen, setRemoteMicOpen] = useState(false);
   
   // 사용자 정보 상태
   const [userAge, setUserAge] = useState('');
@@ -452,11 +469,28 @@ export default function App() {
                   variant="outline"
                   size="icon"
                   onClick={handleReset}
-                  disabled={isRecording || isGeneratingChart}
+                  disabled={isRecording || isRemoteRecording || isGeneratingChart}
                   className="rounded-full h-10 w-10 shrink-0"
                   title="초기화"
                 >
                   <RotateCcw className="w-4 h-4" />
+                </Button>
+                
+                {/* 휴대폰 마이크 연결 버튼 */}
+                <Button
+                  variant="outline"
+                  onClick={() => setRemoteMicOpen(true)}
+                  disabled={isRecording}
+                  className={`rounded-full h-10 px-4 shrink-0 gap-2 ${isRemoteRecording ? 'border-green-500 text-green-600 bg-green-50' : ''}`}
+                  title="휴대폰 마이크 연결"
+                >
+                  <Smartphone className="w-4 h-4" />
+                  <span className="text-xs font-medium hidden sm:inline">
+                    {isRemoteRecording ? '연결됨' : '휴대폰 연결'}
+                  </span>
+                  {isRemoteRecording && (
+                    <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                  )}
                 </Button>
               </div>
 
@@ -772,6 +806,27 @@ export default function App() {
       </main>
 
       <Toaster position="top-center" richColors />
+      
+      {/* 휴대폰 마이크 연결 모달 */}
+      <RemoteMicModal
+        open={remoteMicOpen}
+        onOpenChange={setRemoteMicOpen}
+        onSegmentsUpdate={(segments) => {
+          setRealtimeSegments(segments);
+        }}
+        onTranscriptUpdate={(text) => {
+          setFinalTranscript(prev => prev + (prev ? ' ' : '') + text);
+        }}
+        onRemoteRecordingStart={() => {
+          setIsRemoteRecording(true);
+          setChartData(null);
+          setRecordingProgress(0);
+          setMobileTab('transcript');
+        }}
+        onRemoteRecordingStop={() => {
+          setIsRemoteRecording(false);
+        }}
+      />
     </div>
   );
 }
