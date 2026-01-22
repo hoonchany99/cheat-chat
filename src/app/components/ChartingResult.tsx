@@ -575,7 +575,7 @@ export function ChartingResult({
                   value={textValue}
                   onChange={(e) => handleFieldChange(field.id, e.target.value)}
                   className="min-h-[60px] bg-white border-slate-200 whitespace-pre-wrap"
-                  placeholder="콤마(,)로 구분하여 입력"
+                  placeholder={field.description ? `${field.description} (콤마로 구분)` : '콤마(,)로 구분하여 입력'}
                 />
               </>
             );
