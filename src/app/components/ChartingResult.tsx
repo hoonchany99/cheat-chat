@@ -9,18 +9,26 @@ import {
   FileText, 
   Copy, 
   Check, 
-  Loader2, 
   CheckCircle2, 
-  HelpCircle,
-  Sparkles
+  AlertCircle,
+  Sparkles,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import { ChartField, DEPARTMENT_PRESETS } from '@/services/chartService';
 
+// Full ChartFieldValue interface matching chartService
+export interface ChartFieldValue {
+  value: string | string[];
+  isConfirmed: boolean;
+  source?: 'stated' | 'inferred';
+  confidence?: 'low' | 'medium' | 'high';
+  rationale?: string;
+  evidence?: string[];
+}
+
 export interface ChartData {
-  [key: string]: {
-    value: string | string[];
-    isConfirmed: boolean;
-  };
+  [key: string]: ChartFieldValue;
 }
 
 interface ChartingResultProps {
@@ -38,6 +46,7 @@ export function ChartingResult({
 }: ChartingResultProps) {
   const [editableData, setEditableData] = useState<ChartData>({});
   const [isCopied, setIsCopied] = useState(false);
+  const [expandedFields, setExpandedFields] = useState<Set<string>>(new Set()); // 상세정보 펼침 상태
 
   useEffect(() => {
     if (chartData) {
@@ -49,8 +58,8 @@ export function ChartingResult({
     setEditableData(prev => ({
       ...prev,
       [fieldId]: {
+        ...prev[fieldId],
         value,
-        isConfirmed: prev[fieldId]?.isConfirmed || false
       }
     }));
   }, []);
@@ -60,10 +69,23 @@ export function ChartingResult({
       ...prev,
       [fieldId]: {
         ...prev[fieldId],
-        isConfirmed: true
+        isConfirmed: true,
+        source: 'stated' as const, // 확정하면 stated로 변경
       }
     }));
-    toast.success('필드가 확정되었습니다');
+    toast.success('확정되었습니다');
+  }, []);
+
+  const toggleFieldDetails = useCallback((fieldId: string) => {
+    setExpandedFields(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(fieldId)) {
+        newSet.delete(fieldId);
+      } else {
+        newSet.add(fieldId);
+      }
+      return newSet;
+    });
   }, []);
 
   // Generate fields from chartData keys, matching with ALL department presets
@@ -159,31 +181,35 @@ export function ChartingResult({
 
     const value = fieldValue.value;
     const isConfirmed = fieldValue.isConfirmed;
+    const source = fieldValue.source || 'stated';
+    const isInferred = source === 'inferred';
+    const confidence = fieldValue.confidence;
+    const rationale = fieldValue.rationale;
+    const evidence = fieldValue.evidence || [];
+    const isExpanded = expandedFields.has(field.id);
+
     const isArray = field.type === 'tags' || field.type === 'list';
     const arrayValue = Array.isArray(value) ? value : [];
     const stringValue = typeof value === 'string' ? value : '';
     const hasContent = isArray ? arrayValue.length > 0 : stringValue.trim().length > 0;
 
+    // 상세정보가 있는지 체크 (inferred + rationale 또는 evidence가 있으면)
+    const hasDetails = isInferred && (rationale || evidence.length > 0);
+
+    // 배경색 결정: 확정됨(teal) / AI 추론(amber) / 빈값(slate)
+    const bgClass = !hasContent
+      ? 'bg-slate-50 border border-dashed border-slate-200'
+      : isConfirmed
+        ? 'bg-teal-50/50 border border-teal-200'
+        : isInferred
+          ? 'bg-amber-50/50 border border-amber-200'
+          : 'bg-slate-50 border border-slate-200';
+
     return (
-      <div
-        key={field.id}
-        className={`rounded-xl p-4 transition-all ${
-          !hasContent
-            ? 'bg-slate-50 border border-dashed border-slate-200'
-            : isConfirmed
-              ? 'bg-teal-50 border border-teal-200'
-              : 'bg-amber-50 border border-amber-200 border-dashed'
-        }`}
-      >
+      <div key={field.id} className={`rounded-xl p-4 transition-all ${bgClass}`}>
+        {/* Header */}
         <div className="flex items-center justify-between mb-2">
           <label className="text-sm font-semibold flex items-center gap-2">
-            {hasContent && (
-              isConfirmed ? (
-                <CheckCircle2 className="w-4 h-4 text-teal-600" />
-              ) : (
-                <HelpCircle className="w-4 h-4 text-amber-600" />
-              )
-            )}
             <span className="text-slate-800">
               {field.nameEn && field.nameEn !== field.name 
                 ? `${field.nameEn} (${field.name})`
@@ -193,31 +219,99 @@ export function ChartingResult({
             {field.required && <span className="text-red-500">*</span>}
           </label>
 
-          {hasContent && !isConfirmed && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => handleConfirmField(field.id)}
-              className="h-7 text-xs px-3 border-amber-300 text-amber-700 hover:bg-amber-100 bg-white"
-            >
-              <Check className="w-3 h-3 mr-1" />
-              확정
-            </Button>
-          )}
+          <div className="flex items-center gap-2">
+            {/* 소스 표시 (대화 기반 / AI 추론) */}
+            {hasContent && (
+              <span className={`text-xs flex items-center gap-1 px-2 py-0.5 rounded-full ${
+                isConfirmed
+                  ? 'bg-teal-100 text-teal-700'
+                  : isInferred
+                    ? 'bg-amber-100 text-amber-700'
+                    : 'bg-slate-100 text-slate-600'
+              }`}>
+                {isConfirmed ? (
+                  <>
+                    <CheckCircle2 className="w-3 h-3" />
+                    대화 기반
+                  </>
+                ) : isInferred ? (
+                  <>
+                    <AlertCircle className="w-3 h-3" />
+                    AI 추론
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="w-3 h-3" />
+                    대화 기반
+                  </>
+                )}
+              </span>
+            )}
+
+            {/* 확정 버튼 (AI 추론이고 확정 안됨) */}
+            {hasContent && isInferred && !isConfirmed && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleConfirmField(field.id)}
+                className="h-6 text-xs px-2 border-amber-300 text-amber-700 hover:bg-amber-100 bg-white"
+              >
+                <Check className="w-3 h-3 mr-1" />
+                확정
+              </Button>
+            )}
+          </div>
         </div>
 
-        {hasContent && !isConfirmed && (
-          <p className="text-xs text-amber-600 mb-2.5 flex items-center gap-1">
+        {/* 상세정보 토글 버튼 (AI 추론이고 상세정보 있을 때만) */}
+        {hasContent && hasDetails && (
+          <button
+            onClick={() => toggleFieldDetails(field.id)}
+            className="text-xs text-amber-600 mb-2 flex items-center gap-1 hover:text-amber-700 transition-colors"
+          >
             <Sparkles className="w-3 h-3" />
-            AI 추측 - 확정이 필요합니다
-          </p>
+            {isExpanded ? '상세정보 닫기' : '추론 근거 보기'}
+            {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+          </button>
         )}
 
+        {/* 상세정보 (펼쳤을 때만) */}
+        {hasContent && hasDetails && isExpanded && (
+          <div className="mb-3 p-2.5 bg-white/60 rounded-lg border border-amber-200/50 text-xs space-y-1.5">
+            {confidence && (
+              <div className="flex items-center gap-2">
+                <span className="text-slate-500">신뢰도:</span>
+                <span className={`font-medium ${
+                  confidence === 'high' ? 'text-green-600' :
+                  confidence === 'medium' ? 'text-amber-600' : 'text-red-500'
+                }`}>
+                  {confidence === 'high' ? '높음' : confidence === 'medium' ? '중간' : '낮음'}
+                </span>
+              </div>
+            )}
+            {rationale && (
+              <div>
+                <span className="text-slate-500">추론 근거:</span>
+                <p className="text-slate-700 mt-0.5">{rationale}</p>
+              </div>
+            )}
+            {evidence.length > 0 && (
+              <div>
+                <span className="text-slate-500">대화 인용:</span>
+                <ul className="mt-0.5 space-y-0.5">
+                  {evidence.map((e, i) => (
+                    <li key={i} className="text-slate-600 italic">"{e}"</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 필드 입력 */}
         {isArray ? (
           (() => {
-            // 문자열로 저장된 경우에도 처리
             const textValue = Array.isArray(value) ? value.join(', ') : (value || '');
-            // 실시간으로 태그 파싱 (표시용)
             const parsedTags = textValue.split(',').map(s => s.trim()).filter(s => s);
             
             return (
@@ -227,10 +321,10 @@ export function ChartingResult({
                     {parsedTags.map((item, index) => (
                       <Badge
                         key={index}
-                        variant={isConfirmed ? "secondary" : "outline"}
-                        className={isConfirmed 
+                        variant="secondary"
+                        className={isConfirmed || !isInferred
                           ? "bg-teal-100 text-teal-700 border-teal-200" 
-                          : "border-amber-300 text-amber-700 bg-white"
+                          : "bg-amber-100 text-amber-700 border-amber-200"
                         }
                       >
                         {item}
@@ -240,12 +334,9 @@ export function ChartingResult({
                 )}
                 <Textarea
                   value={textValue}
-                  onChange={(e) => {
-                    // 문자열 그대로 저장 (자유로운 입력)
-                    handleFieldChange(field.id, e.target.value);
-                  }}
+                  onChange={(e) => handleFieldChange(field.id, e.target.value)}
                   className="min-h-[60px] bg-white border-slate-200"
-                  placeholder="콤마(,)로 구분하여 입력 (예: Tylenol 500mg, Ibuprofen 200mg)"
+                  placeholder="콤마(,)로 구분하여 입력"
                 />
               </>
             );

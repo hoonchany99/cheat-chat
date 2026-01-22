@@ -1,4 +1,9 @@
-// 차트 설정 및 생성 서비스
+// 차트 설정 및 생성 서비스 (Korean hospital style, mixed Korean + abbreviations)
+// - 변수/함수 이름 유지
+// - CC/PI는 한국어(PI는 서술형)
+// - Assessment/Plan: 한국어 기반 + 영어 약어 섞기 (r/o, c/w, DDx, f/u, PRN, PO...)
+// - Dx를 "확정/언급" vs "AI추론"으로 분리
+// - 추론은 허용된 필드에서만 수행 + 근거/신뢰도 표시
 
 const OPENAI_API_KEY = import.meta.env.VITE_OPENAI_API_KEY || '';
 
@@ -6,306 +11,198 @@ const OPENAI_API_KEY = import.meta.env.VITE_OPENAI_API_KEY || '';
 
 export interface ChartField {
   id: string;
-  name: string;        // 필드명 (예: "주호소", "현병력")
-  nameEn?: string;     // 영문명 (예: "Chief Complaint")
+  name: string;
+  nameEn?: string;
   type: 'text' | 'textarea' | 'list' | 'tags';
   required: boolean;
-  description?: string; // GPT에게 제공할 설명
+  description?: string;
 }
 
 export interface DepartmentPreset {
   id: string;
-  name: string;        // 과 이름 (예: "내과", "피부과")
+  name: string;
   fields: ChartField[];
-  promptContext?: string; // 과별 추가 컨텍스트
+  promptContext?: string;
 }
 
 export interface ChartSettings {
   selectedDepartment: string;
-  activeFields: ChartField[];     // 현재 사용 중인 필드들 (순서/삭제 가능)
-  customFields: ChartField[];     // 사용자가 추가한 커스텀 필드들 (deprecated, 호환성용)
-  additionalPrompt: string;       // 사용자 추가 지시사항
-  includeSOAP: boolean;           // SOAP 형식 포함 여부
+  activeFields: ChartField[];
+  customFields: ChartField[];
+  additionalPrompt: string;
+  includeSOAP: boolean;
 }
 
 // ==================== 기본 프리셋 ====================
+// ✅ 한국 병원 외래 EMR에 가까운 구성
+// - Dx 2트랙: diagnosisConfirmed(의사 언급) / diagnosisInferred(AI 추론)
+// - PI(현병력)는 한국어 서술형
+// - Assessment/Plan 한국어 + 약어
 
 export const DEFAULT_FIELDS: ChartField[] = [
-  { id: 'chiefComplaint', name: '주호소', nameEn: 'Chief Complaint', type: 'textarea', required: true, description: '환자가 방문한 주된 이유' },
-  { id: 'historyOfPresentIllness', name: '현병력', nameEn: 'History of Present Illness', type: 'textarea', required: true, description: '증상의 시작, 경과, 특징' },
-  { id: 'assessment', name: '평가', nameEn: 'Assessment', type: 'textarea', required: true, description: '의사의 임상적 판단' },
-  { id: 'plan', name: '치료계획', nameEn: 'Plan', type: 'textarea', required: true, description: '검사, 처방, 추적관찰 계획' },
-  { id: 'diagnosis', name: '진단명', nameEn: 'Diagnosis', type: 'tags', required: false, description: '진단명 목록' },
-  { id: 'medications', name: '처방약물', nameEn: 'Medications', type: 'tags', required: false, description: '약물명, 용량, 용법' },
-  { id: 'notes', name: '기타', nameEn: 'Notes', type: 'textarea', required: false, description: '특이사항, 다음 내원일정, 주의사항 등' },
+  // S
+  { id: 'chiefComplaint', name: '주호소', nameEn: 'CC', type: 'textarea', required: true, description: '환자 표현 그대로(한국어). 가능하면 따옴표 인용.' },
+  { id: 'historyOfPresentIllness', name: '현병력(PI)', nameEn: 'PI', type: 'textarea', required: true, description: '한국어 서술형. 시간 흐름. OLDCARTS는 내부 체크, 출력은 문장. 없는 내용 만들지 않기.' },
+  { id: 'pertinentROS', name: '동반증상/관련음성', nameEn: 'Pertinent +/-', type: 'textarea', required: false, description: '관련 증상 +/-만 짧게. 예) N/V(+), fever(-), CP(-), SOB(-).' },
+
+  // Background (언급된 것만)
+  { id: 'pastMedicalHistory', name: '과거력(PMH)', nameEn: 'PMH', type: 'tags', required: false, description: '언급된 과거력만. 예) HTN, DM.' },
+  { id: 'pastSurgicalHistory', name: '수술력(PSH)', nameEn: 'PSH', type: 'tags', required: false, description: '언급된 수술/시술력만.' },
+  { id: 'medications', name: '복용약', nameEn: 'Meds', type: 'tags', required: false, description: '언급된 약만(가능하면 용량/용법 포함).' },
+  { id: 'allergies', name: '알레르기', nameEn: 'Allergies', type: 'tags', required: false, description: '언급된 알레르기만.' },
+  { id: 'socialHistory', name: '사회력', nameEn: 'SHx', type: 'textarea', required: false, description: '흡연/음주/직업 등 언급된 것만.' },
+  { id: 'familyHistory', name: '가족력', nameEn: 'FHx', type: 'textarea', required: false, description: '언급된 가족력만.' },
+
+  // O (언급된 것만)
+  { id: 'vitalSigns', name: '활력징후(VS)', nameEn: 'VS', type: 'text', required: false, description: 'BP/HR/BT/RR/SpO2 언급된 수치만.' },
+  { id: 'physicalExam', name: '진찰(PE)', nameEn: 'PE', type: 'textarea', required: false, description: '언급된 소견만. WNL 남발 금지.' },
+  { id: 'labResults', name: '검사(Labs)', nameEn: 'Labs', type: 'textarea', required: false, description: '언급된 결과/검사만.' },
+  { id: 'imaging', name: '영상(Imaging)', nameEn: 'Imaging', type: 'textarea', required: false, description: '언급된 영상검사/소견만.' },
+
+  // A
+  { id: 'assessment', name: '평가(A)', nameEn: 'A', type: 'textarea', required: true, description: '한국어 기반 + 약어 섞기. 확정/언급 vs AI 감별(DDx/r/o) 분리.' },
+
+  // Dx split
+  { id: 'diagnosisConfirmed', name: '진단(의사 언급/확정)', nameEn: 'Dx (stated)', type: 'tags', required: false, description: '의사가 직접 언급/확정한 Dx만.' },
+  { id: 'diagnosisInferred', name: '진단(AI 추론/DDx)', nameEn: 'Dx (AI)', type: 'list', required: false, description: 'AI 추론/감별/의심(r/o). 항목에 confidence + 근거(짧게) 포함.' },
+
+  // P
+  { id: 'plan', name: '계획(P)', nameEn: 'P', type: 'textarea', required: true, description: '오더 중심. [의사 오더] vs [AI 제안(참고)] 분리. 불릿/번호는 한 줄 띄움.' },
+  { id: 'followUp', name: '추적/주의(F/U)', nameEn: 'F/U', type: 'textarea', required: false, description: 'f/u 시점, ER return precautions 등 언급된 것 위주.' },
+
+  { id: 'notes', name: '기타', nameEn: 'Notes', type: 'textarea', required: false, description: '특이사항/메모.' },
 ];
+
+// ==================== 과별 프리셋 ====================
+
+const BASE_CHARTING_STYLE = `
+You are a clinician in a Korean hospital writing an outpatient EMR note after listening to a doctor-patient conversation.
+
+CORE PHILOSOPHY:
+- Documentation is selection → interpretation → editing into clinically meaningful information.
+- Keep it concise and realistic for Korean EMR.
+- Do NOT invent facts. If not mentioned, leave blank.
+
+LANGUAGE RULES (KOREAN + ABBREVIATIONS):
+- chiefComplaint (CC): KOREAN, patient's own words as closely as possible (prefer quoting).
+- historyOfPresentIllness (PI): KOREAN narrative (서술형). Use time flow. You may mix common abbreviations naturally (N/V, SOB, CP, HTN, DM, NRS, f/u, PRN).
+- Other fields: Korean base is acceptable, but keep it short and EMR-like; you can mix common abbreviations.
+
+FORMATTING RULES (VERY IMPORTANT):
+- If you use numbered lists (1., 2., 3.) or bullets (-), ALWAYS insert a blank line between items.
+- Avoid compact blocks. Make it readable like Korean hospital EMR.
+
+PI QUALITY RULES:
+- Narrative, NOT a checklist.
+- Use only relevant OLDCARTS elements if present (onset/course/location/quality/severity/aggravating/relieving/associated).
+- Include pertinent positives/negatives only if asked/answered.
+- If missing, do NOT fill.
+
+INFERENCE POLICY (KOREAN CLINICIAN-FRIENDLY):
+- Inference is ALLOWED ONLY for: assessment, diagnosisInferred, and plan (AI suggestion section only).
+- For inferred content:
+  - isConfirmed MUST be false
+  - source MUST be "inferred"
+  - confidence MUST be low/medium/high
+  - rationale MUST be 1–2 short lines
+  - evidence MUST include 1–2 short quotes from the conversation
+- Never present inferred diagnosis as definitive. Use DDx/r/o/c/w style cautious language.
+
+ASSESSMENT/PLAN STYLE:
+- assessment should be structured like:
+
+[요약]
+(1–2문장)
+
+[의사 인상/언급]
+(의사가 말한 경우만)
+
+[AI 감별/의심(DDx/r/o)]
+- ...
+
+- plan should be structured like:
+
+[의사 오더]
+- ...
+
+[AI 제안(참고)]
+- ...
+
+GOOD EXAMPLE (spacing):
+- Abdominal US
+
+- NPO
+
+- IVF
+
+BAD EXAMPLE:
+- Abdominal US
+- NPO
+- IVF
+`.trim();
 
 export const DEPARTMENT_PRESETS: DepartmentPreset[] = [
   {
     id: 'general',
     name: '일반',
     fields: DEFAULT_FIELDS,
-    promptContext: `You are an experienced General Practitioner (GP) / Family Medicine physician documenting an outpatient encounter.
+    promptContext: `
+${BASE_CHARTING_STYLE}
 
-## COMMON ABBREVIATIONS (USE THESE):
-- Duration: "x 3d", "for 1wk", "~2mo"
-- Frequency: "q.d.", "b.i.d.", "t.i.d.", "q.i.d.", "PRN", "q4h", "q6h"
-- Route: "PO", "IV", "IM", "SC", "SL", "topical", "PR"
-- History: "Hx", "PMHx", "FHx", "SHx", "h/o"
-- Diagnosis: "Dx", "DDx", "r/o", "c/w" (consistent with)
-- Treatment: "Tx", "Rx", "f/u", "RTN" (return), "PRN"
-- Physical: "WNL", "NAD", "HEENT", "RRR", "CTA B/L", "NTND"
-- Symptoms: "N/V" (nausea/vomiting), "SOB", "HA" (headache), "CP" (chest pain)
-
-## EXAMPLES:
-- "45F with 3d h/o sore throat, fever. PE: pharyngeal erythema, tonsillar exudate. Dx: acute pharyngitis, r/o strep. Plan: rapid strep test, Amoxicillin 500mg PO t.i.d. x10d if (+)."
-- "62M, HTN/DM on metformin. C.C: dizziness x 2wk. BP 158/92. Plan: ↑ amlodipine 5→10mg, f/u 2wk."`,
+GENERAL OP NOTE:
+- Keep PI concise (3–6 sentences typical).
+- Plan should be order-oriented.
+`.trim(),
   },
   {
     id: 'internal',
     name: '내과',
     fields: [
       ...DEFAULT_FIELDS,
-      { id: 'vitalSigns', name: '활력징후', nameEn: 'Vital Signs', type: 'text', required: false, description: 'BP, HR, BT, RR, SpO2' },
-      { id: 'labResults', name: '검사결과', nameEn: 'Lab Results', type: 'textarea', required: false, description: 'CBC, LFT, RFT, lipid panel, imaging findings' },
+      { id: 'problemList', name: '문제목록', nameEn: 'Problem List', type: 'list', required: false, description: '언급된 문제만 1) 2) 형태. 항목 간 한 줄 띄움.' },
     ],
-    promptContext: `You are an Internal Medicine specialist (Internist) documenting a clinical encounter.
+    promptContext: `
+${BASE_CHARTING_STYLE}
 
-## DISEASE ABBREVIATIONS:
-- Cardiovascular: HTN, HF, CAD, MI, AF, DVT, PE
-- Endocrine: DM, T2DM, hypothyroidism, hyperthyroidism
-- GI: GERD, PUD, IBD, cirrhosis, NAFLD/NASH
-- Renal: CKD (stage 1-5), AKI, ESRD
-- Respiratory: COPD, asthma, pneumonia, ILD
-
-## LAB ABBREVIATIONS:
-- CBC: WBC, Hgb, Hct, Plt
-- Chemistry: BUN, Cr, eGFR, Na, K, glucose
-- LFT: AST, ALT, ALP, T.bil, albumin
-- Lipid: TC, LDL, HDL, TG
-- HbA1c, TSH, BNP
-
-## EXAMPLES:
-- "58M with T2DM (HbA1c 8.2%), HTN. Cr 1.4 (eGFR 52), CKD stage 3a. Plan: 1) ↑ metformin 500→1000mg b.i.d. 2) start empagliflozin 10mg 3) f/u 3mo"
-- "72F, HFrEF (EF 35%), dyspnea on exertion, LE edema. BNP 890. Plan: ↑ furosemide 40→80mg, Na <2g/d, f/u 1wk"`,
+INTERNAL MEDICINE EMPHASIS:
+- If chronic diseases are mentioned, reflect briefly (HTN/DM/thyroid etc).
+- If labs are mentioned, you may interpret minimally in Assessment (without creating new values).
+- Use cautious language: "r/o", "DDx", "c/w" as appropriate.
+`.trim(),
   },
   {
     id: 'dermatology',
     name: '피부과',
     fields: [
-      { id: 'chiefComplaint', name: '주호소', nameEn: 'Chief Complaint', type: 'textarea', required: true, description: '피부 증상의 주된 호소' },
-      { id: 'lesionDescription', name: '병변 기술', nameEn: 'Lesion Description', type: 'textarea', required: true, description: 'Morphology, distribution, configuration' },
-      { id: 'duration', name: '발생 시기', nameEn: 'Duration', type: 'text', required: true, description: 'Onset timing' },
-      { id: 'symptoms', name: '동반 증상', nameEn: 'Associated Symptoms', type: 'tags', required: false, description: 'pruritus, pain, burning' },
-      { id: 'assessment', name: '평가', nameEn: 'Assessment', type: 'textarea', required: true, description: 'DDx' },
-      { id: 'plan', name: '치료계획', nameEn: 'Plan', type: 'textarea', required: true, description: 'Topical/systemic treatment plan' },
-      { id: 'diagnosis', name: '진단명', nameEn: 'Diagnosis', type: 'tags', required: false, description: 'Dermatologic diagnosis' },
-      { id: 'medications', name: '처방약물', nameEn: 'Medications', type: 'tags', required: false, description: 'Topical agents, oral medications' },
-      { id: 'notes', name: '기타', nameEn: 'Notes', type: 'textarea', required: false, description: 'F/U schedule, precautions, special instructions' },
+      { id: 'chiefComplaint', name: '주호소', nameEn: 'CC', type: 'textarea', required: true, description: '환자 표현 그대로(한국어).' },
+      { id: 'historyOfPresentIllness', name: '현병력(PI)', nameEn: 'PI', type: 'textarea', required: true, description: '한국어 서술형. 발생시기/경과/악화요인/동반증상.' },
+      { id: 'lesionDescription', name: '병변 기술', nameEn: 'Lesion', type: 'textarea', required: false, description: '대화에서 언급된 형태/분포만. 추정 금지.' },
+      { id: 'pertinentROS', name: '동반증상/관련음성', nameEn: 'Pertinent +/-', type: 'textarea', required: false, description: '가려움/통증/삼출/발열 등 +/-만.' },
+      { id: 'pastMedicalHistory', name: '과거력(PMH)', nameEn: 'PMH', type: 'tags', required: false, description: '아토피 등 언급된 것만.' },
+      { id: 'medications', name: '복용약', nameEn: 'Meds', type: 'tags', required: false, description: '언급된 약만.' },
+      { id: 'allergies', name: '알레르기', nameEn: 'Allergies', type: 'tags', required: false, description: '언급된 알레르기만.' },
+      { id: 'physicalExam', name: '진찰(PE)', nameEn: 'PE', type: 'textarea', required: false, description: '언급된 피부 진찰 소견만.' },
+      { id: 'assessment', name: '평가(A)', nameEn: 'A', type: 'textarea', required: true, description: '한국어 기반 + 약어. 의사 언급 vs AI 감별 분리.' },
+      { id: 'diagnosisConfirmed', name: '진단(의사 언급/확정)', nameEn: 'Dx (stated)', type: 'tags', required: false, description: '의사가 말한 Dx만.' },
+      { id: 'diagnosisInferred', name: '진단(AI 추론/DDx)', nameEn: 'Dx (AI)', type: 'list', required: false, description: 'AI 감별/의심. confidence/근거 포함.' },
+      { id: 'plan', name: '계획(P)', nameEn: 'P', type: 'textarea', required: true, description: '오더 중심. 의사 오더 vs AI 제안 분리.' },
+      { id: 'followUp', name: '추적/주의(F/U)', nameEn: 'F/U', type: 'textarea', required: false, description: '언급된 f/u만.' },
+      { id: 'notes', name: '기타', nameEn: 'Notes', type: 'textarea', required: false, description: '메모.' },
     ],
-    promptContext: `You are a board-certified Dermatologist documenting a skin examination.
+    promptContext: `
+${BASE_CHARTING_STYLE}
 
-## PRIMARY LESION MORPHOLOGY:
-- Flat: macule (<1cm), patch (≥1cm)
-- Elevated: papule (<1cm), plaque (≥1cm), nodule (>1cm deep)
-- Fluid-filled: vesicle (<1cm), bulla (≥1cm), pustule
-
-## LESION DESCRIPTION FORMAT:
-[Color] [Morphology], [Size], [Border], [Surface], [Distribution]
-- Color: erythematous, hyperpigmented, violaceous
-- Border: well-demarcated, ill-defined, raised
-- Surface: scaly, crusted, ulcerated, smooth
-
-## COMMON CONDITIONS:
-- Eczema: AD, ACD, ICD, seborrheic, nummular
-- Papulosquamous: psoriasis, LP, pityriasis rosea
-- Infections: tinea, impetigo, HSV, HZV, verruca
-
-## EXAMPLES:
-- "Well-demarcated erythematous plaque with silvery scale, 4x6cm, R elbow. Auspitz sign (+). Dx: plaque psoriasis. Plan: clobetasol 0.05% oint b.i.d. x2wk"
-- "Grouped vesicles on erythematous base, T4-5 dermatomal, L trunk. Dx: herpes zoster. Plan: valacyclovir 1g t.i.d. x7d"`,
-  },
-  {
-    id: 'orthopedics',
-    name: '정형외과',
-    fields: [
-      { id: 'chiefComplaint', name: '주호소', nameEn: 'Chief Complaint', type: 'textarea', required: true, description: 'Pain location and character' },
-      { id: 'injuryMechanism', name: '손상 기전', nameEn: 'Mechanism of Injury', type: 'textarea', required: false, description: 'MOI details' },
-      { id: 'painScale', name: '통증 정도', nameEn: 'Pain Scale', type: 'text', required: false, description: 'NRS 0-10' },
-      { id: 'physicalExam', name: '이학적 검사', nameEn: 'Physical Exam', type: 'textarea', required: true, description: 'ROM, special tests, neurovascular status' },
-      { id: 'imaging', name: '영상검사', nameEn: 'Imaging', type: 'textarea', required: false, description: 'X-ray, MRI findings' },
-      { id: 'assessment', name: '평가', nameEn: 'Assessment', type: 'textarea', required: true, description: 'Clinical impression' },
-      { id: 'plan', name: '치료계획', nameEn: 'Plan', type: 'textarea', required: true, description: 'Conservative vs operative management' },
-      { id: 'diagnosis', name: '진단명', nameEn: 'Diagnosis', type: 'tags', required: false, description: 'Orthopedic diagnosis' },
-      { id: 'medications', name: '처방약물', nameEn: 'Medications', type: 'tags', required: false, description: 'Analgesics, NSAIDs, muscle relaxants' },
-      { id: 'notes', name: '기타', nameEn: 'Notes', type: 'textarea', required: false, description: 'F/U schedule, PT plan, precautions' },
-    ],
-    promptContext: `You are an Orthopedic Surgeon documenting a musculoskeletal examination.
-
-## ANATOMICAL ABBREVIATIONS:
-- Spine: C-spine, L-spine, HNP, DDD
-- Shoulder: RC (rotator cuff), SLAP, AC joint
-- Knee: ACL, PCL, MCL, LCL, meniscus (MM/LM)
-- Hand: MCP, PIP, DIP, CTS
-
-## PHYSICAL EXAM FORMAT:
-- Inspection: swelling, ecchymosis, deformity
-- Palpation: TTP at [location]
-- ROM: [joint] in degrees (e.g., "0-130° flexion")
-- Special tests: (+) or (-) with test name
-- Neurovascular: intact/abnormal
-
-## SPECIAL TESTS:
-- Shoulder: Neer, Hawkins, empty can, O'Brien
-- Knee: Lachman, McMurray, anterior drawer
-- Wrist: Phalen, Tinel, Finkelstein
-
-## EXAMPLES:
-- "32M, R knee injury. MOI: pivoting. PE: effusion (+), TTP medial joint line, (+) McMurray, Lachman 2+. MRI: ACL tear, MM tear. Plan: ACLR + partial meniscectomy"
-- "55F, R shoulder pain x 3mo. PE: (+) Neer, (+) empty can 4/5. Dx: RC tendinopathy. Plan: MRI, PT x6wk, injection PRN"`,
-  },
-  {
-    id: 'psychiatry',
-    name: '정신건강의학과',
-    fields: [
-      { id: 'chiefComplaint', name: '주호소', nameEn: 'Chief Complaint', type: 'textarea', required: true, description: 'Presenting complaint' },
-      { id: 'historyOfPresentIllness', name: '현병력', nameEn: 'History of Present Illness', type: 'textarea', required: true, description: 'Course of illness' },
-      { id: 'mentalStatusExam', name: '정신상태검사', nameEn: 'Mental Status Exam', type: 'textarea', required: true, description: 'Appearance, behavior, mood, affect, thought, cognition' },
-      { id: 'riskAssessment', name: '위험성 평가', nameEn: 'Risk Assessment', type: 'textarea', required: false, description: 'SI/HI assessment' },
-      { id: 'assessment', name: '평가', nameEn: 'Assessment', type: 'textarea', required: true, description: 'Diagnostic impression' },
-      { id: 'plan', name: '치료계획', nameEn: 'Plan', type: 'textarea', required: true, description: 'Pharmacotherapy, psychotherapy plan' },
-      { id: 'diagnosis', name: '진단명', nameEn: 'Diagnosis', type: 'tags', required: false, description: 'DSM-5 diagnosis' },
-      { id: 'medications', name: '처방약물', nameEn: 'Medications', type: 'tags', required: false, description: 'Psychotropic medications' },
-      { id: 'notes', name: '기타', nameEn: 'Notes', type: 'textarea', required: false, description: 'F/U schedule, therapy notes, safety plan' },
-    ],
-    promptContext: `You are a board-certified Psychiatrist using DSM-5 criteria.
-
-## MENTAL STATUS EXAM (MSE):
-- Appearance: grooming, dress
-- Behavior: eye contact, psychomotor activity
-- Speech: rate, volume, tone
-- Mood: patient's words (quote)
-- Affect: range (full/constricted/flat), congruence
-- Thought Process: linear, tangential, loose associations
-- Thought Content: delusions, obsessions
-- Perceptions: hallucinations (AH/VH)
-- Cognition: orientation, attention
-- Insight/Judgment: good/fair/poor
-
-## RISK ASSESSMENT:
-- SI: active/passive, plan, intent, means
-- HI: target, plan
-- Document: "Denies SI/HI" or specific details
-
-## COMMON DIAGNOSES (DSM-5):
-- Mood: MDD, BD I/II, PDD
-- Anxiety: GAD, panic disorder, PTSD
-- Psychotic: schizophrenia, schizoaffective
-- Others: OCD, ADHD, SUD
-
-## MEDICATION CLASSES:
-- SSRI, SNRI, mood stabilizers, antipsychotics
-
-## EXAMPLES:
-- "28F with MDD. 6wk h/o depressed mood, anhedonia, insomnia, passive SI. MSE: psychomotor retardation, 'depressed' mood, flat affect, no AH/VH. Plan: ↑ sertraline 50→100mg, f/u 2wk"
-- "35M, BD I, manic x 2wk. Decreased sleep, pressured speech, grandiosity. Plan: admit, lithium 600mg b.i.d., olanzapine 10mg qHS"`,
-  },
-  {
-    id: 'pediatrics',
-    name: '소아청소년과',
-    fields: [
-      { id: 'chiefComplaint', name: '주호소', nameEn: 'Chief Complaint', type: 'textarea', required: true, description: 'Parental concern' },
-      { id: 'historyOfPresentIllness', name: '현병력', nameEn: 'History of Present Illness', type: 'textarea', required: true, description: 'Symptom course' },
-      { id: 'developmentHistory', name: '발달력', nameEn: 'Development History', type: 'textarea', required: false, description: 'Developmental milestones' },
-      { id: 'vaccinationHistory', name: '예방접종력', nameEn: 'Vaccination History', type: 'text', required: false, description: 'Immunization status' },
-      { id: 'assessment', name: '평가', nameEn: 'Assessment', type: 'textarea', required: true, description: 'Clinical assessment' },
-      { id: 'plan', name: '치료계획', nameEn: 'Plan', type: 'textarea', required: true, description: 'Management plan' },
-      { id: 'diagnosis', name: '진단명', nameEn: 'Diagnosis', type: 'tags', required: false, description: 'Diagnosis' },
-      { id: 'medications', name: '처방약물', nameEn: 'Medications', type: 'tags', required: false, description: 'Age-appropriate dosing' },
-      { id: 'notes', name: '기타', nameEn: 'Notes', type: 'textarea', required: false, description: 'F/U schedule, growth chart notes, parent education' },
-    ],
-    promptContext: `You are a board-certified Pediatrician documenting a pediatric encounter.
-
-## AGE NOTATION:
-- Newborn: 0-28d → "5d old male"
-- Infant: 1-12mo → "6mo female"
-- Toddler: 1-3yo → "18mo male"
-- Child: 3-12yo → "5yo male"
-
-## GROWTH PARAMETERS:
-- Weight (kg), Height (cm), HC (<2yo), BMI (>2yo)
-- Percentiles: "Wt 12.5kg (50th %ile)"
-
-## COMMON CONDITIONS:
-- Respiratory: URI, bronchiolitis (RSV), croup, asthma
-- ENT: AOM, OME, pharyngitis
-- GI: AGE, constipation, GERD
-- Infectious: HFMD, roseola, scarlet fever
-
-## PHYSICAL EXAM:
-- TM: erythematous, bulging, mobility
-- Lungs: wheezing, retractions, grunting
-- Hydration: mucous membranes, skin turgor
-
-## DOSING FORMAT:
-- Weight-based: "[drug] [dose]mg/kg/[freq]"
-- Example: "Amoxicillin 45mg/kg/day div BID"
-
-## EXAMPLES:
-- "18mo male, fever x 3d, pulling R ear. PE: R TM bulging, erythematous. Dx: R AOM. Plan: Amoxicillin 90mg/kg/day div BID x10d"
-- "4yo female, wheezing, mild distress. SpO2 94%. Dx: asthma exacerbation. Plan: albuterol neb x3, prednisolone 1mg/kg x5d"`,
-  },
-  {
-    id: 'dentistry',
-    name: '치과',
-    fields: [
-      { id: 'chiefComplaint', name: '주호소', nameEn: 'Chief Complaint', type: 'textarea', required: true, description: 'Dental complaint' },
-      { id: 'dentalHistory', name: '치과병력', nameEn: 'Dental History', type: 'textarea', required: true, description: 'Previous dental treatments, last visit' },
-      { id: 'oralExam', name: '구강검사', nameEn: 'Oral Examination', type: 'textarea', required: true, description: 'Tooth number, lesion description, periodontal status' },
-      { id: 'radiographicFindings', name: '방사선소견', nameEn: 'Radiographic Findings', type: 'textarea', required: false, description: 'X-ray, panorama findings' },
-      { id: 'assessment', name: '평가', nameEn: 'Assessment', type: 'textarea', required: true, description: 'Dental diagnosis' },
-      { id: 'plan', name: '치료계획', nameEn: 'Plan', type: 'textarea', required: true, description: 'Treatment plan' },
-      { id: 'diagnosis', name: '진단명', nameEn: 'Diagnosis', type: 'tags', required: false, description: 'Dental diagnosis' },
-      { id: 'procedures', name: '시행술식', nameEn: 'Procedures', type: 'tags', required: false, description: 'Procedures performed' },
-      { id: 'notes', name: '기타', nameEn: 'Notes', type: 'textarea', required: false, description: 'F/U schedule, post-op instructions, oral hygiene advice' },
-    ],
-    promptContext: `You are a licensed Dentist documenting a dental encounter.
-
-## TOOTH NUMBERING (FDI):
-- Quadrants: UR=1, UL=2, LL=3, LR=4
-- Permanent: #11-18, #21-28, #31-38, #41-48
-- Write as: #16, #36
-
-## TOOTH SURFACES:
-- M (Mesial), D (Distal), O (Occlusal), B (Buccal), L (Lingual)
-- Combine: MOD, DO
-
-## DENTAL CONDITIONS:
-- Caries: incipient, moderate, deep, recurrent
-- Pulp: reversible/irreversible pulpitis, necrosis, periapical abscess
-- Perio: gingivitis, periodontitis (stage I-IV)
-
-## PERIODONTAL:
-- PD (probing depth): 1-3mm normal, >4mm pathologic
-- CAL, BOP (+/-), mobility (I/II/III)
-
-## PROCEDURES:
-- Preventive: prophylaxis, scaling, fluoride, sealant
-- Restorative: composite, amalgam, inlay, onlay, crown
-- Endo: pulpotomy, RCT
-- Surgical: Ext, I&D
-- Prosthetic: FPD, RPD, implant
-- Perio: SRP, flap surgery
-
-## EXAMPLES:
-- "#36 MOD caries to pulp. Cold (+) lingering. Percussion (+). Dx: irreversible pulpitis. Plan: RCT #36, crown after obturation"
-- "Generalized BOP, PD 4-6mm. Dx: periodontitis stage III. Plan: OHI, full mouth SRP, re-eval 6wk"`,
+DERM NOTES:
+- Do not hallucinate morphology. Only document what is described.
+- If the provider names a diagnosis, put it into diagnosisConfirmed.
+- AI DDx goes to diagnosisInferred with confidence + rationale + evidence.
+`.trim(),
   },
   {
     id: 'custom',
     name: '커스텀',
     fields: DEFAULT_FIELDS,
-    promptContext: 'Use appropriate medical terminology in English.',
+    promptContext: BASE_CHARTING_STYLE,
   },
 ];
 
@@ -313,7 +210,7 @@ export const DEPARTMENT_PRESETS: DepartmentPreset[] = [
 
 export const DEFAULT_CHART_SETTINGS: ChartSettings = {
   selectedDepartment: 'general',
-  activeFields: [...DEFAULT_FIELDS], // 기본 필드로 초기화
+  activeFields: [...DEFAULT_FIELDS],
   customFields: [],
   additionalPrompt: '',
   includeSOAP: true,
@@ -332,7 +229,6 @@ export function loadChartSettings(): ChartSettings {
   if (saved) {
     try {
       const parsed = JSON.parse(saved);
-      // activeFields가 없으면 (이전 버전 호환) 프리셋에서 가져오기
       if (!parsed.activeFields || parsed.activeFields.length === 0) {
         const preset = DEPARTMENT_PRESETS.find(p => p.id === parsed.selectedDepartment);
         parsed.activeFields = preset ? [...preset.fields] : [...DEFAULT_FIELDS];
@@ -345,7 +241,6 @@ export function loadChartSettings(): ChartSettings {
   return DEFAULT_CHART_SETTINGS;
 }
 
-// 진료과 변경 시 해당 프리셋의 필드로 activeFields 초기화
 export function getFieldsForDepartment(departmentId: string): ChartField[] {
   const preset = DEPARTMENT_PRESETS.find(p => p.id === departmentId);
   return preset ? [...preset.fields] : [...DEFAULT_FIELDS];
@@ -353,18 +248,20 @@ export function getFieldsForDepartment(departmentId: string): ChartField[] {
 
 // ==================== 차트 생성 ====================
 
-// 개별 필드 값 (확실/추측 구분)
+// 개별 필드 값 (확실/추측 구분 + 추론 메타데이터)
 export interface ChartFieldValue {
   value: string | string[];
-  isConfirmed: boolean; // true: 대화에서 직접 언급됨, false: AI 추측/추천
+  isConfirmed: boolean; // true: 대화에서 직접 언급됨
+  source?: 'stated' | 'inferred'; // stated=발화 기반, inferred=AI 추론
+  confidence?: 'low' | 'medium' | 'high'; // inferred일 때 필수
+  rationale?: string; // inferred: 1-2줄
+  evidence?: string[]; // 1-2개의 짧은 인용
 }
 
-// 생성된 차트 (각 필드가 ChartFieldValue)
 export interface GeneratedChart {
   [fieldId: string]: ChartFieldValue;
 }
 
-// 레거시 호환용 (단순 값만)
 export interface GeneratedChartSimple {
   [fieldId: string]: string | string[];
 }
@@ -374,32 +271,44 @@ export interface SpeakerSegment {
   text: string;
 }
 
-// 문자열 값 정리 헬퍼
+// 문자열 값 정리
 function cleanStringValue(value: string): string {
   let cleaned = value;
-  // "\"text\"" 패턴 제거
-  if (cleaned.startsWith('\\"') && cleaned.endsWith('\\"')) {
-    cleaned = cleaned.slice(2, -2);
-  }
-  // ""text"" 패턴 제거
-  if (cleaned.startsWith('""') && cleaned.endsWith('""')) {
-    cleaned = cleaned.slice(2, -2);
-  }
-  // "text" 패턴 제거 (앞뒤 따옴표)
-  if (cleaned.startsWith('"') && cleaned.endsWith('"') && cleaned.length > 2) {
-    cleaned = cleaned.slice(1, -1);
-  }
-  // 이스케이프된 따옴표 정리
+  if (cleaned.startsWith('\\"') && cleaned.endsWith('\\"')) cleaned = cleaned.slice(2, -2);
+  if (cleaned.startsWith('""') && cleaned.endsWith('""')) cleaned = cleaned.slice(2, -2);
+  if (cleaned.startsWith('"') && cleaned.endsWith('"') && cleaned.length > 2) cleaned = cleaned.slice(1, -1);
   cleaned = cleaned.replace(/\\"/g, '"').replace(/""/g, '"');
   return cleaned.trim();
 }
 
-// 값이 있는지 확인 헬퍼
 function hasValue(value: string | string[]): boolean {
-  if (Array.isArray(value)) {
-    return value.length > 0;
-  }
+  if (Array.isArray(value)) return value.length > 0;
   return value.trim().length > 0;
+}
+
+function normalizeArrayValue(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map(v => String(v)).map(v => v.trim()).filter(Boolean);
+  if (typeof value === 'string') {
+    const parts = value.split('\n').map(s => s.trim()).filter(Boolean);
+    if (parts.length > 1) return parts;
+    return value.split(',').map(s => s.trim()).filter(Boolean);
+  }
+  return [];
+}
+
+function normalizeEvidence(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map(v => String(v)).map(v => v.trim()).filter(Boolean).slice(0, 2);
+  if (typeof value === 'string') {
+    const parts = value.split('\n').map(s => s.trim()).filter(Boolean);
+    return parts.slice(0, 2);
+  }
+  return [];
+}
+
+function normalizeConfidence(value: unknown): 'low' | 'medium' | 'high' {
+  const v = typeof value === 'string' ? value.toLowerCase().trim() : '';
+  if (v === 'high' || v === 'medium' || v === 'low') return v;
+  return 'low';
 }
 
 export async function generateChart(
@@ -411,10 +320,9 @@ export async function generateChart(
     return null;
   }
 
-  // 대화 내용 포맷팅
   const conversation = segments
     .filter(s => s.speaker !== 'pending')
-    .map(s => `${s.speaker === 'doctor' ? '의사' : '환자'}: ${s.text}`)
+    .map((s, idx) => `${idx + 1}. ${s.speaker === 'doctor' ? '의사' : '환자'}: ${s.text}`)
     .join('\n');
 
   if (!conversation.trim()) {
@@ -422,26 +330,27 @@ export async function generateChart(
     return null;
   }
 
-  // 선택된 프리셋 가져오기
   const preset = DEPARTMENT_PRESETS.find(p => p.id === settings.selectedDepartment) || DEPARTMENT_PRESETS[0];
-  
-  // 필드 목록 (activeFields 사용)
+
   const allFields = settings.activeFields && settings.activeFields.length > 0
     ? settings.activeFields
     : preset.fields;
 
-  // JSON 스키마 생성 (확실/추측 구분 포함) - 기본값 false
-  const jsonSchema: Record<string, { value: string | string[]; isConfirmed: boolean }> = {};
+  // JSON 스키마 (value + 확실표시 + 추론 메타데이터 기본값 포함)
+  const jsonSchema: Record<string, any> = {};
   allFields.forEach(field => {
-    if (field.type === 'tags' || field.type === 'list') {
-      jsonSchema[field.id] = { value: [], isConfirmed: false };
-    } else {
-      jsonSchema[field.id] = { value: '', isConfirmed: false };
-    }
+    const isArray = field.type === 'tags' || field.type === 'list';
+    jsonSchema[field.id] = {
+      value: isArray ? [] : '',
+      isConfirmed: false,
+      source: 'stated',
+      confidence: 'low',
+      rationale: '',
+      evidence: []
+    };
   });
-  
-  // 필드 설명 (별도로 제공)
-  const fieldDescriptions = allFields.map(f => 
+
+  const fieldDescriptions = allFields.map(f =>
     `- ${f.id}: ${f.nameEn || f.name}${f.description ? ` (${f.description})` : ''}`
   ).join('\n');
 
@@ -449,58 +358,54 @@ export async function generateChart(
   console.log('🏥 진료과:', preset.name);
   console.log('📝 필드 수:', allFields.length);
 
-  const systemPrompt = `You are an experienced ${preset.name !== '일반' ? preset.name : 'physician'} documenting a clinical encounter.
+  // ✅ Quality-focused system prompt (Korean EMR + abbreviations)
+  const systemPrompt = `
+You are an experienced ${preset.name !== '일반' ? preset.name : 'physician'} documenting a Korean hospital outpatient EMR note.
 
 ${preset.promptContext || ''}
 
-## LANGUAGE RULES:
-1. **chiefComplaint**: Write in KOREAN exactly as the patient stated it
-2. **ALL OTHER FIELDS**: Write in ENGLISH using medical abbreviations and terminology
+HARD LANGUAGE OVERRIDE:
+- chiefComplaint (CC) MUST be KOREAN (patient's wording).
+- historyOfPresentIllness (PI) MUST be KOREAN narrative.
+- Do NOT write PI in English.
 
-## ABBREVIATION STYLE (REQUIRED):
-- Duration: "~1wk", "x 2mo", "for 3d" (NOT Korean like "일주일 정도")
-- Frequency: "q.d.", "b.i.d.", "t.i.d.", "PRN"
-- Route: "PO", "IV", "IM", "topical"
-- History: "Hx", "PMHx"
-- Diagnosis: "Dx", "DDx", "r/o"
-- Treatment: "Tx", "Rx", "f/u"
-- Physical: "WNL", "NAD"
-- Example: "#36 gingival recession, sensitivity to cold x 1wk. Plan: F- application, f/u 2wk."
+HARD FORMATTING OVERRIDE:
+- If using bullets or numbered lists, ALWAYS put a blank line between items.
 
-${settings.additionalPrompt ? `Additional instructions: ${settings.additionalPrompt}` : ''}
+POPULAR KOREAN EMR DEFAULTS (BE CONSERVATIVE):
+- Keep PI (historyOfPresentIllness) to 3–6 short sentences.
+- Keep assessment summary to 1–2 sentences.
+- Plan: prioritize provider orders. Do NOT add AI suggestions unless strongly justified.
+- Keep Plan to 3–7 lines.
+- AI suggestions: at most 0–3 lines; omit if not strongly supported.
+- Avoid excessive abbreviations. Use only common ones: N/V, CP, SOB, HA, r/o, DDx, c/w, f/u, PRN, PO.
+- diagnosisInferred: maximum 3 items, MUST be DDx/r/o style (not definitive).
+${settings.additionalPrompt ? `\nADDITIONAL INSTRUCTIONS FROM USER:\n${settings.additionalPrompt}\n` : ''}
 
-## FIELDS TO FILL:
+FIELDS TO FILL:
 ${fieldDescriptions}
 
-## CONFIDENCE MARKING (VERY IMPORTANT - READ CAREFULLY):
-Default is FALSE. Only set TRUE if EXPLICITLY stated in conversation.
+CONFIDENCE & INFERENCE (STRICT):
+- Default: isConfirmed=false.
+- isConfirmed=true ONLY if explicitly stated in the conversation.
+- For inferred content (allowed only in assessment, diagnosisInferred, and plan[AI 제안]):
+  - isConfirmed MUST be false
+  - source MUST be "inferred"
+  - confidence MUST be low/medium/high
+  - rationale MUST be 1–2 short lines
+  - evidence MUST include 1–2 short quotes from conversation
+- For stated content:
+  - source="stated"
+  - evidence is recommended if important
 
-**isConfirmed: true** - ONLY when patient/doctor DIRECTLY SAID this exact information
-**isConfirmed: false** - Everything else (your inference, recommendation, medical knowledge, standard practice)
-
-### TRUE examples (직접 언급됨):
-- Patient: "손이 떨려요" → chiefComplaint = true (patient said it)
-- Patient: "3개월 전부터요" → duration mentioned = true
-- Doctor: "파킨슨 검사 해봅시다" → plan includes Parkinson test = true
-
-### FALSE examples (추측/추천):
-- You write assessment based on symptoms → assessment = FALSE (your clinical judgment)
-- You suggest diagnosis not confirmed by doctor → diagnosis = FALSE
-- You recommend standard f/u schedule → plan = FALSE (not discussed)
-- You suggest medications based on diagnosis → medications = FALSE
-- Doctor asked questions but no conclusion → assessment = FALSE
-
-BE STRICT: When in doubt, use FALSE. Most "assessment", "plan", "diagnosis", "medications" should be FALSE unless doctor explicitly stated them.
-
-## OUTPUT FORMAT (PURE JSON ONLY):
+OUTPUT FORMAT (PURE JSON ONLY):
 ${JSON.stringify(jsonSchema, null, 2)}
 
-## CRITICAL:
-- Output ONLY valid JSON, no comments, no explanations
-- Do NOT add // comments or any text outside JSON
-- Do NOT wrap values in extra quotes (wrong: "\"text\"", correct: "text")
-- Empty fields: use { "value": "" or [], "isConfirmed": true }
-- ALWAYS include both "value" and "isConfirmed" for EVERY field`;
+CRITICAL:
+- Output ONLY valid JSON (no markdown, no explanations)
+- Always include all keys and all subkeys for every field
+- If not mentioned, keep empty ("") or [] with isConfirmed=false
+`.trim();
 
   try {
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -513,10 +418,21 @@ ${JSON.stringify(jsonSchema, null, 2)}
         model: 'gpt-4o',
         messages: [
           { role: 'system', content: systemPrompt },
-          { role: 'user', content: `다음 진료 대화를 분석하여 차트를 작성해주세요:\n\n${conversation}` }
+          {
+            role: 'user',
+            content:
+`다음 진료 대화를 바탕으로 한국 병원 외래 EMR처럼 작성해줘.
+- 없는 정보는 만들지 마.
+- CC/PI는 한국어.
+- Assessment/Plan은 한국어 기반 + 영어 약어(DDx/r/o/c/w, f/u, PRN 등) 자연스럽게 섞어.
+- 불릿/번호 항목은 반드시 한 줄씩 띄워.
+
+[진료 대화]
+${conversation}`
+          }
         ],
-        max_tokens: 3000,
-        temperature: 0.3,
+        max_tokens: 3200,
+        temperature: 0.2,
       }),
     });
 
@@ -528,90 +444,118 @@ ${JSON.stringify(jsonSchema, null, 2)}
 
     const result = await response.json();
     const content = result.choices[0]?.message?.content?.trim();
-    
+
     console.log('🤖 GPT 응답:', content?.slice(0, 200) + '...');
 
     try {
-      // JSON 파싱 (markdown 코드블록 제거)
-      let jsonStr = content
+      let jsonStr = (content || '')
         .replace(/```json\n?/g, '')
         .replace(/```\n?/g, '')
         .trim();
-      
-      console.log('📝 파싱할 JSON:', jsonStr.slice(0, 300) + '...');
-      
+
       let rawData: Record<string, unknown>;
-      
       try {
-        // 먼저 그대로 파싱 시도
         rawData = JSON.parse(jsonStr);
       } catch {
-        // 파싱 실패 시 키에 따옴표 없는 경우 처리
         console.log('⚠️ 1차 파싱 실패, 키 따옴표 추가 시도...');
         jsonStr = jsonStr.replace(/(\s*)(\w+)(\s*):/g, '$1"$2"$3:');
         jsonStr = jsonStr.replace(/""/g, '"');
         rawData = JSON.parse(jsonStr);
       }
-      
-      // 새 형식으로 변환 (ChartFieldValue)
+
       const chartData: GeneratedChart = {};
-      
+
       allFields.forEach(field => {
         const rawValue = rawData[field.id];
         const isArrayField = field.type === 'tags' || field.type === 'list';
-        
-        // 새 형식 (value + isConfirmed 객체)
-        if (rawValue && typeof rawValue === 'object' && 'value' in rawValue) {
-          const fieldValue = rawValue as { value: unknown; isConfirmed?: boolean };
-          let value = fieldValue.value;
-          
-          // 문자열 정리
-          if (typeof value === 'string') {
-            value = cleanStringValue(value);
-          }
-          
-          chartData[field.id] = {
-            value: isArrayField 
-              ? (Array.isArray(value) ? value : []) 
-              : (typeof value === 'string' ? value : ''),
-            isConfirmed: fieldValue.isConfirmed === true, // 명시적으로 true인 경우만
+
+        const base: ChartFieldValue = {
+          value: isArrayField ? [] : '',
+          isConfirmed: false,
+          source: 'stated',
+          confidence: 'low',
+          rationale: '',
+          evidence: [],
+        };
+
+        if (rawValue && typeof rawValue === 'object' && 'value' in (rawValue as any)) {
+          const fv = rawValue as {
+            value: unknown;
+            isConfirmed?: boolean;
+            source?: 'stated' | 'inferred';
+            confidence?: 'low' | 'medium' | 'high';
+            rationale?: string;
+            evidence?: unknown;
           };
-        } 
-        // 레거시 형식 (단순 값) - 모두 추측으로 처리
-        else {
-          let value = rawValue;
-          
-          if (typeof value === 'string') {
-            value = cleanStringValue(value);
+
+          const source: 'stated' | 'inferred' = fv.source === 'inferred' ? 'inferred' : 'stated';
+          const evidence = normalizeEvidence(fv.evidence);
+          const rationale = typeof fv.rationale === 'string' ? cleanStringValue(fv.rationale) : '';
+          const confidence = normalizeConfidence(fv.confidence);
+
+          if (isArrayField) {
+            const arr = normalizeArrayValue(fv.value);
+            chartData[field.id] = {
+              ...base,
+              value: arr,
+              isConfirmed: fv.isConfirmed === true,
+              source,
+              confidence,
+              rationale,
+              evidence,
+            };
+          } else {
+            const str = typeof fv.value === 'string' ? cleanStringValue(fv.value) : '';
+            chartData[field.id] = {
+              ...base,
+              value: str,
+              isConfirmed: fv.isConfirmed === true,
+              source,
+              confidence,
+              rationale,
+              evidence,
+            };
           }
-          
-          chartData[field.id] = {
-            value: isArrayField 
-              ? (Array.isArray(value) ? value : []) 
-              : (typeof value === 'string' ? value : ''),
-            isConfirmed: false, // 기본값 false
-          };
+        } else {
+          // 레거시/깨진 형식: value만 받고 나머지는 기본값
+          if (isArrayField) {
+            chartData[field.id] = { ...base, value: normalizeArrayValue(rawValue) };
+          } else {
+            chartData[field.id] = { ...base, value: typeof rawValue === 'string' ? cleanStringValue(rawValue) : '' };
+          }
+        }
+
+        // 안전장치: inferred이면 isConfirmed는 반드시 false
+        if (chartData[field.id].source === 'inferred') {
+          chartData[field.id].isConfirmed = false;
+        }
+
+        // 안전장치: evidence는 최대 2개
+        if (chartData[field.id].evidence && chartData[field.id].evidence!.length > 2) {
+          chartData[field.id].evidence = chartData[field.id].evidence!.slice(0, 2);
+        }
+
+        // 안전장치: confidence는 inferred에서만 의미있음(그래도 UI 편의상 유지)
+        if (chartData[field.id].source === 'stated') {
+          // stated인데 confidence/high 같은 게 와도 크게 문제는 없지만, 보수적으로 low로 고정하고 싶으면 아래 주석 해제
+          // chartData[field.id].confidence = 'low';
         }
       });
 
-      // 확실/추측 통계 및 상세 로그
       const confirmedFields: string[] = [];
       const inferredFields: string[] = [];
-      
+
       Object.entries(chartData).forEach(([fieldId, fieldValue]) => {
         if (hasValue(fieldValue.value)) {
-          if (fieldValue.isConfirmed) {
-            confirmedFields.push(fieldId);
-          } else {
-            inferredFields.push(fieldId);
-          }
+          if (fieldValue.isConfirmed) confirmedFields.push(fieldId);
+          if (fieldValue.source === 'inferred') inferredFields.push(fieldId);
         }
       });
-      
+
       console.log(`✅ 차트 생성 완료!`);
-      console.log(`   ✓ 확실 (${confirmedFields.length}개): ${confirmedFields.join(', ') || '없음'}`);
-      console.log(`   ⚠ 추측 (${inferredFields.length}개): ${inferredFields.join(', ') || '없음'}`);
-      
+      console.log(`   ✓ 확실(isConfirmed=true) (${confirmedFields.length}개): ${confirmedFields.join(', ') || '없음'}`);
+      console.log(`   ⚠ AI추론(source=inferred) (${inferredFields.length}개): ${inferredFields.join(', ') || '없음'}`);
+
       return chartData;
     } catch (parseError) {
       console.error('❌ JSON 파싱 오류:', parseError, content);
@@ -625,12 +569,9 @@ ${JSON.stringify(jsonSchema, null, 2)}
 
 // 필드 정보 가져오기 (UI 렌더링용)
 export function getFieldsForSettings(settings: ChartSettings): ChartField[] {
-  // activeFields가 있으면 그대로 사용
   if (settings.activeFields && settings.activeFields.length > 0) {
     return settings.activeFields;
   }
-  
-  // 없으면 프리셋에서 가져오기
   const preset = DEPARTMENT_PRESETS.find(p => p.id === settings.selectedDepartment) || DEPARTMENT_PRESETS[0];
   return [...preset.fields];
 }
@@ -641,18 +582,15 @@ export async function generateChartFromTranscript(
   segments: SpeakerSegment[],
   department: string = 'internal'
 ): Promise<GeneratedChart | null> {
-  // 기본 설정 생성
   const settings: ChartSettings = {
     ...DEFAULT_CHART_SETTINGS,
     selectedDepartment: department,
     activeFields: getFieldsForDepartment(department),
   };
-  
-  // segments가 비어있으면 transcript로 단일 세그먼트 생성
+
   const useSegments = segments.length > 0 ? segments : [{ speaker: 'patient' as const, text: transcript }];
-  
+
   return generateChart(useSegments, settings);
 }
 
-// ChartData 타입 export (ChartingResult 호환용)
 export type ChartData = GeneratedChart;
