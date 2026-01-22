@@ -255,8 +255,8 @@ export function ChartSettingsModal({ settings, onSettingsChange, departmentName 
           <ChevronDown className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-600 transition-colors" />
         </button>
       </DialogTrigger>
-      <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col">
-        <DialogHeader>
+      <DialogContent className="max-w-2xl max-h-[80vh] sm:max-h-[85vh] flex flex-col overflow-hidden">
+        <DialogHeader className="flex-shrink-0">
           <DialogTitle className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-teal-500 to-teal-600 flex items-center justify-center">
               <Building2 className="w-4 h-4 text-white" />
@@ -268,17 +268,17 @@ export function ChartSettingsModal({ settings, onSettingsChange, departmentName 
           </DialogDescription>
         </DialogHeader>
 
-        <Tabs defaultValue="department" className="flex-1 flex flex-col min-h-0">
-          <TabsList className="grid grid-cols-3 w-full">
-            <TabsTrigger value="department">진료과 선택</TabsTrigger>
-            <TabsTrigger value="fields">필드 관리</TabsTrigger>
-            <TabsTrigger value="advanced">고급 설정</TabsTrigger>
+        <Tabs defaultValue="department" className="flex-1 flex flex-col min-h-0 overflow-hidden">
+          <TabsList className="grid grid-cols-3 w-full flex-shrink-0">
+            <TabsTrigger value="department" className="text-xs sm:text-sm">진료과</TabsTrigger>
+            <TabsTrigger value="fields" className="text-xs sm:text-sm">필드 관리</TabsTrigger>
+            <TabsTrigger value="advanced" className="text-xs sm:text-sm">고급 설정</TabsTrigger>
           </TabsList>
 
-          <ScrollArea className="flex-1 mt-4">
+          <ScrollArea className="flex-1 mt-4 overflow-y-auto">
             {/* 진료과 선택 탭 */}
-            <TabsContent value="department" className="mt-0 space-y-4">
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+            <TabsContent value="department" className="mt-0 space-y-4 pr-3">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 {DEPARTMENT_PRESETS.map(preset => (
                   <Button
                     key={preset.id}
@@ -315,7 +315,7 @@ export function ChartSettingsModal({ settings, onSettingsChange, departmentName 
             </TabsContent>
 
             {/* 필드 관리 탭 */}
-            <TabsContent value="fields" className="mt-0 space-y-4">
+            <TabsContent value="fields" className="mt-0 space-y-4 pr-3">
               {/* 헤더 + 기본값 복원 버튼 */}
               <div className="flex items-center justify-between">
                 <div>
@@ -338,7 +338,7 @@ export function ChartSettingsModal({ settings, onSettingsChange, departmentName 
               {/* 필드 목록 - 드래그 가능 (스크롤 영역) */}
               {localSettings.activeFields.length > 0 ? (
                 <div className="border rounded-lg overflow-hidden">
-                  <div className="max-h-[280px] overflow-y-auto p-2">
+                  <div className="max-h-[200px] sm:max-h-[280px] overflow-y-auto p-2">
                     <DndContext
                       sensors={sensors}
                       collisionDetection={closestCenter}
@@ -398,7 +398,7 @@ export function ChartSettingsModal({ settings, onSettingsChange, departmentName 
             </TabsContent>
 
             {/* 고급 설정 탭 */}
-            <TabsContent value="advanced" className="mt-0 space-y-4">
+            <TabsContent value="advanced" className="mt-0 space-y-4 pr-3">
               {/* SOAP 포함 여부 */}
               <div className="flex items-center justify-between">
                 <div>
@@ -436,7 +436,7 @@ export function ChartSettingsModal({ settings, onSettingsChange, departmentName 
           </ScrollArea>
         </Tabs>
 
-        <DialogFooter className="mt-4 border-t pt-4">
+        <DialogFooter className="mt-4 border-t pt-4 flex-shrink-0">
           <Button variant="outline" onClick={() => setOpen(false)}>
             취소
           </Button>
