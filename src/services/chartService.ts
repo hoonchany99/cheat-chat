@@ -1,8 +1,7 @@
-// 차트 설정 및 생성 서비스 (Korean hospital style, mixed Korean + abbreviations)
-// - 변수/함수 이름 유지
-// - CC/PI는 한국어(PI는 서술형)
-// - Assessment/Plan: 한국어 기반 + 영어 약어 섞기 (r/o, c/w, DDx, f/u, PRN, PO...)
-// - Dx를 "확정/언급" vs "AI추론"으로 분리
+// 차트 설정 및 생성 서비스 (Korean hospital style)
+// - CC/PI: 한국어 (PI는 서술형)
+// - Assessment/DDx/Dx/Plan: 영어 중심 + 한국어 연결어만 허용
+// - Dx 2트랙: diagnosisConfirmed(의사 언급) / diagnosisInferred(AI 추론)
 // - 추론은 허용된 필드에서만 수행 + 근거/신뢰도 표시
 
 const OPENAI_API_KEY = import.meta.env.VITE_OPENAI_API_KEY || '';
@@ -16,6 +15,27 @@ export interface ChartField {
   type: 'text' | 'textarea' | 'list' | 'tags';
   required: boolean;
   description?: string;
+}
+
+// DDx 개별 항목 타입
+export interface DdxItem {
+  id: string;
+  diagnosis: string;
+  reason: string;
+  confidence: 'low' | 'medium' | 'high';
+  isConfirmed: boolean;
+  isRemoved: boolean;
+}
+
+// 차트 필드 값 타입
+export interface ChartFieldValue {
+  value: string | string[];
+  isConfirmed: boolean;
+  source?: 'stated' | 'inferred';
+  confidence?: 'low' | 'medium' | 'high';
+  rationale?: string;
+  evidence?: string[];
+  ddxList?: DdxItem[]; // Assessment 필드 전용
 }
 
 export interface DepartmentPreset {
@@ -37,7 +57,7 @@ export interface ChartSettings {
 // ✅ 한국 병원 외래 EMR에 가까운 구성
 // - Dx 2트랙: diagnosisConfirmed(의사 언급) / diagnosisInferred(AI 추론)
 // - PI(현병력)는 한국어 서술형
-// - Assessment/Plan 한국어 + 약어
+// - Assessment/Plan: 영어 중심 + 한국어 연결어만 허용
 
 export const DEFAULT_FIELDS: ChartField[] = [
   // S - Korean
@@ -119,19 +139,17 @@ CORE PHILOSOPHY:
 - Limit DDx to top 1-2 most likely causes (max 3).
 - Avoid vague terms (e.g., "cardiac problem" ❌, "brain issue" ❌).
 
-AI DDx FORMAT (MUST FOLLOW EXACTLY):
-- Each DDx item must be ONE SINGLE bullet line.
-- Use EXACTLY this format:
-  "- r/o <diagnosis> (reason: <brief reason>)"
-- Do NOT create separate bullets for reasons.
-- Do NOT split diagnosis and reason into multiple lines.
+DDx OUTPUT RULES (CRITICAL):
+- DO NOT write DDx as text in assessment.value.
+- Put ALL DDx items in assessment.ddxList array ONLY.
+- assessment.value should contain ONLY [Summary] and optionally [Provider Impression].
+- Each ddxList item must have: id, diagnosis, reason, confidence, isConfirmed: false, isRemoved: false.
 
-GOOD:
-- r/o vasovagal syncope (reason: sudden LOC with prodrome, quick recovery)
+GOOD assessment.value:
+"[Summary]\n13yo male with sudden LOC after bathroom visit.\n\n[Provider Impression]\n(empty if no orders)"
 
-BAD:
-- r/o syncope
-- sudden loss of consciousness with no prior history
+BAD assessment.value:
+"[Summary] 13yo male... [AI DDx/r/o] - r/o syncope..." ❌ (DDx should be in ddxList, not here)
 
 === Dx (AI) RULES (STRICT) ===
 - Do NOT repeat DDx as a comma-separated list.
@@ -144,15 +162,21 @@ BAD:
 - Put DDx/r/o list ONLY inside Assessment under [AI DDx/r/o].
 - Put ONE-LINE impression ONLY in diagnosisInferred (Dx AI). Do NOT duplicate DDx list there.
 
-=== ASSESSMENT STRUCTURE (3-PART) ===
+=== ASSESSMENT STRUCTURE (LINE BREAKS REQUIRED) ===
+MUST USE THIS EXACT FORMAT WITH LINE BREAKS:
+
 [Summary]
 (1-2 sentences in English, Korean connectors OK)
 
 [Provider Impression]
-(ONLY if doctor ordered tests/treatments - otherwise LEAVE EMPTY)
+(ONLY if doctor explicitly ordered tests/treatments - otherwise LEAVE EMPTY, do not write "없음")
 
-[AI DDx/r/o]
-- r/o <diagnosis> (reason: <brief reason>)
+CRITICAL FORMATTING:
+- Each section header MUST be on its own line.
+- DO NOT put all sections on a single line.
+- assessment.value contains ONLY [Summary] and optionally [Provider Impression].
+- DO NOT write DDx text inside assessment.value.
+- DDx goes ONLY in assessment.ddxList array.
 
 === PROVIDER IMPRESSION RULE (STRICT) ===
 - ONLY write Provider Impression if the doctor EXPLICITLY ordered tests or treatments.
@@ -380,10 +404,83 @@ export async function generateChart(
     return null;
   }
 
-  const conversation = segments
+  // 대화 내용 구성
+  const rawConversation = segments
     .filter(s => s.speaker !== 'pending')
     .map((s, idx) => `${idx + 1}. ${s.speaker === 'doctor' ? '의사' : '환자'}: ${s.text}`)
     .join('\n');
+
+  // GPT를 활용한 STT 오류 교정 (의학 용어 + 문맥 기반)
+  let conversation = rawConversation;
+  
+  try {
+    console.log('🔧 STT 오류 교정 중...');
+    const correctionResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${OPENAI_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [
+          {
+            role: 'system',
+            content: `당신은 한국어 의료 대화의 STT(음성-텍스트) 오류를 교정하는 전문가입니다.
+
+엄격한 규칙:
+1. 명백한 STT 오류만 교정하세요. 의미가 통하는 문장은 절대 건드리지 마세요.
+2. 한두 글자만 바꿔서 말이 되게 만드세요. 문장 전체를 재작성하지 마세요.
+3. 의학 용어 교정은 문맥이 강하게 뒷받침할 때만 적용하세요:
+   - 예: 의사가 "고혈압, 당뇨 있으세요?"라고 물은 직후 "소아잠도" → "소아당뇨"로 교정 가능
+   - 예: 문맥 없이 갑자기 나온 "소아잠도"는 원본 유지
+4. 교정 가능한 의학 용어 (문맥 지지 시에만):
+   - 소아잠도/소아장도 → 소아당뇨
+   - 고혈야/고열압 → 고혈압
+   - 뇌경생 → 뇌경색
+   - 심근경생 → 심근경색
+   - 협식증/협심정 → 협심증
+   - 뇌졸증/뇌졸종 → 뇌졸중
+5. 확신이 80% 이하면 원본 그대로 두세요.
+6. 대화 형식(번호, 의사/환자 표시)은 반드시 그대로 유지하세요.
+7. 문장을 추가하거나 삭제하지 마세요.
+
+출력: 교정된 대화 텍스트만 출력. 설명 없이. 원본과 거의 동일해야 함.`
+          },
+          {
+            role: 'user',
+            content: rawConversation
+          }
+        ],
+        max_tokens: 2000,
+        temperature: 0.1, // 낮은 temperature로 보수적 교정
+      }),
+    });
+
+    if (correctionResponse.ok) {
+      const correctionResult = await correctionResponse.json();
+      const correctedText = correctionResult.choices[0]?.message?.content?.trim();
+      if (correctedText) {
+        // 안전 검사: 교정 결과가 원본 대비 10% 이상 길이 차이나면 원본 사용
+        const lengthDiff = Math.abs(correctedText.length - rawConversation.length) / rawConversation.length;
+        if (lengthDiff > 0.1) {
+          console.warn('⚠️ STT 교정 결과가 원본과 너무 다름 (길이 차이 10% 초과), 원본 사용');
+        } else {
+          conversation = correctedText;
+          console.log('✅ STT 오류 교정 완료');
+          
+          // 변경된 부분이 있으면 로그
+          if (rawConversation !== correctedText) {
+            console.log('📝 교정된 내용이 있습니다.');
+          }
+        }
+      }
+    } else {
+      console.warn('⚠️ STT 교정 API 실패, 원본 사용');
+    }
+  } catch (correctionError) {
+    console.warn('⚠️ STT 교정 중 오류, 원본 사용:', correctionError);
+  }
 
   if (!conversation.trim()) {
     console.error('❌ 대화 내용이 없습니다.');
@@ -474,14 +571,17 @@ FIELDS TO FILL:
 ${fieldDescriptions}
 
 CONFIDENCE & INFERENCE:
-- isConfirmed=true ONLY if explicitly stated.
-- For inferred content (assessment, diagnosisInferred, plan AI suggestions):
-  - isConfirmed=false, source="inferred"
-  - confidence: low/medium/high
-  - rationale: 1-2 short lines
-  - evidence: 1-2 quotes from conversation
-- For stated content: source="stated"
-- If Provider Impression is inferred from orders (not explicitly spoken), set source="inferred" and isConfirmed=false.
+- isConfirmed=true ONLY when content is CLEARLY and EXPLICITLY stated AND medically interpretable.
+- If unclear, garbled, or ambiguous → isConfirmed=false (or leave blank).
+
+RULES:
+- CC, PI: isConfirmed=true, source="stated" (direct patient quotes)
+- ROS, PMH, Meds, Allergies, SHx, FHx, VS, PE, Labs:
+  - isConfirmed=true ONLY if clearly stated and medically meaningful
+  - If unclear/garbled (e.g., "소아잠도" instead of "소아당뇨"), leave blank or write "Unclear" with isConfirmed=false
+- Assessment [Summary]: isConfirmed=true, source="stated"
+- Assessment [AI DDx], diagnosisInferred, Plan [AI Suggestions]: isConfirmed=false, source="inferred"
+- Provider Impression: isConfirmed=true ONLY if doctor explicitly stated; isConfirmed=false if inferred
 
 OUTPUT FORMAT (PURE JSON ONLY):
 ${JSON.stringify(jsonSchema, null, 2)}

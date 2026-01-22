@@ -15,28 +15,10 @@ import {
   ChevronDown,
   ChevronUp
 } from 'lucide-react';
-import { ChartField, DEPARTMENT_PRESETS } from '@/services/chartService';
+import { ChartField, DEPARTMENT_PRESETS, DdxItem, ChartFieldValue } from '@/services/chartService';
 
-// DDx 개별 항목 인터페이스
-export interface DDxItem {
-  id: string;
-  diagnosis: string;
-  reason: string;
-  confidence: 'low' | 'medium' | 'high';
-  isConfirmed: boolean;
-  isRemoved: boolean;
-}
-
-// Full ChartFieldValue interface matching chartService
-export interface ChartFieldValue {
-  value: string | string[];
-  isConfirmed: boolean;
-  source?: 'stated' | 'inferred';
-  confidence?: 'low' | 'medium' | 'high';
-  rationale?: string;
-  evidence?: string[];
-  ddxList?: DDxItem[]; // DDx 리스트 (assessment 필드용)
-}
+// ChartData는 여기서 export (chartService의 타입 활용)
+export type { DdxItem, ChartFieldValue };
 
 export interface ChartData {
   [key: string]: ChartFieldValue;
@@ -254,7 +236,7 @@ export function ChartingResult({
   }, [editableData, displayFields]);
 
   // DDx 리스트 렌더링
-  const renderDDxList = (ddxList: DDxItem[]) => {
+  const renderDDxList = (ddxList: DdxItem[]) => {
     const visibleItems = ddxList.filter(item => !item.isRemoved);
     
     if (visibleItems.length === 0) {
@@ -512,7 +494,7 @@ export function ChartingResult({
                 <Textarea
                   value={textValue}
                   onChange={(e) => handleFieldChange(field.id, e.target.value)}
-                  className="min-h-[60px] bg-white border-slate-200"
+                  className="min-h-[60px] bg-white border-slate-200 whitespace-pre-wrap"
                   placeholder="콤마(,)로 구분하여 입력"
                 />
               </>
@@ -529,7 +511,7 @@ export function ChartingResult({
           <Textarea
             value={stringValue}
             onChange={(e) => handleFieldChange(field.id, e.target.value)}
-            className="min-h-[80px] bg-white border-slate-200"
+            className="min-h-[80px] bg-white border-slate-200 whitespace-pre-wrap"
             placeholder={field.description}
           />
         )}
