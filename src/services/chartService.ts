@@ -79,11 +79,11 @@ export const DEFAULT_FIELDS: ChartField[] = [
   { id: 'labResults', name: '검사결과', nameEn: 'Labs', type: 'textarea', required: false, description: '영어. 언급된 결과만.' },
   { id: 'imaging', name: '영상검사', nameEn: 'Imaging', type: 'textarea', required: false, description: '영어. 언급된 것만.' },
 
-  // A - English (Korean connectors OK)
-  { id: 'assessment', name: '평가', nameEn: 'Assessment', type: 'textarea', required: true, description: '영어. # 확정Dx + r/o DDx (confidence순 정렬). AI는 #붙이기 금지.' },
+  // A - Assessment (# 확정 + r/o DDx만)
+  { id: 'assessment', name: '평가', nameEn: 'Assessment', type: 'textarea', required: true, description: '# 확정Dx + r/o DDx만. Summary/설명 금지. AI는 # 금지.' },
 
-  // Dx - English only
-  { id: 'diagnosisConfirmed', name: '확정 진단', nameEn: 'Dx (stated)', type: 'tags', required: false, description: '영어. DDx 확정 시 # 붙여서 표시.' },
+  // Dx - 확정 진단 (# 표시)
+  { id: 'diagnosisConfirmed', name: '확정 진단', nameEn: 'Dx (#)', type: 'tags', required: false, description: 'DDx 확정 시 # 붙여서 Assessment에 표시.' },
 
   // P - English orders
   { id: 'plan', name: '계획', nameEn: 'Plan', type: 'textarea', required: true, description: '영어 오더만. [Orders] + [AI Suggestions] (근거 필수, 0-2줄).' },
@@ -187,66 +187,40 @@ GOOD:
 BAD:
 "NAD" (too vague when PE was performed)
 
-=== DDx RULES (STRICT - FORMAT CRITICAL) ===
+=== ASSESSMENT STRUCTURE (CRITICAL - SIMPLE) ===
+Assessment contains ONLY two things:
+1. # Confirmed Dx (확정 진단) - ONLY if doctor explicitly stated diagnosis
+2. r/o DDx (AI differential) - via ddxList array
+
+NO [Summary], NO [Provider Impression], NO explanations.
+Just diagnosis structure.
+
+EXAMPLE OUTPUT:
+# Syncope (if doctor confirmed)
+
+r/o Hypoglycemia
+r/o Seizure
+r/o Vasovagal syncope
+
+RULES:
+- "#" prefix = ONLY when doctor explicitly stated diagnosis
+- "r/o" prefix = AI differential (always)
+- AI can NEVER add "#" - only doctors/users can confirm
+- If no confirmed Dx, assessment.value should be EMPTY ""
+- ALL r/o items go in assessment.ddxList array
+
+=== DDx RULES (STRICT) ===
 - Limit DDx to top 2-3 most likely causes (max 5).
 - ONLY include DDx with medium or high confidence.
 - Avoid vague terms (e.g., "cardiac problem" ❌, "brain issue" ❌).
 - DDx should be clinically meaningful and specific.
+- Each ddxList item: {id, diagnosis, reason, confidence, isConfirmed: false, isRemoved: false}
+- Priority: high confidence first, then medium.
 
-DDx OUTPUT RULES (CRITICAL):
-- DO NOT write DDx as text in assessment.value.
-- Put ALL DDx items in assessment.ddxList array ONLY.
-- assessment.value should contain ONLY [Summary] and optionally [Provider Impression].
-- Each ddxList item must have: id, diagnosis, reason, confidence (medium or high), isConfirmed: false, isRemoved: false.
-- Priority order: high confidence first, then medium.
-
-GOOD assessment.value:
-"[Summary]\n13yo male with sudden LOC after bathroom visit.\n\n[Provider Impression]\n(empty if no orders)"
-
-BAD assessment.value:
-"[Summary] 13yo male... [AI DDx/r/o] - r/o syncope..." ❌ (DDx should be in ddxList, not here)
-
-=== ASSESSMENT DISPLAY FORMAT (FOR REFERENCE) ===
-When displayed, Assessment will look like:
-# Hypoglycemia (confirmed by doctor)
-
-r/o Seizure (high)
-r/o Vasovagal syncope (medium)
-r/o Intracranial lesion (medium)
-
-RULES:
-- "#" prefix = confirmed diagnosis (doctor stated OR user confirmed DDx)
-- "r/o" prefix = AI differential (not confirmed)
-- AI can NEVER add "#" - only users can confirm
-
-=== ROLE SEPARATION (IMPORTANT) ===
-- Put DDx/r/o list ONLY inside Assessment under [AI DDx/r/o].
+=== ROLE SEPARATION ===
 - Do NOT generate diagnosisInferred field. DDx list in Assessment is sufficient.
-
-=== ASSESSMENT STRUCTURE (LINE BREAKS REQUIRED) ===
-MUST USE THIS EXACT FORMAT WITH LINE BREAKS:
-
-[Summary]
-(1-2 sentences in English, Korean connectors OK)
-
-[Provider Impression]
-(ONLY if doctor explicitly ordered tests/treatments - otherwise LEAVE EMPTY, do not write "없음")
-
-CRITICAL FORMATTING:
-- Each section header MUST be on its own line.
-- assessment.value contains ONLY [Summary] and optionally [Provider Impression].
-- DDx goes ONLY in assessment.ddxList array.
-
-=== PROVIDER IMPRESSION RULE (STRICT) ===
-- ONLY write Provider Impression if the doctor EXPLICITLY ordered tests or treatments.
-- If NO orders are mentioned in conversation, leave Provider Impression EMPTY.
-- Do NOT infer impression from symptoms alone.
-
-GOOD (doctor ordered test):
-"Provider ordered brain CT → considering neurologic cause"
-
-BAD (no orders mentioned):
-"Provider considering neurologic causes given symptom pattern" ❌
+- assessment.value = confirmed Dx only (or empty)
+- assessment.ddxList = AI r/o list
 
 === PLAN RULES (STRICT) ===
 - Write ONLY explicit orders that the doctor actually stated.
@@ -322,7 +296,7 @@ INTERNAL MEDICINE EMPHASIS:
       { id: 'medications', name: '복용약', nameEn: 'Meds', type: 'tags', required: false, description: 'ENGLISH. Mentioned meds only.' },
       { id: 'allergies', name: '알레르기', nameEn: 'Allergies', type: 'tags', required: false, description: 'ENGLISH. "None" if no allergies (NOT NKDA).' },
       { id: 'physicalExam', name: '진찰소견', nameEn: 'PE', type: 'textarea', required: false, description: 'ENGLISH (+/-). "None" if not examined, otherwise full findings.' },
-      { id: 'assessment', name: '평가', nameEn: 'Assessment', type: 'textarea', required: true, description: 'ENGLISH. # 확정Dx + r/o DDx. AI는 #붙이기 금지.' },
+      { id: 'assessment', name: '평가', nameEn: 'Assessment', type: 'textarea', required: true, description: '# 확정Dx + r/o DDx만. Summary 금지. AI는 # 금지.' },
       { id: 'diagnosisConfirmed', name: '확정 진단', nameEn: 'Dx (stated)', type: 'tags', required: false, description: 'ENGLISH. DDx 확정 시 # 붙여서 표시.' },
       { id: 'plan', name: '계획', nameEn: 'Plan', type: 'textarea', required: true, description: 'ENGLISH orders. [Orders] + [AI Suggestions] (근거 포함, 0-2줄).' },
       { id: 'followUp', name: '추적관찰', nameEn: 'F/U', type: 'textarea', required: false, description: '구체적 f/u만. 없으면 비움.' },
@@ -656,11 +630,19 @@ ${preset.promptContext || ''}
 - Assessment/DDx/Dx/Plan: MEDICAL ENGLISH (no Korean diagnoses)
 - Do NOT translate diagnoses into Korean.
 
-=== HARD DDx/Dx RULES ===
-- DDx: Max 1-2 items (at most 3). Each DDx goes into assessment.ddxList array.
-- Each ddxList item must have: id (ddx_1, ddx_2...), diagnosis (English), reason (brief), confidence (high/medium/low), isConfirmed: false, isRemoved: false.
-- Do NOT generate diagnosisInferred field. DDx list is sufficient for AI differential.
-- AI can NEVER use "#" prefix - that's for confirmed diagnoses only.
+=== HARD ASSESSMENT RULES (CRITICAL) ===
+Assessment contains ONLY:
+1. # Confirmed Dx (ONLY if doctor explicitly stated)
+2. r/o DDx list (via ddxList array)
+
+NO Summary, NO Provider Impression, NO explanations.
+- assessment.value = "#" + confirmed diagnosis (or EMPTY if none)
+- assessment.ddxList = array of r/o items
+- AI can NEVER add "#" - only for doctor-confirmed diagnoses
+
+=== HARD DDx RULES ===
+- DDx: Max 2-3 items. Each goes into assessment.ddxList array.
+- Each item: {id, diagnosis, reason, confidence, isConfirmed: false, isRemoved: false}
 - Avoid vague terms (e.g., "cardiac problem", "brain issue").
 
 === HARD PLAN RULES ===
@@ -689,9 +671,10 @@ RULES:
 - ROS, PMH, Meds, Allergies, SHx, FHx, VS, PE, Labs:
   - isConfirmed=true ONLY if clearly stated and medically meaningful
   - If unclear/garbled (e.g., "소아잠도" instead of "소아당뇨"), leave blank or write "Unclear" with isConfirmed=false
-- Assessment [Summary]: isConfirmed=true, source="stated"
-- Assessment [AI DDx], Plan [AI Suggestions]: isConfirmed=false, source="inferred"
-- Provider Impression: isConfirmed=true ONLY if doctor explicitly stated; isConfirmed=false if inferred
+- Assessment: 
+  - value = "# Dx" ONLY if doctor confirmed (otherwise EMPTY)
+  - ddxList = AI r/o items, isConfirmed=false, source="inferred"
+- Plan [AI Suggestions]: isConfirmed=false, source="inferred"
 
 OUTPUT FORMAT (PURE JSON ONLY):
 ${JSON.stringify(jsonSchema, null, 2)}
@@ -728,12 +711,15 @@ CRITICAL RULES:
 - PE: 안 했으면 "None", 했으면 전부 (+/-) 기록
 - Assessment/DDx/Dx/Plan: 영어 (진단명 한국어 번역 금지)
 
-FORMAT:
-- DDx: assessment.ddxList 배열로 반환. 각 항목은 {id, diagnosis, reason, confidence, isConfirmed: false, isRemoved: false}
-- diagnosisInferred 필드는 생성하지 않음
-- Plan: 오더만 + AI Suggestions에는 근거 필수 (예: Blood glucose check (LOC + DM history))
+ASSESSMENT FORMAT (CRITICAL):
+- assessment.value = "# Dx" ONLY if doctor explicitly confirmed diagnosis (otherwise EMPTY "")
+- assessment.ddxList = AI r/o items array. 각 항목: {id, diagnosis, reason, confidence, isConfirmed: false, isRemoved: false}
+- NO Summary, NO Provider Impression, NO explanations - ONLY diagnosis structure
+
+PLAN FORMAT:
+- [Orders] 의사 오더만
+- [AI Suggestions] 근거 필수 (예: Blood glucose check (LOC + DM history))
 - Follow-up: 구체적 내용만, 없으면 비움
-- 불릿 항목은 한 줄씩 띄워
 
 [진료 대화]
 ${conversation}`
@@ -883,13 +869,20 @@ ${conversation}`
         }
       });
 
-      // 후처리: Assessment에서 빈 [Provider Impression] 헤더 제거
+      // 후처리: Assessment에서 구조 헤더 제거 (새 구조: # Dx만 또는 빈 값)
       if (chartData.assessment && typeof chartData.assessment.value === 'string') {
-        // [Provider Impression] 뒤에 내용이 없거나 공백만 있는 경우 헤더 자체 삭제
+        // [Summary], [Provider Impression], [AI DDx] 등 모든 구조 헤더 제거
         chartData.assessment.value = chartData.assessment.value
-          .replace(/\n*\[Provider Impression\]\s*\n*$/i, '') // 끝에 있는 빈 헤더 제거
-          .replace(/\[Provider Impression\]\s*\n*(\[|$)/gi, '$1') // 다음 섹션 바로 앞의 빈 헤더 제거
+          .replace(/\[Summary\]/gi, '')
+          .replace(/\[Provider Impression\][^\[]*/gi, '')
+          .replace(/\[AI DDx[^\]]*\]/gi, '')
+          .replace(/\n{2,}/g, '\n')
           .trim();
+        
+        // 결과가 # 로 시작하지 않으면 (확정 Dx 없으면) 비움
+        if (!chartData.assessment.value.startsWith('#')) {
+          chartData.assessment.value = '';
+        }
       }
 
       const confirmedFields: string[] = [];

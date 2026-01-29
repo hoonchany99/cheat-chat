@@ -13,7 +13,7 @@ import { Button } from '@/app/components/ui/button';
 import { Input } from '@/app/components/ui/input';
 import { Toaster } from '@/app/components/ui/sonner';
 import { toast } from 'sonner';
-import { RotateCcw, Stethoscope, FileText, Mail, Loader2, MessageSquare, Send, ChevronRight, MessageCircle, Smartphone } from 'lucide-react';
+import { RotateCcw, Stethoscope, FileText, Mail, Loader2, MessageSquare, Send, ChevronRight, MessageCircle, Smartphone, PanelLeftClose, PanelLeft, Target, ChevronUp } from 'lucide-react';
 import { Textarea } from '@/app/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/app/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel } from '@/app/components/ui/select';
@@ -176,6 +176,8 @@ function MainApp() {
   const [isAutoUpdating, setIsAutoUpdating] = useState(false);
   const [lastAutoUpdateSegmentCount, setLastAutoUpdateSegmentCount] = useState(0);
   const [silenceTimeout, setSilenceTimeout] = useState<NodeJS.Timeout | null>(null);
+  const [isTranscriptCollapsed, setIsTranscriptCollapsed] = useState(false);
+  const [isMobileAPExpanded, setIsMobileAPExpanded] = useState(false);
   
   // 사용자 정보 상태
   const [userAge, setUserAge] = useState('');
@@ -673,74 +675,170 @@ function MainApp() {
             </div>
           </div>
 
-          {/* Content Area */}
-          {/* Mobile Tab Switcher */}
-          <div className="lg:hidden flex gap-2 bg-white rounded-xl border border-slate-200 p-1.5">
-            <button
-              onClick={() => setMobileTab('transcript')}
-              className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-medium transition-all ${
-                mobileTab === 'transcript'
-                  ? 'bg-teal-500 text-white shadow-sm'
-                  : 'text-slate-600 hover:bg-slate-50'
-              }`}
-            >
-              <MessageCircle className="w-4 h-4" />
-              실시간 대화
-              {isRecording && mobileTab !== 'transcript' && (
-                <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+          {/* Desktop: 3-Column Layout */}
+          <div className="hidden lg:flex gap-4 h-[600px]">
+            {/* 좌측: 대화창 (접을 수 있음) */}
+            <div className={`transition-all duration-300 ${isTranscriptCollapsed ? 'w-12' : 'w-[280px]'} flex-none`}>
+              {isTranscriptCollapsed ? (
+                <div className="h-full bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col items-center py-4">
+                  <button
+                    onClick={() => setIsTranscriptCollapsed(false)}
+                    className="p-2 rounded-lg hover:bg-slate-100 text-slate-600 mb-2"
+                    title="대화창 펼치기"
+                  >
+                    <PanelLeft className="w-5 h-5" />
+                  </button>
+                  <div className="flex-1 flex flex-col items-center justify-center">
+                    <MessageCircle className="w-5 h-5 text-slate-400 mb-2" />
+                    <span className="text-[10px] text-slate-400 writing-mode-vertical">대화</span>
+                  </div>
+                  {(isRecording || isRemoteRecording) && (
+                    <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse mt-2" />
+                  )}
+                </div>
+              ) : (
+                <div className="h-full flex flex-col">
+                  <div className="flex items-center justify-between px-3 py-2 bg-white rounded-t-2xl border border-b-0 border-slate-200">
+                    <span className="text-xs font-semibold text-slate-600">💬 대화</span>
+                    <button
+                      onClick={() => setIsTranscriptCollapsed(true)}
+                      className="p-1 rounded hover:bg-slate-100 text-slate-400"
+                      title="대화창 접기"
+                    >
+                      <PanelLeftClose className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <div className="flex-1 min-h-0">
+                    <TranscriptViewer
+                      finalTranscript={finalTranscript}
+                      isRecording={isRecording || isRemoteRecording}
+                      realtimeSegments={realtimeSegments}
+                    />
+                  </div>
+                </div>
               )}
-            </button>
-            <button
-              onClick={() => setMobileTab('chart')}
-              className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-medium transition-all ${
-                mobileTab === 'chart'
-                  ? 'bg-teal-500 text-white shadow-sm'
-                  : 'text-slate-600 hover:bg-slate-50'
-              }`}
-            >
-              <FileText className="w-4 h-4" />
-              AI 차트
-              {chartData && mobileTab !== 'chart' && (
-                <span className="w-2 h-2 rounded-full bg-teal-500" />
-              )}
-            </button>
-          </div>
+            </div>
 
-          {/* Desktop: Grid Layout */}
-          <div className="hidden lg:grid lg:grid-cols-2 gap-6">
-            <TranscriptViewer
-              finalTranscript={finalTranscript}
-              isRecording={isRecording}
-              realtimeSegments={realtimeSegments}
-            />
-            <ChartingResult
-              chartData={chartData}
-              isGenerating={isGeneratingChart}
-              recordingProgress={recordingProgress}
-              isRecording={isRecording}
-            />
-              </div>
-
-          {/* Mobile: Tab Content */}
-          <div className="lg:hidden">
-            {mobileTab === 'transcript' ? (
-              <TranscriptViewer
-                finalTranscript={finalTranscript}
-                isRecording={isRecording}
-                realtimeSegments={realtimeSegments}
-              />
-            ) : (
+            {/* 우측: 차트 (wide 레이아웃) */}
+            <div className="flex-1 min-w-0">
               <ChartingResult
                 chartData={chartData}
                 isGenerating={isGeneratingChart}
                 recordingProgress={recordingProgress}
-                isRecording={isRecording}
+                isRecording={isRecording || isRemoteRecording}
+                layout="wide"
               />
-            )}
+            </div>
+          </div>
+
+          {/* Mobile: Tab + Bottom A/P Panel */}
+          <div className="lg:hidden flex flex-col">
+            {/* Tab Switcher */}
+            <div className="flex gap-2 bg-white rounded-xl border border-slate-200 p-1.5 mb-4">
+              <button
+                onClick={() => setMobileTab('transcript')}
+                className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                  mobileTab === 'transcript'
+                    ? 'bg-cyan-500 text-white shadow-sm'
+                    : 'text-slate-600 hover:bg-slate-50'
+                }`}
+              >
+                <MessageCircle className="w-4 h-4" />
+                대화
+                {(isRecording || isRemoteRecording) && mobileTab !== 'transcript' && (
+                  <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                )}
+              </button>
+              <button
+                onClick={() => setMobileTab('chart')}
+                className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                  mobileTab === 'chart'
+                    ? 'bg-slate-600 text-white shadow-sm'
+                    : 'text-slate-600 hover:bg-slate-50'
+                }`}
+              >
+                <FileText className="w-4 h-4" />
+                S/O
+              </button>
+            </div>
+
+            {/* Tab Content */}
+            <div className={`${isMobileAPExpanded ? 'h-[200px]' : 'h-[350px]'} transition-all duration-300`}>
+              {mobileTab === 'transcript' ? (
+                <TranscriptViewer
+                  finalTranscript={finalTranscript}
+                  isRecording={isRecording || isRemoteRecording}
+                  realtimeSegments={realtimeSegments}
+                />
+              ) : (
+                <ChartingResult
+                  chartData={chartData}
+                  isGenerating={isGeneratingChart}
+                  recordingProgress={recordingProgress}
+                  isRecording={isRecording || isRemoteRecording}
+                  layout="compact"
+                />
+              )}
+            </div>
+
+            {/* Bottom A/P Panel */}
+            <div className={`mt-4 bg-gradient-to-r from-teal-500 to-cyan-500 rounded-2xl shadow-lg overflow-hidden transition-all duration-300 ${
+              isMobileAPExpanded ? 'h-[280px]' : 'h-14'
+            }`}>
+              <button
+                onClick={() => setIsMobileAPExpanded(!isMobileAPExpanded)}
+                className="w-full px-4 py-3 flex items-center justify-between text-white"
+              >
+                <div className="flex items-center gap-3">
+                  <Target className="w-5 h-5" />
+                  <div className="text-left">
+                    <div className="text-sm font-semibold">Assessment & Plan</div>
+                    {!isMobileAPExpanded && chartData?.assessment?.ddxList && (
+                      <div className="text-[10px] opacity-80">
+                        DDx {chartData.assessment.ddxList.filter(d => !d.isRemoved).length}개
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <ChevronUp className={`w-5 h-5 transition-transform ${isMobileAPExpanded ? '' : 'rotate-180'}`} />
+              </button>
+              
+              {isMobileAPExpanded && (
+                <div className="h-[calc(100%-56px)] bg-white/95 overflow-y-auto p-3">
+                  {/* A/P 내용 미리보기 */}
+                  <div className="space-y-2 text-sm">
+                    {chartData?.diagnosisConfirmed?.value && (
+                      <div className="p-2 bg-teal-100 rounded-lg">
+                        <span className="font-bold text-teal-800"># {
+                          Array.isArray(chartData.diagnosisConfirmed.value) 
+                            ? chartData.diagnosisConfirmed.value.join(', ')
+                            : chartData.diagnosisConfirmed.value
+                        }</span>
+                      </div>
+                    )}
+                    {chartData?.assessment?.ddxList?.filter(d => !d.isRemoved && !d.isConfirmed).map((ddx, i) => (
+                      <div key={i} className="p-2 bg-amber-50 rounded-lg text-amber-800">
+                        r/o {ddx.diagnosis}
+                      </div>
+                    ))}
+                    {chartData?.plan?.value && (
+                      <div className="p-2 bg-slate-100 rounded-lg text-slate-700 whitespace-pre-wrap">
+                        {typeof chartData.plan.value === 'string' ? chartData.plan.value : ''}
+                      </div>
+                    )}
+                    {!chartData && (
+                      <div className="text-center py-4 text-slate-400">
+                        녹음 후 분석 결과가 표시됩니다
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Email Subscribe Section */}
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm px-6 py-5 max-w-3xl ml-auto">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm px-6 py-5">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-5">
               <div className="flex items-center gap-4">
                 <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-teal-500 to-teal-600 flex items-center justify-center shrink-0">

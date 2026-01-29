@@ -53,21 +53,20 @@ export function TranscriptViewer({
   const hasContent = realtimeSegments.length > 0;
 
   return (
-    <div className="flex flex-col h-[500px] bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+    <div className="flex flex-col h-full bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
       {/* Header */}
-      <div className="flex-none px-5 py-4 border-b border-slate-100 bg-white">
+      <div className="flex-none px-4 py-3 border-b border-slate-100 bg-white">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-cyan-500 to-cyan-600 flex items-center justify-center shadow-sm">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-cyan-500 to-cyan-600 flex items-center justify-center">
               <MessageSquare className="w-4 h-4 text-white" />
             </div>
             <div>
               <h3 className="font-semibold text-sm text-slate-800">실시간 대화</h3>
-              <p className="text-xs text-slate-500">AI가 실시간으로 대화를 듣고 정리해줍니다</p>
+              <p className="text-[10px] text-slate-500">AI가 대화를 듣고 정리합니다</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {/* 전체 복사 버튼 */}
             {hasContent && !isRecording && (
               <Button
                 variant="outline"
@@ -75,16 +74,12 @@ export function TranscriptViewer({
                 onClick={handleCopyAll}
                 className="h-7 text-xs border-cyan-200 text-cyan-700 hover:bg-cyan-50 gap-1"
               >
-                {copiedAll ? (
-                  <Check className="w-3 h-3" />
-                ) : (
-                  <Copy className="w-3 h-3" />
-                )}
+                {copiedAll ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                 전체 복사
               </Button>
             )}
             {isRecording && (
-              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-red-50 border border-red-100">
+              <div className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-red-50 border border-red-100">
                 <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
                 <span className="text-xs font-medium text-red-600">녹음 중</span>
               </div>

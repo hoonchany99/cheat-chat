@@ -80,7 +80,7 @@ const FIELD_PLACEHOLDERS: Record<string, string> = {
   physicalExam: "\"None\" or full (+/-) findings (e.g., Mental status: drowsy)",
   labResults: "Mentioned results only",
   imaging: "Mentioned findings only",
-  assessment: "[Summary]\n1-2 sentences\n\n[Provider Impression]\n(if orders mentioned)",
+  assessment: "# Confirmed Dx (의사 확정 시만)\n\nr/o DDx는 아래 리스트로 자동 표시",
   diagnosisConfirmed: "# Confirmed Dx (DDx 확정 시 추가)",
   plan: "[Orders]\n- Blood glucose\n\n[AI Suggestions]\n- Brain CT (LOC + Hx)",
   followUp: "Specific only (e.g., f/u 1wk) or leave empty",
@@ -99,12 +99,15 @@ interface ChartingResultProps {
   isGenerating: boolean;
   recordingProgress: number;
   isRecording: boolean;
+  /** 'compact': 기본, 'wide': 3열 레이아웃용 (내부 2열) */
+  layout?: 'compact' | 'wide';
 }
 
 export function ChartingResult({
   chartData,
   isGenerating,
-  isRecording
+  isRecording,
+  layout = 'compact'
 }: ChartingResultProps) {
   const [editableData, setEditableData] = useState<ChartData>({});
   const [isCopied, setIsCopied] = useState(false);
@@ -494,11 +497,92 @@ export function ChartingResult({
 
   const hasAnyData = Object.keys(editableData).length > 0;
 
+  // Wide 레이아웃 (데스크톱 3열용)
+  if (layout === 'wide') {
+    return (
+      <>
+        <style>{chartAnimationStyles}</style>
+        <div className="flex h-full gap-4">
+          {/* 좌측: S/O 필드들 */}
+          <div className="flex-1 flex flex-col bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+            <div className="flex-none px-4 py-3 border-b border-slate-100">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-slate-500 to-slate-600 flex items-center justify-center">
+                    <FileText className="w-4 h-4 text-white" />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-sm text-slate-800">S/O</h3>
+                    <p className="text-[10px] text-slate-500">Subjective & Objective</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+            {isGenerating ? (
+              <div className="flex-1 flex flex-col items-center justify-center">
+                <Sparkles className="w-8 h-8 text-slate-400 animate-pulse mb-2" />
+                <p className="text-sm text-slate-500">분석 중...</p>
+              </div>
+            ) : (
+              <ScrollArea className="flex-1">
+                <div className="p-3 space-y-2">
+                  {scrollFields.map(field => renderField(field, typingFields.has(field.id), false))}
+                </div>
+              </ScrollArea>
+            )}
+          </div>
+
+          {/* 우측: Assessment & Plan (고정) */}
+          <div className="w-[320px] flex-none flex flex-col bg-gradient-to-br from-teal-50 to-cyan-50 rounded-2xl border-2 border-teal-200 shadow-sm overflow-hidden">
+            <div className="flex-none px-4 py-3 border-b border-teal-200 bg-white/50">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-teal-500 to-cyan-500 flex items-center justify-center">
+                    <span className="text-white text-sm">🎯</span>
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-sm text-teal-800">A/P</h3>
+                    <p className="text-[10px] text-teal-600">
+                      {isGenerating ? '분석 중...' : isRecording ? '실시간' : 'Assessment & Plan'}
+                    </p>
+                  </div>
+                </div>
+                {hasAnyData && (
+                  <Button variant="outline" size="sm" onClick={handleCopyChart} className="h-6 text-[10px] border-teal-300 text-teal-700 bg-white">
+                    {isCopied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                  </Button>
+                )}
+              </div>
+            </div>
+            {isGenerating ? (
+              <div className="flex-1 flex flex-col items-center justify-center">
+                <div className="relative w-12 h-12 mb-2">
+                  <div className="absolute inset-0 rounded-xl border-2 border-teal-300 animate-spin" style={{ animationDuration: '2s' }} />
+                  <div className="absolute inset-1 rounded-lg bg-gradient-to-br from-teal-500 to-cyan-500 flex items-center justify-center">
+                    <Sparkles className="w-5 h-5 text-white animate-pulse" />
+                  </div>
+                </div>
+                <p className="text-sm text-teal-700 font-medium">DDx 분석 중...</p>
+              </div>
+            ) : (
+              <ScrollArea className="flex-1">
+                <div className="p-3 space-y-2">
+                  {fixedFields.map(field => renderField(field, typingFields.has(field.id), true))}
+                </div>
+              </ScrollArea>
+            )}
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  // Compact 레이아웃 (기본, 모바일)
   return (
     <>
       <style>{chartAnimationStyles}</style>
       
-      <div className="flex flex-col h-[600px] bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+      <div className="flex flex-col h-full bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
         {/* Header */}
         <div className="flex-none px-4 py-3 border-b border-slate-100 bg-white">
           <div className="flex items-center justify-between">
