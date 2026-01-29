@@ -412,11 +412,32 @@ export function ChartingResult({
 
   // DDx 리스트 렌더링
   const renderDDxList = (ddxList: DdxItem[]) => {
-    const visibleItems = ddxList.filter(item => !item.isRemoved);
-    const removedItems = ddxList.filter(item => item.isRemoved);
+    // 1. confidence >= medium만 표시 (low는 숨김)
+    const qualifiedItems = ddxList.filter(item => 
+      item.confidence === 'high' || item.confidence === 'medium'
+    );
+    
+    // 2. confidence 순 정렬 (high > medium) 후 최대 5개
+    const sortedItems = [...qualifiedItems].sort((a, b) => {
+      const order = { high: 0, medium: 1, low: 2 };
+      return order[a.confidence] - order[b.confidence];
+    }).slice(0, 5);
+    
+    const visibleItems = sortedItems.filter(item => !item.isRemoved);
+    const removedItems = sortedItems.filter(item => item.isRemoved);
+    
+    // low confidence 개수 표시용
+    const lowConfidenceCount = ddxList.filter(item => item.confidence === 'low').length;
     
     if (visibleItems.length === 0 && removedItems.length === 0) {
-      return <p className="text-sm text-slate-400 italic">DDx가 없습니다.</p>;
+      return (
+        <div className="text-sm text-slate-400 italic">
+          DDx가 없습니다.
+          {lowConfidenceCount > 0 && (
+            <span className="text-xs ml-1">(낮은 신뢰도 {lowConfidenceCount}개 숨김)</span>
+          )}
+        </div>
+      );
     }
 
     return (

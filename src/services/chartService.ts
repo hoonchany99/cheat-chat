@@ -135,14 +135,17 @@ CORE PHILOSOPHY:
 - If missing, do NOT fill.
 
 === DDx RULES (STRICT - FORMAT CRITICAL) ===
-- Limit DDx to top 1-2 most likely causes (max 3).
+- Limit DDx to top 2-3 most likely causes (max 5).
+- ONLY include DDx with medium or high confidence.
 - Avoid vague terms (e.g., "cardiac problem" ❌, "brain issue" ❌).
+- DDx should be clinically meaningful and specific.
 
 DDx OUTPUT RULES (CRITICAL):
 - DO NOT write DDx as text in assessment.value.
 - Put ALL DDx items in assessment.ddxList array ONLY.
 - assessment.value should contain ONLY [Summary] and optionally [Provider Impression].
-- Each ddxList item must have: id, diagnosis, reason, confidence, isConfirmed: false, isRemoved: false.
+- Each ddxList item must have: id, diagnosis, reason, confidence (medium or high), isConfirmed: false, isRemoved: false.
+- Priority order: high confidence first, then medium.
 
 GOOD assessment.value:
 "[Summary]\n13yo male with sudden LOC after bathroom visit.\n\n[Provider Impression]\n(empty if no orders)"
@@ -734,9 +737,10 @@ ${conversation}`
           const confidence = normalizeConfidence(fv.confidence);
 
           // DDx 리스트 파싱 (assessment 필드용)
-          let ddxList: any[] | undefined = undefined;
+          let ddxList: DdxItem[] | undefined = undefined;
           if (field.id === 'assessment' && fv.ddxList && Array.isArray(fv.ddxList)) {
-            ddxList = fv.ddxList.map((item: any, index: number) => ({
+            // 1. 기본 파싱
+            let parsedList = fv.ddxList.map((item: any, index: number) => ({
               id: item.id || `ddx_${index + 1}`,
               diagnosis: typeof item.diagnosis === 'string' ? item.diagnosis : '',
               reason: typeof item.reason === 'string' ? item.reason : '',
@@ -744,6 +748,22 @@ ${conversation}`
               isConfirmed: item.isConfirmed === true,
               isRemoved: item.isRemoved === true,
             })).filter(item => item.diagnosis.trim() !== '');
+            
+            // 2. confidence >= medium만 포함 (low 제외)
+            parsedList = parsedList.filter(item => 
+              item.confidence === 'high' || item.confidence === 'medium'
+            );
+            
+            // 3. confidence 순으로 정렬 (high > medium)
+            parsedList.sort((a, b) => {
+              const order = { high: 0, medium: 1, low: 2 };
+              return order[a.confidence] - order[b.confidence];
+            });
+            
+            // 4. 최대 5개로 제한
+            ddxList = parsedList.slice(0, 5);
+            
+            console.log(`📋 DDx 필터링: ${fv.ddxList.length}개 → ${ddxList.length}개 (confidence >= medium)`);
           }
 
           if (isArrayField) {

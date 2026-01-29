@@ -175,6 +175,7 @@ function MainApp() {
   const [remoteRecordingTime, setRemoteRecordingTime] = useState(0);
   const [isAutoUpdating, setIsAutoUpdating] = useState(false);
   const [lastAutoUpdateSegmentCount, setLastAutoUpdateSegmentCount] = useState(0);
+  const [silenceTimeout, setSilenceTimeout] = useState<NodeJS.Timeout | null>(null);
   
   // 사용자 정보 상태
   const [userAge, setUserAge] = useState('');
@@ -246,54 +247,110 @@ function MainApp() {
     };
   }, [isRemoteRecording]);
 
-  // 반실시간 차트 업데이트 (Chunk-based)
+  // 반실시간 차트 업데이트 트리거 함수
+  const triggerAutoChartUpdate = useCallback(async () => {
+    const currentSegmentCount = realtimeSegments.length;
+    
+    // 최소 5개 이상 발화가 있어야 함
+    if (currentSegmentCount < 5) return;
+    
+    // 이미 업데이트 중이거나 차트 생성 중이면 건너뜀
+    if (isAutoUpdating || isGeneratingChart) return;
+    
+    // 이전 업데이트 이후 3개 이상 새 발화가 있어야 함
+    if (currentSegmentCount - lastAutoUpdateSegmentCount < 3) return;
+
+    console.log('🔄 반실시간 차트 업데이트 시작...', currentSegmentCount, 'segments');
+    setIsAutoUpdating(true);
+    
+    try {
+      // STT 교정 (mini 모델로 빠르게)
+      const correctedSegments = await correctSTTErrors(realtimeSegments);
+      const transcriptText = correctedSegments.map(s => s.text).join(' ');
+      
+      // 차트 생성 (비동기로 진행, UI 차단 방지)
+      const result = await generateChartFromTranscript(
+        transcriptText, 
+        correctedSegments, 
+        chartSettings.selectedDepartment
+      );
+      
+      if (result) {
+        // 기존 확정된 필드는 유지하면서 업데이트
+        setChartData(prevData => {
+          if (!prevData) return result;
+          
+          // 사용자가 확정한 필드는 유지
+          const mergedData = { ...result };
+          Object.keys(prevData).forEach(fieldId => {
+            if (prevData[fieldId]?.isConfirmed) {
+              mergedData[fieldId] = prevData[fieldId];
+            }
+          });
+          return mergedData;
+        });
+        setLastAutoUpdateSegmentCount(currentSegmentCount);
+        console.log('✅ 반실시간 차트 업데이트 완료');
+      }
+    } catch (error) {
+      console.warn('⚠️ 자동 업데이트 실패 (다음 주기에 재시도):', error);
+    } finally {
+      setIsAutoUpdating(false);
+    }
+  }, [realtimeSegments, lastAutoUpdateSegmentCount, isAutoUpdating, isGeneratingChart, chartSettings.selectedDepartment]);
+
+  // 발화 멈춤 감지 (5초 동안 새 발화가 없으면 차트 업데이트)
   useEffect(() => {
     if (!isRecording && !isRemoteRecording) {
+      // 녹음 중지 시 타이머 정리
+      if (silenceTimeout) {
+        clearTimeout(silenceTimeout);
+        setSilenceTimeout(null);
+      }
       setLastAutoUpdateSegmentCount(0);
       setIsAutoUpdating(false);
       return;
     }
 
-    const interval = setInterval(async () => {
-      // 1. 발화가 충분히 쌓였는지 확인 (이전 업데이트 이후 10개 이상)
-      const currentSegmentCount = realtimeSegments.length;
-      if (currentSegmentCount - lastAutoUpdateSegmentCount < 10) return;
-      
-      // 2. 이미 업데이트 중이면 건너뜀
-      if (isAutoUpdating || isGeneratingChart) return;
-
-      console.log('🔄 반실시간 차트 업데이트 시작...', currentSegmentCount, 'segments');
-      setIsAutoUpdating(true);
-      
-      try {
-        const utterances = realtimeSegments.map(s => s.text);
-        
-        // STT 교정 (mini 모델로 빠르게)
-        const correctedSegments = await correctSTTErrors(realtimeSegments);
-        const transcriptText = correctedSegments.map(s => s.text).join(' ');
-        
-        // 차트 생성 (비동기로 진행, UI 차단 방지)
-        const result = await generateChartFromTranscript(
-          transcriptText, 
-          correctedSegments, 
-          chartSettings.selectedDepartment
-        );
-        
-        if (result) {
-          // 기존 확정된 필드는 유지하면서 업데이트 (ChartingResult 컴포넌트에서 처리하도록 유도)
-          setChartData(result);
-          setLastAutoUpdateSegmentCount(currentSegmentCount);
-          console.log('✅ 반실시간 차트 업데이트 완료');
-        }
-      } catch (error) {
-        console.warn('⚠️ 자동 업데이트 실패 (다음 주기에 재시도):', error);
-      } finally {
-        setIsAutoUpdating(false);
+    // 새 발화가 추가되면 타이머 재설정
+    if (realtimeSegments.length > 0) {
+      // 기존 타이머 취소하고 새 타이머 설정
+      if (silenceTimeout) {
+        clearTimeout(silenceTimeout);
       }
-    }, 25000); // 25초마다 체크
+      
+      // 5초 동안 발화가 없으면 차트 업데이트 트리거
+      const timeout = setTimeout(() => {
+        console.log('⏱️ 5초간 발화 없음 - 차트 업데이트 트리거');
+        triggerAutoChartUpdate();
+      }, 5000);
+      
+      setSilenceTimeout(timeout);
+    }
+
+    return () => {
+      if (silenceTimeout) {
+        clearTimeout(silenceTimeout);
+      }
+    };
+  }, [realtimeSegments.length, isRecording, isRemoteRecording]);
+
+  // 주기적 차트 업데이트 (15초마다, 발화가 계속되는 경우를 대비)
+  useEffect(() => {
+    if (!isRecording && !isRemoteRecording) {
+      return;
+    }
+
+    const interval = setInterval(() => {
+      // 충분히 발화가 쌓였으면 업데이트
+      if (realtimeSegments.length - lastAutoUpdateSegmentCount >= 8) {
+        console.log('⏰ 15초 주기 - 차트 업데이트 트리거');
+        triggerAutoChartUpdate();
+      }
+    }, 15000); // 15초마다 체크
 
     return () => clearInterval(interval);
-  }, [isRecording, isRemoteRecording, realtimeSegments, lastAutoUpdateSegmentCount, isAutoUpdating, isGeneratingChart, chartSettings.selectedDepartment]);
+  }, [isRecording, isRemoteRecording, realtimeSegments.length, lastAutoUpdateSegmentCount, triggerAutoChartUpdate]);
 
   const handleTranscriptUpdate = useCallback((text: string) => {
     setFinalTranscript(text);
