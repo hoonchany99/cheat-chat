@@ -173,6 +173,8 @@ function MainApp() {
   const [remoteMicOpen, setRemoteMicOpen] = useState(false);
   const [isRemoteConnected, setIsRemoteConnected] = useState(false);
   const [remoteRecordingTime, setRemoteRecordingTime] = useState(0);
+  const [isAutoUpdating, setIsAutoUpdating] = useState(false);
+  const [lastAutoUpdateSegmentCount, setLastAutoUpdateSegmentCount] = useState(0);
   
   // 사용자 정보 상태
   const [userAge, setUserAge] = useState('');
@@ -243,6 +245,55 @@ function MainApp() {
       clearInterval(interval);
     };
   }, [isRemoteRecording]);
+
+  // 반실시간 차트 업데이트 (Chunk-based)
+  useEffect(() => {
+    if (!isRecording && !isRemoteRecording) {
+      setLastAutoUpdateSegmentCount(0);
+      setIsAutoUpdating(false);
+      return;
+    }
+
+    const interval = setInterval(async () => {
+      // 1. 발화가 충분히 쌓였는지 확인 (이전 업데이트 이후 10개 이상)
+      const currentSegmentCount = realtimeSegments.length;
+      if (currentSegmentCount - lastAutoUpdateSegmentCount < 10) return;
+      
+      // 2. 이미 업데이트 중이면 건너뜀
+      if (isAutoUpdating || isGeneratingChart) return;
+
+      console.log('🔄 반실시간 차트 업데이트 시작...', currentSegmentCount, 'segments');
+      setIsAutoUpdating(true);
+      
+      try {
+        const utterances = realtimeSegments.map(s => s.text);
+        
+        // STT 교정 (mini 모델로 빠르게)
+        const correctedSegments = await correctSTTErrors(realtimeSegments);
+        const transcriptText = correctedSegments.map(s => s.text).join(' ');
+        
+        // 차트 생성 (비동기로 진행, UI 차단 방지)
+        const result = await generateChartFromTranscript(
+          transcriptText, 
+          correctedSegments, 
+          chartSettings.selectedDepartment
+        );
+        
+        if (result) {
+          // 기존 확정된 필드는 유지하면서 업데이트 (ChartingResult 컴포넌트에서 처리하도록 유도)
+          setChartData(result);
+          setLastAutoUpdateSegmentCount(currentSegmentCount);
+          console.log('✅ 반실시간 차트 업데이트 완료');
+        }
+      } catch (error) {
+        console.warn('⚠️ 자동 업데이트 실패 (다음 주기에 재시도):', error);
+      } finally {
+        setIsAutoUpdating(false);
+      }
+    }, 25000); // 25초마다 체크
+
+    return () => clearInterval(interval);
+  }, [isRecording, isRemoteRecording, realtimeSegments, lastAutoUpdateSegmentCount, isAutoUpdating, isGeneratingChart, chartSettings.selectedDepartment]);
 
   const handleTranscriptUpdate = useCallback((text: string) => {
     setFinalTranscript(text);

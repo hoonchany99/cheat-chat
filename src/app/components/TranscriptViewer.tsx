@@ -1,5 +1,6 @@
-import { useRef, useEffect } from 'react';
-import { MessageSquare, Stethoscope, User, Loader2 } from 'lucide-react';
+import { useRef, useEffect, useState } from 'react';
+import { MessageSquare, Stethoscope, User, Loader2, Copy, Check } from 'lucide-react';
+import { toast } from 'sonner';
 
 interface Segment {
   text: string;
@@ -18,6 +19,7 @@ export function TranscriptViewer({
 }: TranscriptViewerProps) {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const scrollEndRef = useRef<HTMLDivElement>(null);
+  const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
 
   // 새 메시지가 추가될 때마다 스크롤을 맨 아래로
   useEffect(() => {
@@ -25,6 +27,13 @@ export function TranscriptViewer({
       scrollEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [realtimeSegments]);
+
+  const handleCopy = (text: string, index: number) => {
+    navigator.clipboard.writeText(text);
+    setCopiedIndex(index);
+    toast.success('대화 내용이 복사되었습니다');
+    setTimeout(() => setCopiedIndex(null), 2000);
+  };
 
   const hasContent = realtimeSegments.length > 0;
 
@@ -72,48 +81,67 @@ export function TranscriptViewer({
               return (
                 <div
                   key={index}
-                      className={`flex ${isPending ? 'justify-center' : isDoctor ? 'justify-end' : 'justify-start'}`}
+                  className={`flex group ${isPending ? 'justify-center' : isDoctor ? 'justify-end' : 'justify-start'}`}
                 >
-                  <div
-                        className={`max-w-[85%] rounded-2xl px-4 py-3 ${
-                          isPending
-                            ? 'bg-amber-50 border border-amber-200 border-dashed'
-                            : isDoctor
-                              ? 'bg-gradient-to-br from-teal-500 to-teal-600 text-white'
-                              : 'bg-slate-100'
-                    }`}
-                  >
-                        <div className={`text-xs mb-1 flex items-center gap-1.5 font-medium ${
-                          isPending
-                            ? 'text-amber-600'
-                            : isDoctor
-                              ? 'text-teal-100'
-                              : 'text-slate-500'
-                        }`}>
-                          {isPending ? (
-                            <>
-                              <Loader2 className="w-3 h-3 animate-spin" />
-                              분석 중
-                            </>
-                          ) : isDoctor ? (
-                            <>
-                              <Stethoscope className="w-3 h-3" />
-                              의사
-                            </>
-                          ) : (
-                            <>
-                              <User className="w-3 h-3" />
-                              환자
-                            </>
-                          )}
-                        </div>
-                        <div className={`text-sm leading-relaxed ${
-                          isDoctor ? 'text-white' : 'text-slate-700'
-                        }`}>
-                          {segment.text}
-                        </div>
-                      </div>
+                  <div className={`relative flex items-start gap-2 max-w-[85%] ${isDoctor ? 'flex-row-reverse' : 'flex-row'}`}>
+                    <div
+                          className={`rounded-2xl px-4 py-3 ${
+                            isPending
+                              ? 'bg-amber-50 border border-amber-200 border-dashed'
+                              : isDoctor
+                                ? 'bg-gradient-to-br from-teal-500 to-teal-600 text-white shadow-sm'
+                                : 'bg-slate-100 shadow-sm'
+                      }`}
+                    >
+                          <div className={`text-xs mb-1 flex items-center gap-1.5 font-medium ${
+                            isPending
+                              ? 'text-amber-600'
+                              : isDoctor
+                                ? 'text-teal-100'
+                                : 'text-slate-500'
+                          }`}>
+                            {isPending ? (
+                              <>
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                                분석 중
+                              </>
+                            ) : isDoctor ? (
+                              <>
+                                <Stethoscope className="w-3 h-3" />
+                                의사
+                              </>
+                            ) : (
+                              <>
+                                <User className="w-3 h-3" />
+                                환자
+                              </>
+                            )}
+                          </div>
+                          <div className={`text-sm leading-relaxed ${
+                            isDoctor ? 'text-white' : 'text-slate-700'
+                          }`}>
+                            {segment.text}
+                          </div>
                     </div>
+
+                    {/* 복사 버튼 - 호버 시 표시 */}
+                    {!isPending && (
+                      <button
+                        onClick={() => handleCopy(segment.text, index)}
+                        className={`mt-2 p-1.5 rounded-lg bg-white border border-slate-200 shadow-sm opacity-0 group-hover:opacity-100 transition-opacity hover:bg-slate-50 ${
+                          isDoctor ? 'mr-1' : 'ml-1'
+                        }`}
+                        title="복사하기"
+                      >
+                        {copiedIndex === index ? (
+                          <Check className="w-3.5 h-3.5 text-teal-600" />
+                        ) : (
+                          <Copy className="w-3.5 h-3.5 text-slate-400" />
+                        )}
+                      </button>
+                    )}
+                  </div>
+                </div>
                   );
                 })}
 
