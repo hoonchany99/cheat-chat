@@ -251,14 +251,14 @@ function MainApp() {
   const triggerAutoChartUpdate = useCallback(async () => {
     const currentSegmentCount = realtimeSegments.length;
     
-    // 최소 5개 이상 발화가 있어야 함
-    if (currentSegmentCount < 5) return;
+    // 최소 3개 이상 발화가 있어야 함
+    if (currentSegmentCount < 3) return;
     
     // 이미 업데이트 중이거나 차트 생성 중이면 건너뜀
     if (isAutoUpdating || isGeneratingChart) return;
     
-    // 이전 업데이트 이후 3개 이상 새 발화가 있어야 함
-    if (currentSegmentCount - lastAutoUpdateSegmentCount < 3) return;
+    // 변경사항이 없으면 건너뜀
+    if (currentSegmentCount <= lastAutoUpdateSegmentCount) return;
 
     console.log('🔄 반실시간 차트 업데이트 시작...', currentSegmentCount, 'segments');
     setIsAutoUpdating(true);
@@ -335,17 +335,19 @@ function MainApp() {
     };
   }, [realtimeSegments.length, isRecording, isRemoteRecording]);
 
-  // 주기적 차트 업데이트 (15초마다, 발화가 계속되는 경우를 대비)
+  // 주기적 차트 업데이트 (15초마다)
   useEffect(() => {
     if (!isRecording && !isRemoteRecording) {
       return;
     }
 
     const interval = setInterval(() => {
-      // 충분히 발화가 쌓였으면 업데이트
-      if (realtimeSegments.length - lastAutoUpdateSegmentCount >= 8) {
+      // 변경사항이 있으면 업데이트 (새 발화가 있으면)
+      if (realtimeSegments.length > lastAutoUpdateSegmentCount) {
         console.log('⏰ 15초 주기 - 차트 업데이트 트리거');
         triggerAutoChartUpdate();
+      } else {
+        console.log('⏰ 15초 주기 - 변경사항 없음, 스킵');
       }
     }, 15000); // 15초마다 체크
 
