@@ -61,33 +61,33 @@ export interface ChartSettings {
 
 export const DEFAULT_FIELDS: ChartField[] = [
   // S - Korean
-  { id: 'chiefComplaint', name: '주호소', nameEn: 'CC', type: 'textarea', required: true, description: '한국어. 환자 표현 그대로 인용.' },
-  { id: 'historyOfPresentIllness', name: '현병력', nameEn: 'PI', type: 'textarea', required: true, description: '한국어 서술형. 3-6문장. 없는 내용 금지.' },
-  { id: 'pertinentROS', name: '관련 증상', nameEn: 'ROS (+/-)', type: 'textarea', required: false, description: '영어 약어. N/V(+), fever(-), CP(-) 형식.' },
+  { id: 'chiefComplaint', name: '주호소', nameEn: 'CC', type: 'textarea', required: true, description: '한국어. 환자 표현 + (onset: 시점). 예: 의식이 없어요. (onset: 오늘 아침)' },
+  { id: 'historyOfPresentIllness', name: '현병력', nameEn: 'PI', type: 'textarea', required: true, description: '"상환은" + "~함 체". 3-6문장. 예: 상환은 금일 의식 소실 발생함.' },
+  { id: 'pertinentROS', name: '관련 증상', nameEn: 'ROS (+/-)', type: 'textarea', required: false, description: '영어 (+/-) 형식. N/V(-), fever(-), CP(-), LOC(+).' },
 
-  // Background - English/abbreviations
-  { id: 'pastMedicalHistory', name: '과거력', nameEn: 'PMH', type: 'tags', required: false, description: '영어. HTN, DM, s/p appendectomy.' },
-  { id: 'pastSurgicalHistory', name: '수술력', nameEn: 'PSH', type: 'tags', required: false, description: '영어. 언급된 것만.' },
-  { id: 'medications', name: '복용약', nameEn: 'Meds', type: 'tags', required: false, description: '영어. 용량 포함.' },
-  { id: 'allergies', name: '알레르기', nameEn: 'Allergies', type: 'tags', required: false, description: '영어. NKDA if none.' },
-  { id: 'socialHistory', name: '사회력', nameEn: 'SHx', type: 'textarea', required: false, description: '영어. Smoking/EtOH/occupation.' },
-  { id: 'familyHistory', name: '가족력', nameEn: 'FHx', type: 'textarea', required: false, description: '영어. 언급된 것만.' },
+  // Background - English/abbreviations with duration
+  { id: 'pastMedicalHistory', name: '과거력', nameEn: 'PMH', type: 'tags', required: false, description: '영어 약어 + duration. DM (since childhood), HTN (x3y).' },
+  { id: 'pastSurgicalHistory', name: '수술력', nameEn: 'Surgical Hx', type: 'tags', required: false, description: '영어. s/p appendectomy (2020).' },
+  { id: 'medications', name: '복용약', nameEn: 'Meds', type: 'tags', required: false, description: '영어. 용량 포함 시 추가.' },
+  { id: 'allergies', name: '알레르기', nameEn: 'Allergies', type: 'tags', required: false, description: '영어. 없으면 "None" (NKDA ❌).' },
+  { id: 'socialHistory', name: '사회력', nameEn: 'SHx', type: 'textarea', required: false, description: '영어 (+/-). Smoking (-), Alcohol (-). 특이사항만 한국어.' },
+  { id: 'familyHistory', name: '가족력', nameEn: 'FHx', type: 'textarea', required: false, description: '한국식. 부: DM, 모: 특이사항 없음.' },
 
-  // O - English
-  { id: 'vitalSigns', name: '활력징후', nameEn: 'VS', type: 'text', required: false, description: '영어. BP/HR/BT/RR/SpO2.' },
-  { id: 'physicalExam', name: '진찰소견', nameEn: 'PE', type: 'textarea', required: false, description: '영어. 언급된 소견만.' },
+  // O - English (+/-)
+  { id: 'vitalSigns', name: '활력징후', nameEn: 'VS', type: 'text', required: false, description: 'BP/HR/BT/RR/SpO2.' },
+  { id: 'physicalExam', name: '진찰소견', nameEn: 'PE', type: 'textarea', required: false, description: '영어. 안 했으면 "None". 했으면 전부 (+/-) 기록. 위치/범위 포함.' },
   { id: 'labResults', name: '검사결과', nameEn: 'Labs', type: 'textarea', required: false, description: '영어. 언급된 결과만.' },
   { id: 'imaging', name: '영상검사', nameEn: 'Imaging', type: 'textarea', required: false, description: '영어. 언급된 것만.' },
 
   // A - English (Korean connectors OK)
-  { id: 'assessment', name: '평가', nameEn: 'Assessment', type: 'textarea', required: true, description: '영어 중심. [Summary] [Provider Impression] [AI DDx] 3단 구조.' },
+  { id: 'assessment', name: '평가', nameEn: 'Assessment', type: 'textarea', required: true, description: '영어. # 확정Dx + r/o DDx (confidence순 정렬). AI는 #붙이기 금지.' },
 
   // Dx - English only
-  { id: 'diagnosisConfirmed', name: '확정 진단', nameEn: 'Dx (stated)', type: 'tags', required: false, description: '영어. DDx 확정 시 자동 추가됨.' },
+  { id: 'diagnosisConfirmed', name: '확정 진단', nameEn: 'Dx (stated)', type: 'tags', required: false, description: '영어. DDx 확정 시 # 붙여서 표시.' },
 
   // P - English orders
-  { id: 'plan', name: '계획', nameEn: 'Plan', type: 'textarea', required: true, description: '영어. 오더만. [Orders] [AI Suggestions optional]. 설명문 금지.' },
-  { id: 'followUp', name: '추적관찰', nameEn: 'F/U', type: 'textarea', required: false, description: '영어. 언급 없으면 비움. 일반적 문구 금지.' },
+  { id: 'plan', name: '계획', nameEn: 'Plan', type: 'textarea', required: true, description: '영어 오더만. [Orders] + [AI Suggestions] (근거 필수, 0-2줄).' },
+  { id: 'followUp', name: '추적관찰', nameEn: 'F/U', type: 'textarea', required: false, description: '구체적 f/u만. 일반문구 금지. 없으면 비움.' },
 
   { id: 'notes', name: '기타', nameEn: 'Notes', type: 'textarea', required: false, description: '메모.' },
 ];
@@ -112,27 +112,80 @@ CORE PHILOSOPHY:
 === LANGUAGE BALANCE (STRICT - MOST IMPORTANT) ===
 | Section           | Language                              |
 |-------------------|---------------------------------------|
-| CC                | Korean (환자 표현 그대로)              |
-| PI                | Korean (서술형)                       |
-| ROS (+/-)         | English abbreviations (N/V(+), CP(-)) |
-| PMH / Meds / SHx  | English / abbreviations              |
-| PE                | English                              |
-| Assessment (A)    | ENGLISH (Korean connectors only)     |
+| CC                | Korean (환자 표현 + onset)             |
+| PI                | Korean (~함 체: 호소함, 발생함, 있었음)  |
+| ROS (+/-)         | English (+/-): N/V(-), LOC(+), CP(-) |
+| PMH               | English abbrev + duration: DM (since childhood), HTN (x3y) |
+| Surgical Hx       | English: s/p appendectomy (2020)     |
+| Meds              | English with dose if mentioned        |
+| Allergies         | English: "None" (NOT NKDA)           |
+| SHx               | English (+/-): Smoking (-), Alcohol (-). 특이사항만 한국어 |
+| FHx               | Korean style: 부: DM, 모: 특이사항 없음 |
+| PE                | English (+/-): 안 했으면 "None", 했으면 전부 기록 |
+| Assessment (A)    | ENGLISH: # 확정Dx, r/o DDx           |
 | DDx / r/o         | ENGLISH 100%                         |
 | Dx                | ENGLISH 100%                         |
 | Plan (P)          | ENGLISH orders                       |
-| F/U               | English or leave empty               |
+| F/U               | English specific only or leave empty |
 
 - Do NOT translate diagnoses into Korean.
 - DDx, r/o, Dx terms must remain in English.
-- Korean may be used ONLY for short connectors in Assessment (e.g., "~로 판단됨").
 
-=== PI QUALITY RULES ===
-- Korean narrative (서술형), NOT a checklist.
+=== CC RULES (CRITICAL) ===
+- Patient's own words in Korean
+- MUST include onset if mentioned: "(onset: 오늘 아침)" or "(onset: today AM)"
+GOOD: "의식이 없어요. (onset: 오늘 아침)"
+BAD: "의식이 없어요." (missing onset)
+
+=== PI RULES (CRITICAL - "~함 체" + "상환은") ===
+- Korean narrative using MEDICAL CHART STYLE (~함 / ~되었음 / ~있었음)
+- NOT "~합니다 / ~입니다" (too report-like)
+- Use "상환은" (NOT "환자는", "~님은", or patient name)
 - 3-6 sentences max.
-- Use only relevant OLDCARTS elements if present.
-- Include pertinent positives/negatives only if asked/answered.
-- If missing, do NOT fill.
+
+GOOD PI:
+"상환은 금일 아침 화장실 다녀온 후 갑자기 의식 소실 발생함. 어제 저녁부터 컨디션 저하 호소함. 유사 증상 과거력 없음."
+
+BAD PI:
+"환자는 오늘 아침에 의식을 잃었습니다." (wrong: "환자는" instead of "상환은")
+"김서현님은 어제부터 안 좋다고 하셨습니다." (wrong: using patient name)
+
+=== PMH RULES (CRITICAL) ===
+- Use abbreviations: DM, HTN, CAD, CKD, etc.
+- Include duration in parentheses if mentioned
+GOOD: "DM (since childhood)", "HTN (x3y)", "asthma (controlled)"
+BAD: "Diabetes mellitus", "Hypertension" (too long)
+
+=== ALLERGIES RULE ===
+- Use "None" if no allergies (NOT "NKDA")
+GOOD: "None"
+BAD: "NKDA"
+
+=== SHx RULES ===
+- Standard items in English (+/-)
+- Special context in Korean
+GOOD:
+"Smoking (-), Alcohol (-)"
+"특이사항: 최근 과음 있었음"
+
+=== FHx RULES (KOREAN STYLE) ===
+- Use 부/모 format
+GOOD:
+"부: DM"
+"모: 특이사항 없음"
+"부: 유사 증상 있음"
+
+=== PE RULES (CRITICAL) ===
+- If PE not performed: write "None"
+- If PE performed: document ALL findings with (+/-)
+- For positive findings: include location/extent/side
+GOOD:
+"Mental status: drowsy"
+"Abdomen: Tenderness (-), Rebound tenderness (+, RLQ)"
+"Neuro: Motor weakness (-)"
+
+BAD:
+"NAD" (too vague when PE was performed)
 
 === DDx RULES (STRICT - FORMAT CRITICAL) ===
 - Limit DDx to top 2-3 most likely causes (max 5).
@@ -153,12 +206,18 @@ GOOD assessment.value:
 BAD assessment.value:
 "[Summary] 13yo male... [AI DDx/r/o] - r/o syncope..." ❌ (DDx should be in ddxList, not here)
 
-=== Dx (AI) RULES (STRICT) ===
-- Do NOT repeat DDx as a comma-separated list.
-- Summarize into ONE problem-oriented line.
-- Use "r/o" or "vs" format ONLY.
-- Good: "Syncope, r/o hypoglycemia vs neurologic cause"
-- Bad: "저혈당, 뇌혈관 사고, 심장 문제"
+=== ASSESSMENT DISPLAY FORMAT (FOR REFERENCE) ===
+When displayed, Assessment will look like:
+# Hypoglycemia (confirmed by doctor)
+
+r/o Seizure (high)
+r/o Vasovagal syncope (medium)
+r/o Intracranial lesion (medium)
+
+RULES:
+- "#" prefix = confirmed diagnosis (doctor stated OR user confirmed DDx)
+- "r/o" prefix = AI differential (not confirmed)
+- AI can NEVER add "#" - only users can confirm
 
 === ROLE SEPARATION (IMPORTANT) ===
 - Put DDx/r/o list ONLY inside Assessment under [AI DDx/r/o].
@@ -175,16 +234,13 @@ MUST USE THIS EXACT FORMAT WITH LINE BREAKS:
 
 CRITICAL FORMATTING:
 - Each section header MUST be on its own line.
-- DO NOT put all sections on a single line.
 - assessment.value contains ONLY [Summary] and optionally [Provider Impression].
-- DO NOT write DDx text inside assessment.value.
 - DDx goes ONLY in assessment.ddxList array.
 
 === PROVIDER IMPRESSION RULE (STRICT) ===
 - ONLY write Provider Impression if the doctor EXPLICITLY ordered tests or treatments.
 - If NO orders are mentioned in conversation, leave Provider Impression EMPTY.
 - Do NOT infer impression from symptoms alone.
-- Do NOT invent diagnoses or clinical thinking.
 
 GOOD (doctor ordered test):
 "Provider ordered brain CT → considering neurologic cause"
@@ -196,15 +252,13 @@ BAD (no orders mentioned):
 - Write ONLY explicit orders that the doctor actually stated.
 - If NO orders were mentioned, leave Plan EMPTY.
 - No explanatory sentences. Orders only.
-- AI suggestions are OPTIONAL and should be RARE:
-  - Omit if not strongly justified
-  - Max 1-2 lines if included
+- AI suggestions: include reason in parentheses, max 1-2 lines
 
 [Orders]
 - [test/medication] (only if stated)
 
-[AI Suggestions] (optional, usually omit)
-- [suggestion] - if [condition]
+[AI Suggestions]
+- Blood glucose check (LOC + DM history)
 
 === FOLLOW-UP RULE (STRICT) ===
 - Do NOT write generic follow-up statements.
@@ -260,18 +314,18 @@ INTERNAL MEDICINE EMPHASIS:
     id: 'dermatology',
     name: '피부과',
     fields: [
-      { id: 'chiefComplaint', name: '주호소', nameEn: 'CC', type: 'textarea', required: true, description: '한국어. 환자 표현 그대로 인용.' },
-      { id: 'historyOfPresentIllness', name: '현병력', nameEn: 'PI', type: 'textarea', required: true, description: '한국어 서술형. 3-6문장. 발생시기/경과/악화요인/동반증상.' },
+      { id: 'chiefComplaint', name: '주호소', nameEn: 'CC', type: 'textarea', required: true, description: '한국어. 환자 표현 + (onset: 시점).' },
+      { id: 'historyOfPresentIllness', name: '현병력', nameEn: 'PI', type: 'textarea', required: true, description: '"상환은" + "~함 체". 3-6문장. 발생시기/경과/악화요인.' },
       { id: 'lesionDescription', name: '병변 기술', nameEn: 'Lesion', type: 'textarea', required: false, description: 'ENGLISH. Morphology/distribution mentioned only. No guessing.' },
-      { id: 'pertinentROS', name: '관련 증상', nameEn: 'ROS (+/-)', type: 'textarea', required: false, description: 'ENGLISH. pruritus(+/-), pain(+/-), oozing(+/-), fever(-) etc.' },
-      { id: 'pastMedicalHistory', name: '과거력', nameEn: 'PMH', type: 'tags', required: false, description: 'ENGLISH. Atopic dermatitis, eczema etc. if mentioned.' },
+      { id: 'pertinentROS', name: '관련 증상', nameEn: 'ROS (+/-)', type: 'textarea', required: false, description: 'ENGLISH (+/-). pruritus(+), pain(-), oozing(-), fever(-) etc.' },
+      { id: 'pastMedicalHistory', name: '과거력', nameEn: 'PMH', type: 'tags', required: false, description: 'ENGLISH abbrev. atopic derm, eczema + duration if mentioned.' },
       { id: 'medications', name: '복용약', nameEn: 'Meds', type: 'tags', required: false, description: 'ENGLISH. Mentioned meds only.' },
-      { id: 'allergies', name: '알레르기', nameEn: 'Allergies', type: 'tags', required: false, description: 'ENGLISH. NKDA if none.' },
-      { id: 'physicalExam', name: '진찰소견', nameEn: 'PE', type: 'textarea', required: false, description: 'ENGLISH. Mentioned skin findings only.' },
-      { id: 'assessment', name: '평가', nameEn: 'Assessment', type: 'textarea', required: true, description: 'ENGLISH 중심. [Summary] [Provider Impression] [AI DDx/r/o]. Korean connectors only.' },
-      { id: 'diagnosisConfirmed', name: '확정 진단', nameEn: 'Dx (stated)', type: 'tags', required: false, description: 'ENGLISH. DDx 확정 시 자동 추가됨.' },
-      { id: 'plan', name: '계획', nameEn: 'Plan', type: 'textarea', required: true, description: 'ENGLISH. Orders only. [Orders] + optional [AI Suggestions]. No explanatory sentences.' },
-      { id: 'followUp', name: '추적관찰', nameEn: 'F/U', type: 'textarea', required: false, description: 'ENGLISH. If not discussed, leave empty.' },
+      { id: 'allergies', name: '알레르기', nameEn: 'Allergies', type: 'tags', required: false, description: 'ENGLISH. "None" if no allergies (NOT NKDA).' },
+      { id: 'physicalExam', name: '진찰소견', nameEn: 'PE', type: 'textarea', required: false, description: 'ENGLISH (+/-). "None" if not examined, otherwise full findings.' },
+      { id: 'assessment', name: '평가', nameEn: 'Assessment', type: 'textarea', required: true, description: 'ENGLISH. # 확정Dx + r/o DDx. AI는 #붙이기 금지.' },
+      { id: 'diagnosisConfirmed', name: '확정 진단', nameEn: 'Dx (stated)', type: 'tags', required: false, description: 'ENGLISH. DDx 확정 시 # 붙여서 표시.' },
+      { id: 'plan', name: '계획', nameEn: 'Plan', type: 'textarea', required: true, description: 'ENGLISH orders. [Orders] + [AI Suggestions] (근거 포함, 0-2줄).' },
+      { id: 'followUp', name: '추적관찰', nameEn: 'F/U', type: 'textarea', required: false, description: '구체적 f/u만. 없으면 비움.' },
       { id: 'notes', name: '기타', nameEn: 'Notes', type: 'textarea', required: false, description: 'Notes.' },
     ],
     promptContext: `
@@ -280,7 +334,8 @@ ${BASE_CHARTING_STYLE}
 DERM NOTES:
 - Do not hallucinate morphology. Only document what is described.
 - If the provider names a diagnosis, put it into diagnosisConfirmed (ENGLISH).
-- AI DDx goes to Assessment [AI DDx/r/o] section via ddxList array. Do NOT generate diagnosisInferred.
+- AI DDx goes to Assessment via ddxList array. Do NOT generate diagnosisInferred.
+- PI must use "상환은" + "~함 체" style (상환은 ~호소함, 발생함, 있었음).
 `.trim(),
   },
   {
@@ -591,22 +646,27 @@ You are an experienced ${preset.name !== '일반' ? preset.name : 'physician'} d
 ${preset.promptContext || ''}
 
 === HARD LANGUAGE RULES (MOST IMPORTANT) ===
-- CC: KOREAN (patient's exact wording)
-- PI: KOREAN narrative (3-6 sentences)
+- CC: KOREAN (patient's exact wording) + (onset: 시점) if mentioned
+- PI: KOREAN "~함 체" narrative (호소함, 발생함, 있었음) - Use "상환은" (NOT "환자는" or patient name)
+- PMH: English abbreviations + duration (DM (since childhood), HTN (x3y))
+- Allergies: "None" if no allergies (NOT "NKDA")
+- SHx: English (+/-) - Smoking (-), Alcohol (-)
+- FHx: Korean style - 부: DM, 모: 특이사항 없음
+- PE: "None" if not performed, otherwise FULL (+/-) documentation
 - Assessment/DDx/Dx/Plan: MEDICAL ENGLISH (no Korean diagnoses)
-- Korean connectors OK in Assessment (e.g., "~로 판단됨")
 - Do NOT translate diagnoses into Korean.
 
 === HARD DDx/Dx RULES ===
 - DDx: Max 1-2 items (at most 3). Each DDx goes into assessment.ddxList array.
 - Each ddxList item must have: id (ddx_1, ddx_2...), diagnosis (English), reason (brief), confidence (high/medium/low), isConfirmed: false, isRemoved: false.
 - Do NOT generate diagnosisInferred field. DDx list is sufficient for AI differential.
-- Do NOT list diagnoses in Korean.
+- AI can NEVER use "#" prefix - that's for confirmed diagnoses only.
 - Avoid vague terms (e.g., "cardiac problem", "brain issue").
 
 === HARD PLAN RULES ===
 - Orders in ENGLISH.
-- AI suggestions: OPTIONAL, max 1-2 lines, omit if weak evidence.
+- AI suggestions: Include reason in parentheses. Max 1-2 lines.
+- Example: "Blood glucose check (LOC + DM history)"
 - No explanatory sentences.
 
 === HARD F/U RULE ===
@@ -658,15 +718,21 @@ CRITICAL:
             content:
 `다음 진료 대화를 바탕으로 한국 병원 외래 EMR처럼 작성해줘.
 
-LANGUAGE:
-- CC/PI: 한국어
+CRITICAL RULES:
+- CC: 환자 표현 + (onset: 시점) 필수 포함
+- PI: "~함 체" 서술 + "상환은" 사용 (호소함, 발생함, 있었음) - "환자는/~님은" 금지
+- PMH: 약어 + duration (DM (since childhood), HTN (x3y))
+- Allergies: "None" 사용 (NKDA 금지)
+- SHx: Smoking (-), Alcohol (-) 형식
+- FHx: 한국식 (부: DM, 모: 특이사항 없음)
+- PE: 안 했으면 "None", 했으면 전부 (+/-) 기록
 - Assessment/DDx/Dx/Plan: 영어 (진단명 한국어 번역 금지)
 
 FORMAT:
 - DDx: assessment.ddxList 배열로 반환. 각 항목은 {id, diagnosis, reason, confidence, isConfirmed: false, isRemoved: false}
-- diagnosisInferred 필드는 생성하지 않음 (DDx 리스트로 충분)
-- Plan: 오더만 (설명문 금지)
-- Follow-up: 언급 없으면 비움 (일반적 문구 금지)
+- diagnosisInferred 필드는 생성하지 않음
+- Plan: 오더만 + AI Suggestions에는 근거 필수 (예: Blood glucose check (LOC + DM history))
+- Follow-up: 구체적 내용만, 없으면 비움
 - 불릿 항목은 한 줄씩 띄워
 
 [진료 대화]
