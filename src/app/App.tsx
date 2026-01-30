@@ -1869,29 +1869,15 @@ function MainApp() {
             </div>
 
             {/* Tab Content */}
-            <div className="flex-1 min-h-0 transition-all duration-300 relative">
-              <div
-                className={`absolute inset-0 h-full transition-opacity ${
-                  mobileTab === 'transcript'
-                    ? 'opacity-100 pointer-events-auto z-10'
-                    : 'opacity-0 pointer-events-none'
-                }`}
-                aria-hidden={mobileTab !== 'transcript'}
-              >
+            <div className="flex-1 min-h-0 transition-all duration-300">
+              <div className={`${mobileTab === 'transcript' ? 'block' : 'hidden'} h-full`}>
                 <TranscriptViewer
                   finalTranscript={finalTranscript}
                   isRecording={isRecording || isRemoteRecording}
                   realtimeSegments={realtimeSegments}
                 />
               </div>
-              <div
-                className={`absolute inset-0 h-full transition-opacity ${
-                  mobileTab === 'chart'
-                    ? 'opacity-100 pointer-events-auto z-10'
-                    : 'opacity-0 pointer-events-none'
-                }`}
-                aria-hidden={mobileTab !== 'chart'}
-              >
+              <div className={`${mobileTab === 'chart' ? 'block' : 'hidden'} h-full`}>
                 <ChartingResult
                   chartData={chartData}
                   isRecording={isRecording || isRemoteRecording}
@@ -1900,14 +1886,7 @@ function MainApp() {
                   activeFields={chartSettings.activeFields}
                 />
               </div>
-              <div
-                className={`absolute inset-0 h-full transition-opacity ${
-                  mobileTab === 'ddx'
-                    ? 'opacity-100 pointer-events-auto z-10'
-                    : 'opacity-0 pointer-events-none'
-                }`}
-                aria-hidden={mobileTab !== 'ddx'}
-              >
+              <div className={`${mobileTab === 'ddx' ? 'block' : 'hidden'} h-full`}>
                 <div className="h-full bg-gradient-to-br from-teal-50 to-cyan-50 rounded-2xl border-2 border-teal-200 shadow-sm overflow-hidden flex flex-col">
                   {/* DDx Header */}
                   <div className="flex-none px-4 py-3 border-b border-teal-200 bg-white/50">
