@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { VoiceRecorder } from './components/VoiceRecorder';
 import { TranscriptViewer } from './components/TranscriptViewer';
 import { ChartingResult, ChartData } from './components/ChartingResult';
