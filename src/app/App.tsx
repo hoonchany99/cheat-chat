@@ -216,6 +216,7 @@ function MainApp() {
   const [isTranscriptCollapsed, setIsTranscriptCollapsed] = useState(false);
   const [newDdxIds, setNewDdxIds] = useState<Set<string>>(new Set()); // 새로 추가된 DDx 추적
   const previousDdxIdsRef = useRef<Set<string>>(new Set());
+  const [hasNewDdx, setHasNewDdx] = useState(false);
   const bumpPendingApi = useCallback((delta: number) => {
     pendingApiRef.current = Math.max(0, pendingApiRef.current + delta);
     setPendingApiCount(pendingApiRef.current);
@@ -239,6 +240,9 @@ function MainApp() {
 
   const selectedDepartment = DEPARTMENT_PRESETS.find(d => d.id === chartSettings.selectedDepartment);
   const selectedDepartmentName = selectedDepartment?.name || '내과';
+  const activeDdxCount = useMemo(() => {
+    return chartData?.assessment?.ddxList?.filter(d => !d.isRemoved).length ?? 0;
+  }, [chartData?.assessment?.ddxList]);
 
   // 🧪 테스트용: 실시간 시뮬레이션 (실제 녹음처럼 대화가 하나씩 추가됨)
   const [isTestRunning, setIsTestRunning] = useState(false);
@@ -733,11 +737,20 @@ function MainApp() {
         setNewDdxIds(newIds);
         // 2초 후 애니메이션 클래스 제거
         setTimeout(() => setNewDdxIds(new Set()), 2000);
+        if (mobileTab !== 'ddx') {
+          setHasNewDdx(true);
+        }
       }
       
       previousDdxIdsRef.current = currentDdxIds;
     }
-  }, [chartData?.assessment?.ddxList]);
+  }, [chartData?.assessment?.ddxList, mobileTab]);
+
+  useEffect(() => {
+    if (mobileTab === 'ddx' && hasNewDdx) {
+      setHasNewDdx(false);
+    }
+  }, [mobileTab, hasNewDdx]);
 
 
   // 탭 전환 시 녹음 중 경고
@@ -1842,19 +1855,43 @@ function MainApp() {
               >
                 <Target className="w-4 h-4" />
                 DDx
+                {activeDdxCount > 0 && (
+                  <span className={`ml-1 text-[10px] px-1.5 py-0.5 rounded-full ${
+                    mobileTab === 'ddx' ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-700'
+                  }`}>
+                    {activeDdxCount}
+                  </span>
+                )}
+                {hasNewDdx && mobileTab !== 'ddx' && (
+                  <span className="ml-1 w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                )}
               </button>
             </div>
 
             {/* Tab Content */}
-            <div className="flex-1 min-h-0 transition-all duration-300">
-              <div className={`${mobileTab === 'transcript' ? 'block' : 'hidden'} h-full`}>
+            <div className="flex-1 min-h-0 transition-all duration-300 relative">
+              <div
+                className={`absolute inset-0 h-full transition-opacity ${
+                  mobileTab === 'transcript'
+                    ? 'opacity-100 pointer-events-auto z-10'
+                    : 'opacity-0 pointer-events-none'
+                }`}
+                aria-hidden={mobileTab !== 'transcript'}
+              >
                 <TranscriptViewer
                   finalTranscript={finalTranscript}
                   isRecording={isRecording || isRemoteRecording}
                   realtimeSegments={realtimeSegments}
                 />
               </div>
-              <div className={`${mobileTab === 'chart' ? 'block' : 'hidden'} h-full`}>
+              <div
+                className={`absolute inset-0 h-full transition-opacity ${
+                  mobileTab === 'chart'
+                    ? 'opacity-100 pointer-events-auto z-10'
+                    : 'opacity-0 pointer-events-none'
+                }`}
+                aria-hidden={mobileTab !== 'chart'}
+              >
                 <ChartingResult
                   chartData={chartData}
                   isRecording={isRecording || isRemoteRecording}
@@ -1863,7 +1900,14 @@ function MainApp() {
                   activeFields={chartSettings.activeFields}
                 />
               </div>
-              <div className={`${mobileTab === 'ddx' ? 'block' : 'hidden'} h-full`}>
+              <div
+                className={`absolute inset-0 h-full transition-opacity ${
+                  mobileTab === 'ddx'
+                    ? 'opacity-100 pointer-events-auto z-10'
+                    : 'opacity-0 pointer-events-none'
+                }`}
+                aria-hidden={mobileTab !== 'ddx'}
+              >
                 <div className="h-full bg-gradient-to-br from-teal-50 to-cyan-50 rounded-2xl border-2 border-teal-200 shadow-sm overflow-hidden flex flex-col">
                   {/* DDx Header */}
                   <div className="flex-none px-4 py-3 border-b border-teal-200 bg-white/50">
