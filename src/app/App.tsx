@@ -7,19 +7,21 @@ import { DemoPage } from './components/DemoPage';
 import { ChartSettingsModal } from './components/ChartSettingsModal';
 import { MobileMicPage } from './components/MobileMicPage';
 import { RemoteMicModal } from './components/RemoteMicModal';
-import { ChartSettings, DEFAULT_CHART_SETTINGS, DEPARTMENT_PRESETS, generateChartFromTranscript, correctSTTErrors } from '@/services/chartService';
+import { ChartSettings, DEFAULT_CHART_SETTINGS, DEPARTMENT_PRESETS, generateChartFromTranscriptStreaming, correctSTTErrors, DdxItem } from '@/services/chartService';
 import { classifyUtterancesWithGPT } from '@/services/deepgramService';
 import { Button } from '@/app/components/ui/button';
 import { Input } from '@/app/components/ui/input';
 import { Toaster } from '@/app/components/ui/sonner';
 import { toast } from 'sonner';
-import { RotateCcw, Stethoscope, FileText, Mail, Loader2, MessageSquare, Send, ChevronRight, MessageCircle, Smartphone, PanelLeft, Target, ChevronUp, Check, AlertCircle, Plus } from 'lucide-react';
+import { RotateCcw, Stethoscope, FileText, Mail, Loader2, MessageSquare, Send, ChevronRight, MessageCircle, Smartphone, PanelLeft, Target, ChevronUp, Check, AlertCircle, Plus, Play, Square } from 'lucide-react';
 import { Textarea } from '@/app/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/app/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel } from '@/app/components/ui/select';
 
 // Google Sheets API URL
 const GOOGLE_SHEETS_URL = 'https://script.google.com/macros/s/AKfycbw5uH766QFw6m0kLchHySCPH7UUXX1F0TCxZe4ygqRiGEvhcSKKSr_nQ0gs_88GCDA/exec';
+const MAX_CONTEXT_SEGMENTS = 8;
+const ENABLE_STT_CORRECTION = true;
 
 // DDx 애니메이션 스타일
 const ddxAnimationStyles = `
@@ -95,7 +97,6 @@ const SPECIALTY_OPTIONS = [
   { group: '기타 진료과', items: [
     { value: 'pediatrics', label: '소아청소년과' },
     { value: 'psychiatry', label: '정신건강의학과' },
-    { value: 'dermatology', label: '피부과' },
     { value: 'ophthalmology', label: '안과' },
     { value: 'ent', label: '이비인후과' },
     { value: 'family', label: '가정의학과' },
@@ -164,6 +165,9 @@ interface Segment {
   speaker: 'doctor' | 'patient' | 'pending';
 }
 
+const buildSegmentsKey = (segments: Segment[]) =>
+  segments.map(segment => `${segment.speaker}:${segment.text}`).join('|');
+
 export default function App() {
   // URL 파라미터에서 모바일 마이크 세션 확인
   const urlParams = new URLSearchParams(window.location.search);
@@ -202,11 +206,21 @@ function MainApp() {
   const [remoteRecordingTime, setRemoteRecordingTime] = useState(0);
   const [isAutoUpdating, setIsAutoUpdating] = useState(false);
   const [lastAutoUpdateSegmentCount, setLastAutoUpdateSegmentCount] = useState(0);
+  const lastRequestedSegmentCountRef = useRef(0);
+  const lastFastCorrectionKeyRef = useRef('');
+  const lastFastCorrectedSegmentsRef = useRef<Segment[] | null>(null);
+  const [pendingApiCount, setPendingApiCount] = useState(0);
+  const pendingApiRef = useRef(0);
+  const testAbortRef = useRef<AbortController | null>(null);
   const [silenceTimeout, setSilenceTimeout] = useState<NodeJS.Timeout | null>(null);
   const [isTranscriptCollapsed, setIsTranscriptCollapsed] = useState(false);
   const [isMobileAPExpanded, setIsMobileAPExpanded] = useState(false);
   const [newDdxIds, setNewDdxIds] = useState<Set<string>>(new Set()); // 새로 추가된 DDx 추적
   const previousDdxIdsRef = useRef<Set<string>>(new Set());
+  const bumpPendingApi = useCallback((delta: number) => {
+    pendingApiRef.current = Math.max(0, pendingApiRef.current + delta);
+    setPendingApiCount(pendingApiRef.current);
+  }, []);
   
   // 수동 Dx/r/o 추가 상태
   const [newDiagnosisInput, setNewDiagnosisInput] = useState('');
@@ -222,26 +236,10 @@ function MainApp() {
   const [feedbackSpecialty, setFeedbackSpecialty] = useState('');
   const [feedbackEmail, setFeedbackEmail] = useState('');
 
+  const isTestRunningRef = useRef(false);
+
   const selectedDepartment = DEPARTMENT_PRESETS.find(d => d.id === chartSettings.selectedDepartment);
   const selectedDepartmentName = selectedDepartment?.name || '내과';
-
-  // 페이지 전환 핸들러
-  const handlePageTransition = useCallback((toPage: 'landing' | 'app' | 'demo') => {
-    if (isTransitioning) return;
-    
-    setIsTransitioning(true);
-    setPageAnimation('exit');
-    
-    setTimeout(() => {
-      setCurrentPage(toPage);
-      setPageAnimation('enter');
-      
-      setTimeout(() => {
-        setIsTransitioning(false);
-        setPageAnimation('');
-      }, 500);
-    }, 300);
-  }, [isTransitioning]);
 
   // 🧪 테스트용: 실시간 시뮬레이션 (실제 녹음처럼 대화가 하나씩 추가됨)
   const [isTestRunning, setIsTestRunning] = useState(false);
@@ -249,111 +247,406 @@ function MainApp() {
   const testSegmentsRef = useRef<Segment[]>([]);
   const isGeneratingRef = useRef(false); // API 요청 중인지 추적
   const pendingUpdateRef = useRef(false); // 대기 중인 업데이트가 있는지
+  const generationIdRef = useRef(0); // 최신 요청 ID 추적 (오래된 요청 결과 무시용)
+
+  // DDx 리스트 안정적 병합 (스트리밍 중 깜빡임 방지)
+  const mergeDdxLists = useCallback((
+    existingDdxList: DdxItem[] | undefined,
+    newDdxList: DdxItem[] | undefined
+  ): DdxItem[] => {
+    if (!existingDdxList || existingDdxList.length === 0) {
+      return newDdxList || [];
+    }
+    if (!newDdxList || newDdxList.length === 0) {
+      // 새 리스트가 비어있으면 기존 것 유지 (스트리밍 중 부분 파싱)
+      return existingDdxList;
+    }
+    
+    const merged = [...existingDdxList];
+    
+    newDdxList.forEach(newItem => {
+      // 같은 진단명이 이미 있는지 확인
+      const existingIndex = merged.findIndex(
+        existing => existing.id === newItem.id || 
+        existing.diagnosis.toLowerCase() === newItem.diagnosis.toLowerCase()
+      );
+      
+      if (existingIndex >= 0) {
+        // 기존 항목 업데이트 (사용자가 수정한 상태는 유지)
+        const existing = merged[existingIndex];
+        merged[existingIndex] = {
+          ...newItem,
+          // 사용자 액션(확정/제외)은 유지
+          isConfirmed: existing.isConfirmed,
+          isRemoved: existing.isRemoved,
+        };
+      } else {
+        // 새 항목 추가
+        merged.push(newItem);
+      }
+    });
+    
+    return merged;
+  }, []);
+
+  const hasAnyPattern = (text: string, patterns: RegExp[]) => patterns.some(p => p.test(text));
+
+  const shouldAllowSocialHistory = (text: string) => hasAnyPattern(text, [
+    /\bsmok(ing|er)?\b/i,
+    /\btobacco\b/i,
+    /\bcigarette(s)?\b/i,
+    /\bnicotine\b/i,
+    /\balcohol\b/i,
+    /\bdrink(s|ing)?\b/i,
+    /\bbeer\b/i,
+    /\bsoju\b/i,
+    /담배/,
+    /흡연/,
+    /음주/,
+    /소주/,
+    /맥주/,
+    /술(을|은|이|도|만|좀|가끔|자주|전혀|안|못|해서|마신|마셨|마셔|마시)/,
+    /술\s*(한|마신|마셨|마시|가끔)/,
+  ]);
+
+  const shouldAllowFamilyHistory = (text: string) => hasAnyPattern(text, [
+    /\bfamily history\b/i,
+    /\bfamily\b/i,
+    /\bfather\b/i,
+    /\bmother\b/i,
+    /\bparent\b/i,
+    /가족력/,
+    /가족\s*중/,
+    /아버지|어머니|부모/,
+  ]);
+
+  // 차트 데이터 안정적 병합 (DDx 깜빡임 + 내용 후퇴 방지)
+  const mergeChartData = useCallback((
+    prevData: ChartData | null,
+    partialChart: ChartData
+  ): ChartData => {
+    if (!prevData) return partialChart;
+
+    const mergedData = { ...prevData, ...partialChart };
+
+    // 사용자가 직접 수정한 필드는 항상 유지
+    Object.keys(prevData).forEach(fieldId => {
+      if (prevData[fieldId]?.source === 'user') {
+        mergedData[fieldId] = prevData[fieldId];
+      }
+    });
+
+    const allowShrinkFields = new Set(['socialHistory', 'familyHistory']);
+    // 부분 업데이트가 이전 내용보다 짧아지는 경우(스트리밍 중 흔들림) 방지
+    Object.keys(prevData).forEach(fieldId => {
+      const prevField = prevData[fieldId];
+      const nextField = mergedData[fieldId];
+      if (!prevField || !nextField) return;
+      if (prevField.source === 'user') return;
+      if (allowShrinkFields.has(fieldId)) return;
+
+      const prevValue = prevField.value;
+      const nextValue = nextField.value;
+
+      if (typeof prevValue === 'string' && typeof nextValue === 'string') {
+        const prevLen = prevValue.trim().length;
+        const nextLen = nextValue.trim().length;
+        if (prevLen > 0 && (nextLen === 0 || nextLen < prevLen)) {
+          mergedData[fieldId] = prevField;
+        }
+      } else if (Array.isArray(prevValue) && Array.isArray(nextValue)) {
+        if (prevValue.length > 0 && nextValue.length < prevValue.length) {
+          mergedData[fieldId] = prevField;
+        }
+      }
+    });
+
+    // Assessment의 DDx 리스트 안정적 병합
+    if (prevData.assessment?.ddxList || partialChart.assessment?.ddxList) {
+      mergedData.assessment = {
+        ...mergedData.assessment,
+        ddxList: mergeDdxLists(
+          prevData.assessment?.ddxList,
+          partialChart.assessment?.ddxList
+        ),
+      };
+    }
+
+    // SHx/FHx는 대화에 언급된 경우에만 유지 (사용자 편집은 유지)
+    const conversationText = `${finalTranscript} ${realtimeSegments.map(s => s.text).join(' ')}`.trim();
+    const allowShx = conversationText ? shouldAllowSocialHistory(conversationText) : false;
+    const allowFhx = conversationText ? shouldAllowFamilyHistory(conversationText) : false;
+
+    if (!allowShx && mergedData.socialHistory?.source !== 'user') {
+      mergedData.socialHistory = {
+        value: '',
+        isConfirmed: false,
+        source: 'stated',
+        confidence: 'low',
+        rationale: '',
+        evidence: [],
+      };
+    }
+
+    if (!allowFhx && mergedData.familyHistory?.source !== 'user') {
+      mergedData.familyHistory = {
+        value: '',
+        isConfirmed: false,
+        source: 'stated',
+        confidence: 'low',
+        rationale: '',
+        evidence: [],
+      };
+    }
+    
+    return mergedData;
+  }, [mergeDdxLists, finalTranscript, realtimeSegments]);
 
   const handleTestSimulation = useCallback(async () => {
     if (isTestRunning) {
-      // 테스트 중지
+      // 데모 중지 → 리셋과 동일하게 초기화
       if (testIntervalRef.current) {
         clearTimeout(testIntervalRef.current);
         testIntervalRef.current = null;
       }
+      if (testAbortRef.current) {
+        testAbortRef.current.abort();
+        testAbortRef.current = null;
+      }
+      generationIdRef.current += 1;
       setIsTestRunning(false);
+      isTestRunningRef.current = false;
       setIsRecording(false);
       isGeneratingRef.current = false;
       pendingUpdateRef.current = false;
-      toast.info('테스트 중지됨');
+      handleReset();
+      toast.info('데모 중지됨');
       return;
     }
 
-    // 내과 당뇨 + 고혈압 환자 샘플 대화
-    const sampleSegments: Segment[] = [
-      { text: '안녕하세요, 어떻게 오셨어요?', speaker: 'doctor' },
-      { text: '선생님, 요즘 머리가 너무 아프고 어지러워요. 일주일 전부터 그래요.', speaker: 'patient' },
-      { text: '두통이 어떤 식으로 아프세요? 욱신욱신 아프세요, 조이는 것처럼 아프세요?', speaker: 'doctor' },
-      { text: '조이는 것처럼 아프고, 특히 오후에 더 심해져요.', speaker: 'patient' },
-      { text: '메스꺼움이나 구토는 없으셨어요?', speaker: 'doctor' },
-      { text: '네, 그런 건 없었어요.', speaker: 'patient' },
-      { text: '혹시 평소에 앓고 계신 질환이 있으세요? 당뇨나 고혈압 같은 거요.', speaker: 'doctor' },
-      { text: '네, 당뇨는 10년 전부터 있었고요, 고혈압은 3년 전부터 약 먹고 있어요.', speaker: 'patient' },
-      { text: '약은 뭘 드시고 계세요?', speaker: 'doctor' },
-      { text: '메트포르민 500mg 하루 두 번 먹고, 혈압약은 암로디핀 5mg 먹어요.', speaker: 'patient' },
-      { text: '약은 잘 드시고 계세요?', speaker: 'doctor' },
-      { text: '네, 잘 먹고 있어요.', speaker: 'patient' },
+    // 테스트 시나리오 풀 (10개) - 랜덤 재생
+    const commonInfo: Segment[] = [
+      { text: '과거에 큰 수술 받은 적 있나요?', speaker: 'doctor' },
+      { text: '없어요.', speaker: 'patient' },
+      { text: '현재 복용 중인 약은요?', speaker: 'doctor' },
+      { text: '정기적으로 먹는 약은 없어요.', speaker: 'patient' },
+      { text: '통증은 0부터 10까지면 어느 정도인가요?', speaker: 'doctor' },
+      { text: '지금은 7 정도예요.', speaker: 'patient' },
+      { text: '알레르기는요?', speaker: 'doctor' },
+      { text: '없어요.', speaker: 'patient' },
       { text: '담배나 술은 하세요?', speaker: 'doctor' },
-      { text: '담배는 안 피우고, 술은 가끔 한 잔 정도요.', speaker: 'patient' },
-      { text: '가족 중에 뇌졸중이나 심장병 앓으신 분 계세요?', speaker: 'doctor' },
-      { text: '아버지가 당뇨랑 고혈압 있으시고, 어머니는 특별히 없어요.', speaker: 'patient' },
-      { text: '알겠습니다. 혈압 한번 재볼게요. 150에 95네요, 좀 높네요.', speaker: 'doctor' },
-      { text: '진찰해보니 신경학적으로는 특이소견 없어요. 혈액검사랑 CT 한번 찍어봅시다.', speaker: 'doctor' },
-      { text: '지금은 긴장성 두통이 의심되는데, 고혈압 조절이 잘 안 되는 것 같아요.', speaker: 'doctor' },
-      { text: '혈압약 용량 올리고, 두통약 처방해드릴게요. 일주일 후에 다시 오세요.', speaker: 'doctor' },
+      { text: '담배는 안 피우고 술은 가끔 한 잔 정도예요.', speaker: 'patient' },
+      { text: '가족력은요?', speaker: 'doctor' },
+      { text: '특이사항 없다고 들었어요.', speaker: 'patient' },
+      { text: '최근 해외여행이나 감염 접촉은 없었죠?', speaker: 'doctor' },
+      { text: '없었어요.', speaker: 'patient' },
+    ];
+
+    const testScenarios: Segment[][] = [
+      [
+        { text: '안녕하세요, 어디가 불편해서 오셨어요?', speaker: 'doctor' },
+        { text: '오른쪽 아랫배가 너무 아파요. 어제 저녁부터 점점 심해졌어요.', speaker: 'patient' },
+        { text: '처음엔 어디부터 아프기 시작했나요?', speaker: 'doctor' },
+        { text: '처음엔 배꼽 주변이 아팠는데, 밤부터 오른쪽 아래로 내려갔어요.', speaker: 'patient' },
+        { text: '통증은 계속 있나요, 아니면 왔다 갔다 하나요?', speaker: 'doctor' },
+        { text: '계속 아프고 움직이면 더 아파요.', speaker: 'patient' },
+        { text: '열이나 오한은 있었어요?', speaker: 'doctor' },
+        { text: '새벽에 열이 38도쯤 났고 오한도 조금 있었어요.', speaker: 'patient' },
+        { text: '메스꺼움이나 구토는요?', speaker: 'doctor' },
+        { text: '메스꺼움은 있는데 토하진 않았어요.', speaker: 'patient' },
+        { text: '설사나 변비는요?', speaker: 'doctor' },
+        { text: '설사는 없고, 변은 어제 한 번 봤어요.', speaker: 'patient' },
+        ...commonInfo,
+        { text: '진찰해볼게요. 오른쪽 아래를 눌렀을 때 많이 아프네요. 반발통도 있습니다.', speaker: 'doctor' },
+        { text: '혈액검사랑 복부 CT 찍고, 수술 팀에도 컨설트 하겠습니다.', speaker: 'doctor' },
+        { text: '지금은 급성 충수염이 의심됩니다.', speaker: 'doctor' },
+      ],
+      [
+        { text: '안녕하세요, 어디가 불편하세요?', speaker: 'doctor' },
+        { text: '가슴이 답답하고 숨이 차요. 오늘 아침부터요.', speaker: 'patient' },
+        { text: '통증이 쥐어짜는 느낌인가요? 어디로 퍼지나요?', speaker: 'doctor' },
+        { text: '가슴 한가운데가 조이는 느낌이고 왼쪽 팔로 조금 뻐근해요.', speaker: 'patient' },
+        { text: '땀이나 메스꺼움은요?', speaker: 'doctor' },
+        { text: '식은땀이 나고 속이 좀 메스꺼워요.', speaker: 'patient' },
+        ...commonInfo,
+        { text: '심전도랑 심근효소 검사하고 흉부 X-ray 찍겠습니다.', speaker: 'doctor' },
+        { text: '지금은 급성 관상동맥 증후군이 의심됩니다.', speaker: 'doctor' },
+      ],
+      [
+        { text: '어디가 불편하셔서 오셨어요?', speaker: 'doctor' },
+        { text: '목이 너무 아프고 열이 나요. 이틀 전부터요.', speaker: 'patient' },
+        { text: '기침이나 콧물은요?', speaker: 'doctor' },
+        { text: '기침은 조금 있고 콧물은 없어요.', speaker: 'patient' },
+        { text: '음식 삼킬 때도 아픈가요?', speaker: 'doctor' },
+        { text: '삼킬 때 더 아파요.', speaker: 'patient' },
+        ...commonInfo,
+        { text: '인후 검사해볼게요. 편도가 붓고 하얀 삼출물이 있어요.', speaker: 'doctor' },
+        { text: '신속 독감 검사하고, 해열제 처방하겠습니다.', speaker: 'doctor' },
+        { text: '급성 편도염이 의심됩니다.', speaker: 'doctor' },
+      ],
+      [
+        { text: '안녕하세요, 증상이 어떻게 되세요?', speaker: 'doctor' },
+        { text: '어지럽고 눈앞이 캄캄해요. 오늘 오전에요.', speaker: 'patient' },
+        { text: '쓰러진 적은 있었나요?', speaker: 'doctor' },
+        { text: '네, 잠깐 눈앞이 하얘지면서 앉아있었어요.', speaker: 'patient' },
+        { text: '식사는 하셨어요?', speaker: 'doctor' },
+        { text: '아침은 못 먹었어요.', speaker: 'patient' },
+        ...commonInfo,
+        { text: '혈당 검사와 기립성 혈압 검사 해보겠습니다.', speaker: 'doctor' },
+        { text: '실신이 의심됩니다.', speaker: 'doctor' },
+      ],
+      [
+        { text: '어디가 아프세요?', speaker: 'doctor' },
+        { text: '허리가 아프고 소변이 따가워요. 사흘 전부터요.', speaker: 'patient' },
+        { text: '소변을 자주 보거나 피가 섞인 적은요?', speaker: 'doctor' },
+        { text: '자주 보고, 피는 잘 모르겠어요.', speaker: 'patient' },
+        { text: '열은 있었나요?', speaker: 'doctor' },
+        { text: '열이 좀 났어요.', speaker: 'patient' },
+        ...commonInfo,
+        { text: '요검사와 소변배양 검사하겠습니다.', speaker: 'doctor' },
+        { text: '급성 신우신염이 의심됩니다.', speaker: 'doctor' },
+      ],
+      [
+        { text: '오늘은 어떤 증상으로 오셨어요?', speaker: 'doctor' },
+        { text: '배가 쥐어짜듯이 아프고 설사를 해요. 오늘 새벽부터요.', speaker: 'patient' },
+        { text: '몇 번 정도 하셨나요?', speaker: 'doctor' },
+        { text: '5번 정도요. 물 같은 변이에요.', speaker: 'patient' },
+        { text: '구토는요?', speaker: 'doctor' },
+        { text: '한 번 했어요.', speaker: 'patient' },
+        ...commonInfo,
+        { text: '탈수 확인하고 수액 처치하겠습니다.', speaker: 'doctor' },
+        { text: '장염이 의심됩니다.', speaker: 'doctor' },
+      ],
+      [
+        { text: '어떤 증상이 있으세요?', speaker: 'doctor' },
+        { text: '콧물과 기침이 심하고 열이 나요. 어제부터요.', speaker: 'patient' },
+        { text: '숨쉬기 힘든가요?', speaker: 'doctor' },
+        { text: '숨이 좀 차요.', speaker: 'patient' },
+        ...commonInfo,
+        { text: '호흡기 검사해볼게요. 청진상 우하부에서 crackles가 들립니다.', speaker: 'doctor' },
+        { text: '흉부 X-ray와 혈액검사 진행하겠습니다.', speaker: 'doctor' },
+        { text: '폐렴이 의심됩니다.', speaker: 'doctor' },
+      ],
+      [
+        { text: '어디가 불편해서 오셨어요?', speaker: 'doctor' },
+        { text: '속이 쓰리고 명치가 아파요. 한 달 전부터요.', speaker: 'patient' },
+        { text: '식사와 관계가 있나요?', speaker: 'doctor' },
+        { text: '공복에 더 심하고 식사하면 좀 나아요.', speaker: 'patient' },
+        { text: '메스꺼움이나 흑색변은요?', speaker: 'doctor' },
+        { text: '메스꺼움은 있고 흑색변은 없어요.', speaker: 'patient' },
+        ...commonInfo,
+        { text: '위내시경 예약하고, 위산억제제 처방하겠습니다.', speaker: 'doctor' },
+        { text: '소화성 궤양이 의심됩니다.', speaker: 'doctor' },
+      ],
+      [
+        { text: '증상이 어떻게 되세요?', speaker: 'doctor' },
+        { text: '머리가 지끈지끈 아프고 빛이 불편해요. 오늘 오전부터요.', speaker: 'patient' },
+        { text: '통증이 한쪽인가요?', speaker: 'doctor' },
+        { text: '네, 오른쪽 머리가 특히 아파요.', speaker: 'patient' },
+        { text: '메스꺼움은요?', speaker: 'doctor' },
+        { text: '있어요.', speaker: 'patient' },
+        ...commonInfo,
+        { text: '진통제 처방하고, 필요하면 뇌 CT 찍겠습니다.', speaker: 'doctor' },
+        { text: '편두통이 의심됩니다.', speaker: 'doctor' },
+      ],
+      [
+        { text: '오늘 어디가 아프세요?', speaker: 'doctor' },
+        { text: '다리가 붓고 숨이 찬 느낌이 있어요. 일주일 전부터요.', speaker: 'patient' },
+        { text: '밤에 누우면 더 숨이 차나요?', speaker: 'doctor' },
+        { text: '네, 눕기가 좀 힘들어요.', speaker: 'patient' },
+        { text: '체중이 늘었나요?', speaker: 'doctor' },
+        { text: '요즘 2킬로 정도 늘었어요.', speaker: 'patient' },
+        ...commonInfo,
+        { text: '흉부 X-ray와 BNP 검사 진행하겠습니다.', speaker: 'doctor' },
+        { text: '심부전이 의심됩니다.', speaker: 'doctor' },
+      ],
     ];
 
     // 초기화
-    setRealtimeSegments([]);
     setChartData(null);
-    setLastAutoUpdateSegmentCount(0);
-    testSegmentsRef.current = [];
-    isGeneratingRef.current = false;
-    pendingUpdateRef.current = false;
+    setFinalTranscript('');
+    setRealtimeSegments([]);
     setIsTestRunning(true);
+    isTestRunningRef.current = true;
     setIsRecording(true);
-    toast.info('🧪 실시간 시뮬레이션 시작', { description: '대화가 하나씩 추가됩니다...' });
+    lastRequestedSegmentCountRef.current = 0;
+    lastAutoUpdateTimeRef.current = 0;
+    toast.info('🧪 실시간 시뮬레이션 시작');
 
-    let currentIndex = 0;
-    let lastUpdateIndex = 0;
+    // AbortController 참조
+    let currentAbortController: AbortController | null = null;
+    const scenario = testScenarios[Math.floor(Math.random() * testScenarios.length)];
 
-    // 차트 생성 함수 (요청 중이면 스킵)
-    const generateChartFromCurrentSegments = async (segments: Segment[], isFinal = false) => {
-      // 이미 요청 중이면 대기 플래그만 설정하고 리턴
-      if (isGeneratingRef.current && !isFinal) {
-        console.log('⏳ 이미 요청 중, 대기 플래그 설정');
-        pendingUpdateRef.current = true;
-        return;
+    // Streaming 차트 생성 함수
+    const generateChartFromCurrentSegments = async (segments: Segment[], fastMode: boolean) => {
+      // 이미 요청 중이면 이전 요청 취소하고 새로 시작
+      if (isGeneratingRef.current && currentAbortController) {
+        console.log('🛑 이전 요청 취소, 새 요청 시작');
+        currentAbortController.abort();
       }
 
       if (segments.length === 0) return;
       
+      // 새 요청 시작 - generation ID 증가
+      generationIdRef.current += 1;
+      const myGenerationId = generationIdRef.current;
+      
       isGeneratingRef.current = true;
-      console.log('🚀 차트 생성 시작 (', segments.length, '개 대화)');
+      currentAbortController = new AbortController();
+      testAbortRef.current = currentAbortController;
+      console.log('🚀 Streaming 차트 생성 시작 (', segments.length, '개 대화, ID:', myGenerationId, ')');
       
       try {
-        const transcriptText = segments.map(s => 
-          `${s.speaker === 'doctor' ? '의사' : '환자'}: ${s.text}`
-        ).join('\n');
+        const segmentsForCorrection = fastMode ? segments.slice(-MAX_CONTEXT_SEGMENTS) : segments;
+        let baseSegments = segmentsForCorrection;
+        if (ENABLE_STT_CORRECTION) {
+          if (fastMode) {
+            const correctionKey = buildSegmentsKey(segmentsForCorrection);
+            if (
+              lastFastCorrectionKeyRef.current === correctionKey &&
+              lastFastCorrectedSegmentsRef.current
+            ) {
+              baseSegments = lastFastCorrectedSegmentsRef.current;
+            } else {
+              baseSegments = await correctSTTErrors(segmentsForCorrection);
+              lastFastCorrectionKeyRef.current = correctionKey;
+              lastFastCorrectedSegmentsRef.current = baseSegments;
+            }
+          } else {
+            baseSegments = await correctSTTErrors(segmentsForCorrection);
+          }
+        }
+        const contextSegments = baseSegments;
+        const transcriptText = contextSegments.map(s => s.text).join(' ');
         
-        const result = await generateChartFromTranscript(
+        // Streaming API 호출 - 완료 시에만 차트 업데이트 (중간 업데이트 끔)
+        bumpPendingApi(1);
+        const result = await generateChartFromTranscriptStreaming(
           transcriptText,
-          segments,
-          chartSettings.selectedDepartment
+          contextSegments,
+          chartSettings.selectedDepartment,
+          (partial) => {
+            setChartData(prevData => mergeChartData(prevData, partial));
+          },
+          currentAbortController.signal,
+          fastMode
         );
         
-        if (result) {
-          setChartData(prevData => {
-            if (!prevData) return result;
-            // 사용자가 직접 수정한 필드(source='user')만 유지, 나머지는 새 데이터로 업데이트
-            const mergedData = { ...result };
-            Object.keys(prevData).forEach(fieldId => {
-              if (prevData[fieldId]?.source === 'user') {
-                // 사용자가 수정한 필드는 유지
-                mergedData[fieldId] = prevData[fieldId];
-              }
-            });
-            return mergedData;
-          });
-          console.log('✅ 차트 업데이트 완료 (', segments.length, '개 대화)');
+        // 최신 요청인 경우에만 완료 로그 (최종 업데이트는 onPartialUpdate에서 처리)
+        if (result && myGenerationId === generationIdRef.current) {
+          console.log('✅ Streaming 차트 완료 (', segments.length, '개 대화, ID:', myGenerationId, ')');
+        } else if (result) {
+          console.log('⏭️ 오래된 요청 결과 무시 (ID:', myGenerationId, '현재:', generationIdRef.current, ')');
         }
       } catch (error) {
-        console.error('❌ 차트 생성 에러:', error);
-      } finally {
-        isGeneratingRef.current = false;
-        
-        // 대기 중인 업데이트가 있으면 최신 데이터로 다시 요청
-        if (pendingUpdateRef.current && testSegmentsRef.current.length > segments.length) {
-          pendingUpdateRef.current = false;
-          console.log('🔄 대기 중인 업데이트 실행');
-          generateChartFromCurrentSegments(testSegmentsRef.current);
+        if ((error as Error).name !== 'AbortError') {
+          console.error('❌ 차트 생성 에러:', error);
         }
+      } finally {
+        bumpPendingApi(-1);
+        isGeneratingRef.current = false;
+        currentAbortController = null;
+        testAbortRef.current = null;
       }
     };
 
@@ -367,40 +660,52 @@ function MainApp() {
       return baseDelay * randomFactor;
     };
 
-    // 대화 하나씩 추가 (setTimeout 체인)
-    const addNextSegment = () => {
-      if (currentIndex >= sampleSegments.length) {
-        // 모든 대화 완료
-        setIsTestRunning(false);
+    setRealtimeSegments([]);
+    setFinalTranscript('');
+    setChartData(null);
+    setLastAutoUpdateSegmentCount(0);
+    testSegmentsRef.current = [];
+    isGeneratingRef.current = false;
+    pendingUpdateRef.current = false;
+    setNewDdxIds(new Set());
+    previousDdxIdsRef.current = new Set();
+    setShowDiagnosisForm(false);
+    setNewDiagnosisInput('');
+    setNewDiagnosisType('ro');
+    lastFastCorrectionKeyRef.current = '';
+    lastFastCorrectedSegmentsRef.current = null;
+    setIsRecording(true);
+
+    let currentIndex = 0;
+
+    const addNextSegment = async () => {
+      if (!isTestRunningRef.current) return;
+      if (currentIndex >= scenario.length) {
         setIsRecording(false);
-        
-        // 최종 차트 생성 (강제)
-        setTimeout(() => {
-          generateChartFromCurrentSegments(testSegmentsRef.current, true);
-          toast.success('🧪 시뮬레이션 완료!');
-        }, 500);
+        setIsGeneratingChart(true);
+        if (streamingAbortRef.current) {
+          streamingAbortRef.current.abort();
+          streamingAbortRef.current = null;
+        }
+        generationIdRef.current += 1;
+        setMobileTab('chart');
+        await generateChartFromCurrentSegments(testSegmentsRef.current, true);
+        setIsGeneratingChart(false);
+        setIsTestRunning(false);
+        isTestRunningRef.current = false;
+        toast.success('🧪 시뮬레이션 완료!');
         return;
       }
 
-      // 대화 추가
-      const newSegment = sampleSegments[currentIndex];
+      const newSegment = scenario[currentIndex];
       testSegmentsRef.current = [...testSegmentsRef.current, newSegment];
       setRealtimeSegments([...testSegmentsRef.current]);
       currentIndex++;
 
-      // 2개마다 차트 업데이트 (더 실시간 느낌)
-      if (currentIndex - lastUpdateIndex >= 2) {
-        lastUpdateIndex = currentIndex;
-        console.log('🔄 중간 차트 업데이트 (', currentIndex, '개 대화)');
-        generateChartFromCurrentSegments([...testSegmentsRef.current]);
-      }
-
-      // 다음 대화 예약 (현재 텍스트 길이에 따른 대기 시간)
       const delay = getDelay(newSegment.text);
       testIntervalRef.current = setTimeout(addNextSegment, delay);
     };
 
-    // 첫 대화 시작
     addNextSegment();
 
   }, [isTestRunning, chartSettings.selectedDepartment]);
@@ -434,6 +739,7 @@ function MainApp() {
       previousDdxIdsRef.current = currentDdxIds;
     }
   }, [chartData?.assessment?.ddxList]);
+
 
   // 탭 전환 시 녹음 중 경고
   useEffect(() => {
@@ -469,56 +775,85 @@ function MainApp() {
   }, [isRemoteRecording]);
 
   // 반실시간 차트 업데이트 트리거 함수
+  // Streaming AbortController 참조
+  const streamingAbortRef = useRef<AbortController | null>(null);
+  const lastAutoUpdateTimeRef = useRef(0);
+
   const triggerAutoChartUpdate = useCallback(async () => {
+    if (isGeneratingChart) return;
     const currentSegmentCount = realtimeSegments.length;
     
     // 최소 3개 이상 발화가 있어야 함
     if (currentSegmentCount < 3) return;
     
-    // 이미 업데이트 중이거나 차트 생성 중이면 건너뜀
-    if (isAutoUpdating || isGeneratingChart) return;
-    
     // 변경사항이 없으면 건너뜀
     if (currentSegmentCount <= lastAutoUpdateSegmentCount) return;
+    if (currentSegmentCount <= lastRequestedSegmentCountRef.current) return;
+    if (isAutoUpdating) return;
 
-    console.log('🔄 반실시간 차트 업데이트 시작...', currentSegmentCount, 'segments');
+    const now = Date.now();
+    if (now - lastAutoUpdateTimeRef.current < 1800) return;
+
+    // 이전 요청 취소
+    if (streamingAbortRef.current) {
+      streamingAbortRef.current.abort();
+    }
+    const abortController = new AbortController();
+    streamingAbortRef.current = abortController;
+
+    // 새 요청 시작 - generation ID 증가
+    generationIdRef.current += 1;
+    const myGenerationId = generationIdRef.current;
+
+    console.log('🚀 Streaming 차트 업데이트 시작... (ID:', myGenerationId, ')');
+    lastRequestedSegmentCountRef.current = currentSegmentCount;
+    lastAutoUpdateTimeRef.current = now;
     setIsAutoUpdating(true);
     
+    bumpPendingApi(1);
     try {
-      // STT 교정 (mini 모델로 빠르게)
-      const correctedSegments = await correctSTTErrors(realtimeSegments);
-      const transcriptText = correctedSegments.map(s => s.text).join(' ');
+      const baseSegments = ENABLE_STT_CORRECTION
+        ? await correctSTTErrors(realtimeSegments)
+        : realtimeSegments;
+      if (baseSegments.length > 0) {
+        const fastSegments = baseSegments.slice(-MAX_CONTEXT_SEGMENTS);
+        lastFastCorrectionKeyRef.current = buildSegmentsKey(fastSegments);
+        lastFastCorrectedSegmentsRef.current = fastSegments;
+      }
+      const contextSegments = baseSegments;
+      const transcriptText = contextSegments.map(s => s.text).join(' ');
       
-      // 차트 생성 (비동기로 진행, UI 차단 방지)
-      const result = await generateChartFromTranscript(
+      // Streaming 차트 생성 - 완료 시에만 업데이트
+      const result = await generateChartFromTranscriptStreaming(
         transcriptText, 
-        correctedSegments, 
-        chartSettings.selectedDepartment
+        contextSegments, 
+        chartSettings.selectedDepartment,
+        (partial) => {
+          setChartData(prevData => mergeChartData(prevData, partial));
+        },
+        abortController.signal,
+        false
       );
       
-      if (result) {
-        // 기존 확정된 필드는 유지하면서 업데이트
-        setChartData(prevData => {
-          if (!prevData) return result;
-          
-          // 사용자가 확정한 필드는 유지
-          const mergedData = { ...result };
-          Object.keys(prevData).forEach(fieldId => {
-            if (prevData[fieldId]?.isConfirmed) {
-              mergedData[fieldId] = prevData[fieldId];
-            }
-          });
-          return mergedData;
-        });
+      // 최신 요청인 경우에만 완료 처리 (최종 업데이트는 onPartialUpdate에서 처리)
+      if (result && myGenerationId === generationIdRef.current) {
         setLastAutoUpdateSegmentCount(currentSegmentCount);
-        console.log('✅ 반실시간 차트 업데이트 완료');
+        console.log('✅ Streaming 차트 업데이트 완료 (ID:', myGenerationId, ')');
+      } else if (result) {
+        console.log('⏭️ 오래된 요청 결과 무시 (ID:', myGenerationId, ')');
       }
     } catch (error) {
-      console.warn('⚠️ 자동 업데이트 실패 (다음 주기에 재시도):', error);
+      if ((error as Error).name !== 'AbortError') {
+        console.warn('⚠️ 자동 업데이트 실패:', error);
+      }
     } finally {
+      bumpPendingApi(-1);
       setIsAutoUpdating(false);
+      if (streamingAbortRef.current === abortController) {
+        streamingAbortRef.current = null;
+      }
     }
-  }, [realtimeSegments, lastAutoUpdateSegmentCount, isAutoUpdating, isGeneratingChart, chartSettings.selectedDepartment]);
+  }, [realtimeSegments, lastAutoUpdateSegmentCount, chartSettings.selectedDepartment, isAutoUpdating, isGeneratingChart, mergeChartData, bumpPendingApi]);
 
   // 발화 멈춤 감지 (5초 동안 새 발화가 없으면 차트 업데이트)
   useEffect(() => {
@@ -529,6 +864,8 @@ function MainApp() {
         setSilenceTimeout(null);
       }
       setLastAutoUpdateSegmentCount(0);
+      lastRequestedSegmentCountRef.current = 0;
+      lastAutoUpdateTimeRef.current = 0;
       setIsAutoUpdating(false);
       return;
     }
@@ -555,6 +892,33 @@ function MainApp() {
       }
     };
   }, [realtimeSegments.length, isRecording, isRemoteRecording]);
+
+  // 빠른 DDx/차트 업데이트 (새 발화 직후 1.2초 디바운스)
+  const rapidUpdateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  useEffect(() => {
+    if (!isRecording && !isRemoteRecording) {
+      if (rapidUpdateTimeoutRef.current) {
+        clearTimeout(rapidUpdateTimeoutRef.current);
+        rapidUpdateTimeoutRef.current = null;
+      }
+      return;
+    }
+
+    if (realtimeSegments.length >= 2) {
+      if (rapidUpdateTimeoutRef.current) {
+        clearTimeout(rapidUpdateTimeoutRef.current);
+      }
+      rapidUpdateTimeoutRef.current = setTimeout(() => {
+        triggerAutoChartUpdate();
+      }, 1200);
+    }
+
+    return () => {
+      if (rapidUpdateTimeoutRef.current) {
+        clearTimeout(rapidUpdateTimeoutRef.current);
+      }
+    };
+  }, [realtimeSegments.length, isRecording, isRemoteRecording, triggerAutoChartUpdate]);
 
   // DDx 확정 (Assessment → Dx로 이동)
   const handleConfirmDdx = useCallback((ddxId: string) => {
@@ -692,28 +1056,6 @@ function MainApp() {
     setNewDiagnosisInput('');
   }, [newDiagnosisInput, newDiagnosisType]);
 
-  // Plan 수정
-  const handlePlanChange = useCallback((value: string) => {
-    setChartData(prev => {
-      if (!prev) return prev;
-      return {
-        ...prev,
-        plan: { ...prev.plan, value, isConfirmed: true }
-      };
-    });
-  }, []);
-
-  // F/U 수정
-  const handleFollowUpChange = useCallback((value: string) => {
-    setChartData(prev => {
-      if (!prev) return prev;
-      return {
-        ...prev,
-        followUp: { ...prev.followUp, value, isConfirmed: true }
-      };
-    });
-  }, []);
-
   // 주기적 차트 업데이트 (15초마다)
   useEffect(() => {
     if (!isRecording && !isRemoteRecording) {
@@ -753,12 +1095,19 @@ function MainApp() {
     setIsRecording(true);
     setChartData(null);
     setRecordingProgress(0);
+    lastRequestedSegmentCountRef.current = 0;
+    lastAutoUpdateTimeRef.current = 0;
     setMobileTab('transcript'); // 녹음 시작 시 실시간 대화 탭으로 전환
   }, []);
 
   const handleProcessingStart = useCallback(() => {
     setIsRecording(false);
     setIsGeneratingChart(true);
+    if (streamingAbortRef.current) {
+      streamingAbortRef.current.abort();
+      streamingAbortRef.current = null;
+    }
+    generationIdRef.current += 1;
     setMobileTab('chart'); // 차트 생성 시작 시 차트 탭으로 전환
   }, []);
 
@@ -783,7 +1132,71 @@ function MainApp() {
     setChartData(null);
     setIsGeneratingChart(false);
     setRecordingProgress(0);
+    lastRequestedSegmentCountRef.current = 0;
+    lastAutoUpdateTimeRef.current = 0;
+    setNewDdxIds(new Set());
+    previousDdxIdsRef.current = new Set();
+    setShowDiagnosisForm(false);
+    setNewDiagnosisInput('');
+    setNewDiagnosisType('ro');
+    lastFastCorrectionKeyRef.current = '';
+    lastFastCorrectedSegmentsRef.current = null;
   }, []);
+
+  const resetAppState = useCallback(() => {
+    if (testIntervalRef.current) {
+      clearTimeout(testIntervalRef.current);
+      testIntervalRef.current = null;
+    }
+    if (testAbortRef.current) {
+      testAbortRef.current.abort();
+      testAbortRef.current = null;
+    }
+    if (streamingAbortRef.current) {
+      streamingAbortRef.current.abort();
+      streamingAbortRef.current = null;
+    }
+    generationIdRef.current += 1;
+    setIsTestRunning(false);
+    isTestRunningRef.current = false;
+    setIsRecording(false);
+    setIsRemoteRecording(false);
+    setIsGeneratingChart(false);
+    setRecordingProgress(0);
+    setRemoteRecordingTime(0);
+    setIsAutoUpdating(false);
+    isGeneratingRef.current = false;
+    pendingUpdateRef.current = false;
+    pendingApiRef.current = 0;
+    setPendingApiCount(0);
+    setRemoteMicOpen(false);
+    handleReset();
+  }, [handleReset]);
+
+  // 페이지 전환 핸들러
+  const handlePageTransition = useCallback((toPage: 'landing' | 'app' | 'demo') => {
+    if (isTransitioning) return;
+    
+    setIsTransitioning(true);
+    setPageAnimation('exit');
+    
+    setTimeout(() => {
+      setCurrentPage(toPage);
+      setPageAnimation('enter');
+      
+      setTimeout(() => {
+        setIsTransitioning(false);
+        setPageAnimation('');
+      }, 500);
+    }, 300);
+  }, [isTransitioning]);
+
+  // PC에서 랜딩으로 돌아가면 상태 초기화
+  useEffect(() => {
+    if (currentPage === 'landing') {
+      resetAppState();
+    }
+  }, [currentPage, resetAppState]);
 
   // 이메일 입력 후 모달 열기
   const handleEmailInputSubmit = (e: React.FormEvent) => {
@@ -946,7 +1359,7 @@ function MainApp() {
     }
 
   return (
-    <div className={`min-h-screen bg-slate-50 flex flex-col ${pageAnimation === 'enter' ? 'page-enter' : pageAnimation === 'exit' ? 'page-exit' : ''}`}>
+    <div className={`h-screen bg-slate-50 flex flex-col ${pageAnimation === 'enter' ? 'page-enter' : pageAnimation === 'exit' ? 'page-exit' : ''}`}>
       <style>{pageTransitionStyles}</style>
       <style>{ddxAnimationStyles}</style>
       {/* Header */}
@@ -973,95 +1386,105 @@ function MainApp() {
       </header>
 
       {/* Main Content */}
-      <main className="flex-1 container mx-auto px-4 py-6">
-        <div className="flex flex-col gap-6">
+      <main className="flex-1 container mx-auto px-4 py-6 overflow-hidden min-h-0">
+        <div className="flex flex-col gap-6 h-full min-h-0">
           {/* Recording Control */}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm px-6 py-5">
             <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
               {/* Recording Section */}
-              <div className="flex items-center gap-4">
-                <VoiceRecorder
-                  onTranscriptUpdate={handleTranscriptUpdate}
-                  onRealtimeSegment={handleRealtimeSegment}
-                  onRealtimeSegmentsUpdate={handleRealtimeSegmentsUpdate}
-                  onFullUpdate={handleFullUpdate}
-                  onRecordingStart={handleRecordingStart}
-                  onProcessingStart={handleProcessingStart}
-                  onRecordingComplete={handleRecordingComplete}
-                  onRecordingProgress={handleRecordingProgress}
-                  department={chartSettings.selectedDepartment}
-                  isRemoteRecording={isRemoteRecording}
-                  remoteRecordingTime={remoteRecordingTime}
-                  isExternalGenerating={isGeneratingChart}
-                />
-                <Button
-                  variant="outline"
-                  size="icon"
-                  onClick={handleReset}
-                  disabled={isRecording || isRemoteRecording || isGeneratingChart}
-                  className="rounded-full h-10 w-10 shrink-0"
-                  title="초기화"
-                >
-                  <RotateCcw className="w-4 h-4" />
-                </Button>
+              <div className="flex flex-col sm:flex-row sm:items-center gap-4 w-full">
+                <div className="flex items-center gap-3 flex-wrap">
+                  <VoiceRecorder
+                    onTranscriptUpdate={handleTranscriptUpdate}
+                    onRealtimeSegment={handleRealtimeSegment}
+                    onRealtimeSegmentsUpdate={handleRealtimeSegmentsUpdate}
+                    onFullUpdate={handleFullUpdate}
+                    onRecordingStart={handleRecordingStart}
+                    onProcessingStart={handleProcessingStart}
+                    onPartialChartUpdate={(partial) => {
+                      setChartData(prevData => mergeChartData(prevData, partial));
+                    }}
+                    onApiStart={() => bumpPendingApi(1)}
+                    onApiEnd={() => bumpPendingApi(-1)}
+                    onRecordingComplete={handleRecordingComplete}
+                    onRecordingProgress={handleRecordingProgress}
+                    department={chartSettings.selectedDepartment}
+                    isRemoteRecording={isRemoteRecording}
+                    remoteRecordingTime={remoteRecordingTime}
+                    isExternalGenerating={isGeneratingChart}
+                  />
 
-                {/* 🧪 테스트 버튼 (개발용) */}
-                <Button
-                  variant="outline"
-                  onClick={handleTestSimulation}
-                  disabled={isRecording && !isTestRunning || isRemoteRecording || isGeneratingChart}
-                  className={`rounded-full h-10 px-4 shrink-0 gap-2 transition-all ${
-                    isTestRunning 
-                      ? 'border-red-400 text-red-600 bg-red-50 hover:bg-red-100' 
-                      : 'border-amber-300 text-amber-700 hover:bg-amber-50'
-                  }`}
-                  title="테스트 시뮬레이션"
-                >
-                  {isTestRunning ? '⏹️ 중지' : '🧪 테스트'}
-                </Button>
-                
-                {/* 휴대폰 마이크 연결 버튼 */}
-                <Button
-                  variant="outline"
-                  onClick={() => setRemoteMicOpen(true)}
-                  disabled={isRecording}
-                  className={`rounded-full h-10 px-4 shrink-0 gap-2 transition-all ${
-                    isRemoteRecording 
-                      ? 'border-red-500 text-red-600 bg-red-50' 
-                      : isRemoteConnected 
-                        ? 'border-green-500 text-green-600 bg-green-50' 
-                        : ''
-                  }`}
-                  title="휴대폰 마이크 연결"
-                >
-                  <Smartphone className="w-4 h-4" />
-                  <span className="text-xs font-medium hidden sm:inline">
-                    {isRemoteRecording ? '녹음 중' : isRemoteConnected ? '연결됨' : '휴대폰 연결'}
-                  </span>
-                  {isRemoteRecording ? (
-                    <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-                  ) : isRemoteConnected ? (
-                    <span className="w-2 h-2 rounded-full bg-green-500" />
-                  ) : null}
-                </Button>
+                  {/* 휴대폰 마이크 연결 버튼 */}
+                  <Button
+                    variant="outline"
+                    onClick={() => setRemoteMicOpen(true)}
+                    disabled={isRecording}
+                    className={`rounded-full h-9 px-3 shrink-0 gap-2 text-xs transition-all ${
+                      isRemoteRecording 
+                        ? 'border-red-500 text-red-600 bg-red-50' 
+                        : isRemoteConnected 
+                          ? 'border-green-500 text-green-600 bg-green-50' 
+                          : ''
+                    }`}
+                    title="휴대폰 마이크 연결"
+                  >
+                    <Smartphone className="w-4 h-4" />
+                    <span className="font-medium hidden sm:inline">
+                      {isRemoteRecording ? '녹음 중' : isRemoteConnected ? '연결됨' : '휴대폰 연결'}
+                    </span>
+                    {isRemoteRecording ? (
+                      <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                    ) : isRemoteConnected ? (
+                      <span className="w-2 h-2 rounded-full bg-green-500" />
+                    ) : null}
+                  </Button>
                 </div>
+
+                <div className="flex items-center gap-2 sm:ml-auto">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={handleReset}
+                    disabled={isRecording || isRemoteRecording || isGeneratingChart}
+                    className="h-9 w-9 shrink-0 text-slate-500 hover:text-slate-700 hover:bg-slate-100"
+                    title="초기화"
+                  >
+                    <RotateCcw className="w-4 h-4" />
+                  </Button>
+
+                  {/* 🧪 테스트 버튼 (개발용) */}
+                  <Button
+                    onClick={handleTestSimulation}
+                    disabled={isRecording && !isTestRunning || isRemoteRecording || isGeneratingChart}
+                    className={`h-9 px-3 shrink-0 gap-2 text-xs rounded-full border transition-all ${
+                      isTestRunning 
+                        ? 'bg-slate-900 text-white border-slate-900 hover:bg-slate-800' 
+                        : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'
+                    }`}
+                    title="데모"
+                  >
+                    {isTestRunning ? <Square className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+                    {isTestRunning ? '중지' : '데모'}
+                  </Button>
+                </div>
+              </div>
 
               {/* Usage Guide - Right aligned */}
               <div className="hidden md:flex items-center">
-                <div className="flex items-center bg-slate-50 rounded-full px-1.5 py-1.5 border border-slate-200">
+                <div className="flex items-center flex-nowrap bg-slate-50 rounded-full px-1.5 py-1.5 border border-slate-200">
                   <div className="flex items-center gap-2 px-3 py-1">
                     <div className="w-5 h-5 rounded-full bg-teal-500 text-white flex items-center justify-center text-xs font-bold">1</div>
-                    <span className="text-xs font-medium text-slate-600">녹음</span>
+                    <span className="text-xs font-medium text-slate-600 whitespace-nowrap">녹음</span>
                   </div>
                   <ChevronRight className="w-3.5 h-3.5 text-slate-300" />
                   <div className="flex items-center gap-2 px-3 py-1">
                     <div className="w-5 h-5 rounded-full bg-cyan-500 text-white flex items-center justify-center text-xs font-bold">2</div>
-                    <span className="text-xs font-medium text-slate-600">변환</span>
+                    <span className="text-xs font-medium text-slate-600 whitespace-nowrap">변환</span>
                   </div>
                   <ChevronRight className="w-3.5 h-3.5 text-slate-300" />
                   <div className="flex items-center gap-2 px-3 py-1">
                     <div className="w-5 h-5 rounded-full bg-blue-500 text-white flex items-center justify-center text-xs font-bold">3</div>
-                    <span className="text-xs font-medium text-slate-600">차트</span>
+                    <span className="text-xs font-medium text-slate-600 whitespace-nowrap">차트</span>
                   </div>
                 </div>
               </div>
@@ -1069,9 +1492,9 @@ function MainApp() {
           </div>
 
           {/* Desktop: 3-Column Layout */}
-          <div className="hidden lg:flex gap-4 h-[600px]">
+          <div className="hidden lg:flex gap-4 flex-1 min-h-0">
             {/* 좌측: 대화창 (접을 수 있음) */}
-            <div className={`transition-all duration-300 ${isTranscriptCollapsed ? 'w-12' : 'w-[280px]'} flex-none`}>
+            <div className={`transition-all duration-300 ${isTranscriptCollapsed ? 'w-12' : 'w-[280px]'} flex-none h-full`}>
               {isTranscriptCollapsed ? (
                 <div className="h-full bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col items-center py-4">
                   <button
@@ -1099,7 +1522,7 @@ function MainApp() {
             </div>
 
             {/* 중앙: AI 차트 (S/O 필드) */}
-            <div className="flex-1 min-w-0">
+            <div className="flex-1 min-w-0 min-h-0">
               <ChartingResult
                 chartData={chartData}
                 isRecording={isRecording || isRemoteRecording}
@@ -1109,24 +1532,24 @@ function MainApp() {
               />
             </div>
 
-            {/* 우측: A/P 패널 (고정) */}
-            <div className="w-[320px] flex-none flex flex-col bg-gradient-to-br from-teal-50 to-cyan-50 rounded-2xl border-2 border-teal-200 shadow-sm overflow-hidden">
-              {/* A/P Header */}
+            {/* 우측: DDx 추천 패널 (고정) */}
+            <div className="w-[320px] flex-none flex flex-col h-full bg-gradient-to-br from-teal-50 to-cyan-50 rounded-2xl border-2 border-teal-200 shadow-sm overflow-hidden">
+              {/* DDx Header */}
               <div className="flex-none px-4 py-3 border-b border-teal-200 bg-white/50">
                 <div className="flex items-center gap-2">
                   <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-teal-500 to-cyan-500 flex items-center justify-center">
                     <Target className="w-4 h-4 text-white" />
                   </div>
                   <div>
-                    <h3 className="font-bold text-sm text-teal-800">Assessment & Plan</h3>
+                    <h3 className="font-bold text-sm text-teal-800">DDx 추천</h3>
                     <p className="text-[10px] text-teal-600">
-                      {(isRecording || isRemoteRecording) ? '실시간 업데이트' : '진단 및 계획'}
+                      {(isRecording || isRemoteRecording) ? '실시간 업데이트' : '감별진단'}
                     </p>
                   </div>
                 </div>
               </div>
 
-              {/* A/P Content */}
+              {/* DDx Content */}
               <div className="flex-1 overflow-y-auto p-3 flex flex-col"
                 style={{ gap: chartData || isRecording || isRemoteRecording ? '0.75rem' : '0' }}>
                 
@@ -1355,33 +1778,6 @@ function MainApp() {
                   </div>
                 )}
 
-                {/* Plan (수정 가능) - 녹음 끝난 후에만 */}
-                {!isRecording && !isRemoteRecording && chartData && (
-                  <div className="bg-white rounded-xl p-3 border border-slate-200">
-                    <div className="text-[10px] font-bold text-slate-500 mb-1.5">Plan</div>
-                    <textarea
-                      value={typeof chartData?.plan?.value === 'string' ? chartData.plan.value : ''}
-                      onChange={(e) => handlePlanChange(e.target.value)}
-                      placeholder="치료 계획을 입력하세요"
-                      className="w-full text-sm text-slate-700 bg-slate-50 border border-slate-200 rounded-lg p-2 min-h-[60px] resize-none focus:outline-none focus:ring-1 focus:ring-teal-500"
-                    />
-                  </div>
-                )}
-
-                {/* F/U (수정 가능) - 녹음 끝난 후에만 */}
-                {!isRecording && !isRemoteRecording && chartData && (
-                  <div className="bg-white rounded-xl p-3 border border-slate-200">
-                    <div className="text-[10px] font-bold text-slate-500 mb-1.5">F/U</div>
-                    <input
-                      type="text"
-                      value={typeof chartData?.followUp?.value === 'string' ? chartData.followUp.value : ''}
-                      onChange={(e) => handleFollowUpChange(e.target.value)}
-                      placeholder="f/u 1wk"
-                      className="w-full text-sm text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-teal-500"
-                    />
-                  </div>
-                )}
-
                 {/* 녹음 중 - DDx 분석 중 애니메이션 */}
                 {(isRecording || isRemoteRecording) && (!chartData?.assessment?.ddxList || chartData.assessment.ddxList.filter(d => !d.isRemoved).length === 0) && (
                   <div className="flex-1 flex flex-col items-center justify-center text-center">
@@ -1409,7 +1805,7 @@ function MainApp() {
           </div>
 
           {/* Mobile: Tab + Bottom A/P Panel */}
-          <div className="lg:hidden flex flex-col">
+          <div className="lg:hidden flex flex-col flex-1 min-h-0">
             {/* Tab Switcher */}
             <div className="flex gap-2 bg-white rounded-xl border border-slate-200 p-1.5 mb-4">
               <button
@@ -1440,14 +1836,15 @@ function MainApp() {
             </div>
 
             {/* Tab Content */}
-            <div className={`${isMobileAPExpanded ? 'h-[200px]' : 'h-[350px]'} transition-all duration-300`}>
-              {mobileTab === 'transcript' ? (
+            <div className="flex-1 min-h-0 transition-all duration-300">
+              <div className={`${mobileTab === 'transcript' ? 'block' : 'hidden'} h-full`}>
                 <TranscriptViewer
                   finalTranscript={finalTranscript}
                   isRecording={isRecording || isRemoteRecording}
                   realtimeSegments={realtimeSegments}
                 />
-              ) : (
+              </div>
+              <div className={`${mobileTab === 'chart' ? 'block' : 'hidden'} h-full`}>
                 <ChartingResult
                   chartData={chartData}
                   isRecording={isRecording || isRemoteRecording}
@@ -1455,10 +1852,10 @@ function MainApp() {
                   department={chartSettings.selectedDepartment}
                   activeFields={chartSettings.activeFields}
                 />
-              )}
+              </div>
             </div>
 
-            {/* Bottom A/P Panel */}
+            {/* Bottom DDx Panel */}
             <div className={`mt-4 bg-gradient-to-r from-teal-500 to-cyan-500 rounded-2xl shadow-lg overflow-hidden transition-all duration-300 ${
               isMobileAPExpanded ? 'h-[280px]' : 'h-14'
             }`}>
@@ -1469,10 +1866,10 @@ function MainApp() {
                 <div className="flex items-center gap-3">
                   <Target className="w-5 h-5" />
                   <div className="text-left">
-                    <div className="text-sm font-semibold">Assessment & Plan</div>
+                    <div className="text-sm font-semibold">DDx 추천</div>
                     {!isMobileAPExpanded && chartData?.assessment?.ddxList && (
                       <div className="text-[10px] opacity-80">
-                        DDx {chartData.assessment.ddxList.filter(d => !d.isRemoved).length}개
+                        {chartData.assessment.ddxList.filter(d => !d.isRemoved).length}개 추천
                       </div>
                     )}
                   </div>
@@ -1482,7 +1879,7 @@ function MainApp() {
               
               {isMobileAPExpanded && (
                 <div className="h-[calc(100%-56px)] bg-white/95 overflow-y-auto p-3">
-                  {/* A/P 내용 미리보기 */}
+                  {/* DDx 내용 */}
                   <div className="space-y-2 text-sm">
                     {chartData?.diagnosisConfirmed?.value && (
                       <div className="p-2 bg-teal-100 rounded-lg">
@@ -1754,6 +2151,8 @@ function MainApp() {
           setIsRemoteRecording(true);
           setChartData(null);
           setRecordingProgress(0);
+          lastRequestedSegmentCountRef.current = 0;
+          lastAutoUpdateTimeRef.current = 0;
           setMobileTab('transcript');
         }}
         onRemoteRecordingStop={async () => {
@@ -1765,34 +2164,61 @@ function MainApp() {
           const utterances = realtimeSegments.map(s => s.text);
           if (utterances.length > 0) {
             try {
+              bumpPendingApi(1);
               console.log('[Remote] Final GPT classification for', utterances.length, 'utterances');
               
               // 1. 최종 GPT 분류 (pending 상태 해소)
               const classifiedSegments = await classifyUtterancesWithGPT(utterances);
               console.log('[Remote] Classified segments:', classifiedSegments.length);
-              
-              // 2. STT 오류 교정 (의학 용어 등)
-              console.log('[Remote] Correcting STT errors...');
-              const correctedSegments = await correctSTTErrors(classifiedSegments);
-              
-              // 3. 교정된 세그먼트로 UI 업데이트
-              setRealtimeSegments(correctedSegments);
-              
-              // 4. 차트 생성
-              const transcriptText = correctedSegments.map(s => s.text).join(' ');
-              console.log('[Remote] Generating chart from corrected segments');
-              const result = await generateChartFromTranscript(
-                transcriptText, 
-                correctedSegments, 
-                chartSettings.selectedDepartment
-              );
-              if (result) {
-                setChartData(result);
-                toast.success('차트가 생성되었습니다');
+              setRealtimeSegments(classifiedSegments);
+
+              const segmentsForFast = classifiedSegments.slice(-MAX_CONTEXT_SEGMENTS);
+              let fastCorrectedSegments = segmentsForFast;
+              if (ENABLE_STT_CORRECTION) {
+                const correctionKey = buildSegmentsKey(segmentsForFast);
+                if (
+                  lastFastCorrectionKeyRef.current === correctionKey &&
+                  lastFastCorrectedSegmentsRef.current
+                ) {
+                  fastCorrectedSegments = lastFastCorrectedSegmentsRef.current;
+                } else {
+                  fastCorrectedSegments = await correctSTTErrors(segmentsForFast);
+                  lastFastCorrectionKeyRef.current = correctionKey;
+                  lastFastCorrectedSegmentsRef.current = fastCorrectedSegments;
+                }
+
+                void correctSTTErrors(classifiedSegments)
+                  .then((fullyCorrected) => {
+                    setRealtimeSegments(fullyCorrected);
+                    const fastSegments = fullyCorrected.slice(-MAX_CONTEXT_SEGMENTS);
+                    lastFastCorrectionKeyRef.current = buildSegmentsKey(fastSegments);
+                    lastFastCorrectedSegmentsRef.current = fastSegments;
+                  })
+                  .catch((error) => {
+                    console.warn('[Remote] STT correction (background) failed:', error);
+                  });
               }
+              
+              // 4. Streaming 차트 생성 - onPartialUpdate로만 반영
+              const contextSegments = fastCorrectedSegments;
+              const transcriptText = contextSegments.map(s => s.text).join(' ');
+              console.log('[Remote] Streaming chart generation...');
+              await generateChartFromTranscriptStreaming(
+                transcriptText, 
+                contextSegments, 
+                chartSettings.selectedDepartment,
+                (partial) => {
+                  setChartData(prevData => mergeChartData(prevData, partial));
+                },
+                undefined,
+                true
+              );
+              toast.success('차트가 생성되었습니다');
             } catch (error) {
               console.error('Remote chart generation error:', error);
               toast.error('차트 생성 중 오류가 발생했습니다');
+            } finally {
+              bumpPendingApi(-1);
             }
           }
           setIsGeneratingChart(false);

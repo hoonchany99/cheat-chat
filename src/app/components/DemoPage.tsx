@@ -251,24 +251,6 @@ const DEPARTMENT_CHARTS: Record<string, {
       plan: { value: '1. → Arthroscopic meniscectomy\n2. Celebrex 200mg bid x2wk\n3. PT post-op', isConfirmed: false },
     },
   },
-  dermatology: {
-    fields: [
-      { id: 'cc', label: 'C.C.' },
-      { id: 'lesion', label: 'Lesion' },
-      { id: 'duration', label: 'Duration' },
-      { id: 'symptoms', label: 'Sx' },
-      { id: 'assessment', label: 'A' },
-      { id: 'plan', label: 'P' },
-    ],
-    data: {
-      cc: { value: '팔 발진 2주', isConfirmed: true },
-      lesion: { value: 'Erythematous scaly plaques, well-demarcated, 3x4cm @ Rt. forearm', isConfirmed: true },
-      duration: { value: '2wk onset, progressive spreading', isConfirmed: true },
-      symptoms: { value: 'Pruritus(+), pain(-), burning(-)', isConfirmed: true },
-      assessment: { value: 'DDx: Psoriasis vs Nummular eczema', isConfirmed: false },
-      plan: { value: '1. Clobetasol 0.05% bid x2wk\n2. Emollient prn\n3. f/u 2wk ± biopsy', isConfirmed: false },
-    },
-  },
   psychiatry: {
     fields: [
       { id: 'cc', label: 'C.C.' },

@@ -76,7 +76,6 @@ const SPECIALTY_OPTIONS = [
   { group: '기타 진료과', items: [
     { value: 'pediatrics', label: '소아청소년과' },
     { value: 'psychiatry', label: '정신건강의학과' },
-    { value: 'dermatology', label: '피부과' },
     { value: 'ophthalmology', label: '안과' },
     { value: 'ent', label: '이비인후과' },
     { value: 'family', label: '가정의학과' },

@@ -183,6 +183,7 @@ GOOD:
 
 === PE RULES (CRITICAL) ===
 - If PE not performed: write "None"
+- If ANY PE findings are mentioned, PE must be filled (NEVER "None")
 - If PE performed: document ALL findings with (+/-)
 - For positive findings: include location/extent/side
 GOOD:
@@ -232,6 +233,7 @@ RULES:
 
 === PLAN RULES (STRICT) ===
 - Write ONLY explicit orders that the doctor actually stated.
+- NEVER substitute or "upgrade" orders (e.g., CT -> US). Use exact tests/meds mentioned.
 - If NO orders were mentioned, leave Plan EMPTY.
 - No explanatory sentences. Orders only.
 - AI suggestions: include reason in parentheses, max 1-2 lines
@@ -316,47 +318,13 @@ INTERNAL MEDICINE EMPHASIS:
 - Use cautious language: "r/o", "DDx", "c/w" as appropriate.
 `.trim(),
   },
-  {
-    id: 'dermatology',
-    name: '피부과',
-    fields: [
-      { id: 'chiefComplaint', name: '주호소', nameEn: 'CC', type: 'textarea', required: true, description: '한국어. 환자 표현 + (onset: 시점).' },
-      { id: 'historyOfPresentIllness', name: '현병력', nameEn: 'PI', type: 'textarea', required: true, description: '"상환은" + "~함 체". 3-6문장. 발생시기/경과/악화요인.' },
-      { id: 'lesionDescription', name: '병변 기술', nameEn: 'Lesion', type: 'textarea', required: false, description: 'ENGLISH. Morphology/distribution mentioned only. No guessing.' },
-      { id: 'pertinentROS', name: '관련 증상', nameEn: 'ROS (+/-)', type: 'textarea', required: false, description: 'ENGLISH (+/-). pruritus(+), pain(-), oozing(-), fever(-) etc.' },
-      { id: 'pastMedicalHistory', name: '과거력', nameEn: 'Past History', type: 'tags', required: false, description: 'ENGLISH abbrev. atopic derm, eczema + duration if mentioned.' },
-      { id: 'medications', name: '복용약', nameEn: 'Meds', type: 'tags', required: false, description: 'ENGLISH. Mentioned meds only.' },
-      { id: 'allergies', name: '알레르기', nameEn: 'Allergies', type: 'tags', required: false, description: 'ENGLISH. "None" if no allergies (NOT NKDA).' },
-      { id: 'physicalExam', name: '진찰소견', nameEn: 'PE', type: 'textarea', required: false, description: 'ENGLISH (+/-). "None" if not examined, otherwise full findings.' },
-      { id: 'assessment', name: '평가', nameEn: 'Assessment', type: 'textarea', required: true, description: '# 확정Dx + r/o DDx만. Summary 금지. AI는 # 금지.' },
-      { id: 'diagnosisConfirmed', name: '확정 진단', nameEn: 'Dx (stated)', type: 'tags', required: false, description: 'ENGLISH. DDx 확정 시 # 붙여서 표시.' },
-      { id: 'plan', name: '계획', nameEn: 'Plan', type: 'textarea', required: true, description: 'ENGLISH orders. [Orders] + [AI Suggestions] (근거 포함, 0-2줄).' },
-      { id: 'followUp', name: '추적관찰', nameEn: 'F/U', type: 'textarea', required: false, description: '구체적 f/u만. 없으면 비움.' },
-      { id: 'notes', name: '기타', nameEn: 'Notes', type: 'textarea', required: false, description: 'Notes.' },
-    ],
-    promptContext: `
-${BASE_CHARTING_STYLE}
-
-DERM NOTES:
-- Do not hallucinate morphology. Only document what is described.
-- If the provider names a diagnosis, put it into diagnosisConfirmed (ENGLISH).
-- AI DDx goes to Assessment via ddxList array. Do NOT generate diagnosisInferred.
-- PI must use "상환은" + "~함 체" style (상환은 ~호소함, 발생함, 있었음).
-`.trim(),
-  },
-  {
-    id: 'custom',
-    name: '커스텀',
-    fields: DEFAULT_FIELDS,
-    promptContext: BASE_CHARTING_STYLE,
-  },
 ];
 
 // ==================== 기본 설정 ====================
 
 export const DEFAULT_CHART_SETTINGS: ChartSettings = {
-  selectedDepartment: 'general',
-  activeFields: [...DEFAULT_FIELDS],
+  selectedDepartment: 'internal',
+  activeFields: [...(DEPARTMENT_PRESETS.find(p => p.id === 'internal')?.fields ?? DEFAULT_FIELDS)],
   customFields: [],
   additionalPrompt: '',
   includeSOAP: true,
@@ -375,6 +343,11 @@ export function loadChartSettings(): ChartSettings {
   if (saved) {
     try {
       const parsed = JSON.parse(saved);
+      const validPreset = DEPARTMENT_PRESETS.find(p => p.id === parsed.selectedDepartment);
+      if (!validPreset) {
+        parsed.selectedDepartment = DEFAULT_CHART_SETTINGS.selectedDepartment;
+        parsed.activeFields = getFieldsForDepartment(parsed.selectedDepartment);
+      }
       if (!parsed.activeFields || parsed.activeFields.length === 0) {
         const preset = DEPARTMENT_PRESETS.find(p => p.id === parsed.selectedDepartment);
         parsed.activeFields = preset ? [...preset.fields] : [...DEFAULT_FIELDS];
@@ -425,8 +398,22 @@ function hasValue(value: string | string[]): boolean {
   return value.trim().length > 0;
 }
 
+// 값을 안전하게 문자열로 변환 (객체는 빈 문자열)
+function safeString(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  // 객체나 배열은 빈 문자열 반환 (절대 [object Object] 안 나오게)
+  return '';
+}
+
 function normalizeArrayValue(value: unknown): string[] {
-  if (Array.isArray(value)) return value.map(v => String(v)).map(v => v.trim()).filter(Boolean);
+  if (Array.isArray(value)) {
+    return value
+      .map(v => safeString(v))  // 객체면 빈 문자열
+      .map(v => v.trim())
+      .filter(Boolean);  // 빈 문자열 제거
+  }
   if (typeof value === 'string') {
     const parts = value.split('\n').map(s => s.trim()).filter(Boolean);
     if (parts.length > 1) return parts;
@@ -436,7 +423,13 @@ function normalizeArrayValue(value: unknown): string[] {
 }
 
 function normalizeEvidence(value: unknown): string[] {
-  if (Array.isArray(value)) return value.map(v => String(v)).map(v => v.trim()).filter(Boolean).slice(0, 2);
+  if (Array.isArray(value)) {
+    return value
+      .map(v => safeString(v))
+      .map(v => v.trim())
+      .filter(Boolean)
+      .slice(0, 2);
+  }
   if (typeof value === 'string') {
     const parts = value.split('\n').map(s => s.trim()).filter(Boolean);
     return parts.slice(0, 2);
@@ -449,6 +442,78 @@ function normalizeConfidence(value: unknown): 'low' | 'medium' | 'high' {
   if (v === 'high' || v === 'medium' || v === 'low') return v;
   if (v === 'mid') return 'medium'; // 모델이 "mid" 반환할 경우 처리
   return 'low';
+}
+
+function hasAnyKeyword(text: string, keywords: string[]): boolean {
+  const lower = text.toLowerCase();
+  return keywords.some(k => lower.includes(k));
+}
+
+function hasAnyPattern(text: string, patterns: RegExp[]): boolean {
+  return patterns.some(p => p.test(text));
+}
+
+function sanitizeChartData(
+  chartData: GeneratedChart,
+  conversation: string,
+  fields?: ChartField[]
+): GeneratedChart {
+  if (!conversation) return chartData;
+
+  const allowSocialHistory = hasAnyPattern(conversation, [
+    /\bsmok(ing|er)?\b/i,
+    /\btobacco\b/i,
+    /\bcigarette(s)?\b/i,
+    /\bnicotine\b/i,
+    /\balcohol\b/i,
+    /\bdrink(s|ing)?\b/i,
+    /\bbeer\b/i,
+    /\bsoju\b/i,
+    /담배/,
+    /흡연/,
+    /음주/,
+    /소주/,
+    /맥주/,
+    /술(을|은|이|도|만|좀|가끔|자주|전혀|안|못|해서|마신|마셨|마셔|마시)/,
+    /술\s*(한|마신|마셨|마시|가끔)/,
+  ]);
+  const allowFamilyHistory = hasAnyPattern(conversation, [
+    /\bfamily history\b/i,
+    /\bfamily\b/i,
+    /\bfather\b/i,
+    /\bmother\b/i,
+    /\bparent\b/i,
+    /가족력/,
+    /가족\s*중/,
+    /아버지|어머니|부모/,
+  ]);
+
+  const hasSocialField = !fields || fields.some(f => f.id === 'socialHistory');
+  const hasFamilyField = !fields || fields.some(f => f.id === 'familyHistory');
+
+  if (!allowSocialHistory && hasSocialField) {
+    chartData.socialHistory = {
+      value: '',
+      isConfirmed: false,
+      source: 'stated',
+      confidence: 'low',
+      rationale: '',
+      evidence: [],
+    };
+  }
+
+  if (!allowFamilyHistory && hasFamilyField) {
+    chartData.familyHistory = {
+      value: '',
+      isConfirmed: false,
+      source: 'stated',
+      confidence: 'low',
+      rationale: '',
+      evidence: [],
+    };
+  }
+
+  return chartData;
 }
 
 // STT 오류 교정 함수 (UI 업데이트용으로 분리)
@@ -507,7 +572,7 @@ export async function correctSTTErrors(segments: SpeakerSegment[]): Promise<Spea
             content: rawConversation
           }
         ],
-        max_tokens: 2000,
+        max_tokens: fastMode ? 1500 : 3200,
         temperature: 0.1,
       }),
     });
@@ -750,10 +815,14 @@ FIELD-BY-FIELD RULES:
   - 함 → (+)
   - 가끔/특이사항 → 환자 표현 그대로! 예: Alcohol(가끔 한 잔 정도), Smoking(예전에 피웠다가 끊음)
 - FHx: 한국식 (부: DM, HTN / 모: 특이사항 없음)
+- SHx/FHx: 대화에서 명시된 경우만 작성. 기본값/추정 금지.
+- SHx/FHx: 대화에서 명시된 경우만 작성. 기본값/추정 금지.
 - VS: 측정된 모든 값 (BP, HR, BT, RR, SpO2)
 - PE: 
   - 안 했으면 "None"
   - 했으면 실제 소견 기록! (예: "Neuro: no focal deficit")
+  - 진찰 소견이 하나라도 있으면 PE는 절대 "None"이 될 수 없음
+  - 진찰 소견이 하나라도 있으면 PE는 절대 "None"이 될 수 없음
 - Labs: 검사 결과 (결과 없으면 비워둠)
 - Imaging: 영상 결과/소견 (결과 없으면 비워둠)
 - Assessment:
@@ -767,6 +836,7 @@ FIELD-BY-FIELD RULES:
   - 검사 오더: CBC, BMP, Brain CT 등
   - 약 처방/변경: Increase amlodipine, Acetaminophen PRN 등
   - 상담/교육: 등
+  - 반드시 의사가 말한 오더 그대로 기입 (CT를 US로 바꾸는 등 금지)
   ⚠️ Plan에 "f/u 1wk", "외래 예약" 등 F/U 내용 넣지 말 것!
 - F/U: 구체적 f/u만 (예: "f/u 1wk") - Plan과 완전 분리!
 
@@ -778,7 +848,7 @@ ASSESSMENT FORMAT:
 ${conversation}`
           }
         ],
-        max_tokens: 3200,
+        max_tokens: fastMode ? 1500 : 3200,
         temperature: 0.2,
       }),
     });
@@ -955,7 +1025,7 @@ ${conversation}`
       console.log(`   ✓ 확실(isConfirmed=true) (${confirmedFields.length}개): ${confirmedFields.join(', ') || '없음'}`);
       console.log(`   ⚠ AI추론(source=inferred) (${inferredFields.length}개): ${inferredFields.join(', ') || '없음'}`);
 
-      return chartData;
+      return sanitizeChartData(chartData, conversation, allFields);
     } catch (parseError) {
       console.error('❌ JSON 파싱 오류:', parseError, content);
       return null;
@@ -991,5 +1061,491 @@ export async function generateChartFromTranscript(
 
   return generateChart(useSegments, settings);
 }
+
+// Streaming 차트 생성 함수
+export async function generateChartFromTranscriptStreaming(
+  transcript: string,
+  segments: SpeakerSegment[],
+  department: string = 'internal',
+  onPartialUpdate: (partialChart: GeneratedChart) => void,
+  abortSignal?: AbortSignal,
+  fastMode: boolean = false
+): Promise<GeneratedChart | null> {
+  if (!OPENAI_API_KEY) {
+    console.error('❌ OPENAI_API_KEY가 설정되지 않았습니다.');
+    return null;
+  }
+
+  const settings: ChartSettings = {
+    ...DEFAULT_CHART_SETTINGS,
+    selectedDepartment: department,
+    activeFields: getFieldsForDepartment(department),
+  };
+
+  const useSegments = segments.length > 0 ? segments : [{ speaker: 'patient' as const, text: transcript }];
+
+  // 대화 내용 구성
+  const conversation = useSegments
+    .filter(s => s.speaker !== 'pending')
+    .map((s, idx) => `${idx + 1}. ${s.speaker === 'doctor' ? '의사' : '환자'}: ${s.text}`)
+    .join('\n');
+
+  if (!conversation.trim()) {
+    console.error('❌ 대화 내용이 없습니다.');
+    return null;
+  }
+
+  const preset = DEPARTMENT_PRESETS.find(p => p.id === settings.selectedDepartment) || DEPARTMENT_PRESETS[0];
+  const allFields = settings.activeFields && settings.activeFields.length > 0
+    ? settings.activeFields
+    : preset.fields;
+
+  // JSON 스키마 생성 (기존과 동일)
+  const jsonSchema: Record<string, any> = {};
+  allFields.forEach(field => {
+    const isArray = field.type === 'tags' || field.type === 'list';
+    const baseSchema = {
+      value: isArray ? [] : '',
+      isConfirmed: false,
+      source: 'stated',
+      confidence: 'low',
+      rationale: '',
+      evidence: [],
+    };
+
+    if (field.id === 'assessment') {
+      jsonSchema[field.id] = {
+        ...baseSchema,
+        ddxList: [
+          {
+            id: "ddx_1",
+            diagnosis: "Diagnosis name in English",
+            reason: "Brief reason for this DDx",
+            confidence: "high|medium|low",
+            isConfirmed: false,
+            isRemoved: false,
+            source: "doctor|ai"
+          }
+        ]
+      };
+    } else {
+      jsonSchema[field.id] = baseSchema;
+    }
+  });
+
+  // 필드 설명 생성
+  const fieldDescriptions = allFields.map(f => {
+    const langHint = f.description || '';
+    return `- ${f.nameEn || f.name}: ${langHint}`;
+  }).join('\n');
+
+  // 시스템 프롬프트 (기존 generateChart와 동일한 상세 규칙 사용)
+  const systemPrompt = `
+You are an experienced ${preset.name !== '일반' ? preset.name : 'physician'} documenting a Korean hospital outpatient EMR note.
+
+${preset.promptContext || ''}
+
+=== HARD LANGUAGE RULES (MOST IMPORTANT) ===
+- CC: KOREAN (patient's exact wording) + (onset: 시점) if mentioned
+- PI: KOREAN "~함 체" narrative (호소함, 발생함, 있었음) - Use "상환은" (NOT "환자는" or patient name)
+- PMH: English abbreviations + duration (DM (since childhood), HTN (x3y))
+- Allergies: "None" if no allergies (NOT "NKDA")
+- SHx: English (+/-) - Smoking (-), Alcohol (-)
+- FHx: Korean style - 부: DM, 모: 특이사항 없음
+- PE: "None" if not performed, otherwise FULL (+/-) documentation
+- Assessment/DDx/Dx/Plan: MEDICAL ENGLISH (no Korean diagnoses)
+- Do NOT translate diagnoses into Korean.
+
+=== HARD ASSESSMENT RULES (CRITICAL) ===
+Assessment contains ONLY:
+1. # Confirmed Dx (ONLY if doctor explicitly stated)
+2. r/o DDx list (via ddxList array)
+
+NO Summary, NO Provider Impression, NO explanations.
+- assessment.value = "#" + confirmed diagnosis (or EMPTY if none)
+- assessment.ddxList = array of r/o items
+- AI can NEVER add "#" - only for doctor-confirmed diagnoses
+
+=== HARD DDx RULES ===
+- DDx: Max 2-3 items. Each goes into assessment.ddxList array.
+- Each item: {id, diagnosis, reason, confidence, isConfirmed: false, isRemoved: false, source: "doctor"|"ai"}
+  - source: "doctor" = 의사가 "의심된다/것 같다"고 언급한 진단
+  - source: "ai" = AI가 대화 분석해서 추천 (의사가 언급 안 한 것만)
+- Avoid vague terms (e.g., "cardiac problem", "brain issue").
+
+=== HARD PLAN RULES ===
+- Orders in ENGLISH.
+- AI suggestions: Include reason in parentheses. Max 1-2 lines.
+- Example: "Blood glucose check (LOC + DM history)"
+- No explanatory sentences.
+⚠️ Plan에 F/U 내용 절대 포함 금지! (f/u 1wk, 외래 예약 등 → F/U 필드로!)
+
+=== HARD F/U RULE ===
+- F/U 내용은 F/U 필드에만! Plan에 넣지 말 것!
+- Leave empty if not discussed.
+- No generic statements like "검사 결과에 따라 f/u".
+
+=== FORMATTING ===
+- Bullets must have blank line between items.
+
+FIELDS TO FILL:
+${fieldDescriptions}
+
+RECORD vs AI INFERENCE:
+- 차트는 기본적으로 "기록"임. 대화에서 나온 내용은 모두 isConfirmed=true, source="stated"
+- AI 추론은 DDx 추천과 Plan 추천만 해당
+
+RULES:
+- CC, PI, ROS, PMH, Meds, Allergies, SHx, FHx, VS, PE, Labs, Imaging:
+  - 대화에서 언급된 내용 → isConfirmed=true, source="stated"
+  - 언급 안됨 → 비워둠 ("" or [])
+- Assessment:
+  - assessment.value = "# Dx" (의사가 확정한 경우만: "~입니다", "~이에요")
+  - assessment.ddxList = 두 종류:
+    1. source: "doctor" = 의사가 언급한 r/o ("의심된다", "것 같다")
+    2. source: "ai" = AI가 대화 분석해서 추천하는 DDx
+  ⚠️ AI 추천은 의사가 언급하지 않은 가능한 진단만!
+- Plan:
+  - [Orders] 의사가 언급한 오더 → isConfirmed=true, source="stated"
+  - [AI Suggestions] AI 추천 → isConfirmed=false, source="inferred"
+- F/U: 의사가 언급한 경우 → isConfirmed=true, source="stated"
+
+OUTPUT FORMAT (PURE JSON ONLY):
+${JSON.stringify(jsonSchema, null, 2)}
+
+CRITICAL:
+- Output ONLY valid JSON (no markdown)
+- Include all keys for every field
+- Empty if not mentioned ("" or [])
+`.trim();
+
+  const userPrompt = `다음 진료 대화를 바탕으로 한국 병원 외래 EMR처럼 작성해줘.
+
+⚠️ CRITICAL RULES:
+1. 대화에서 언급된 내용만 기록! (언급 안 된 내용 임의 추가 금지)
+2. 언급된 내용은 빠짐없이 기록!
+3. "일반적으로 확인하는 항목"이라고 임의로 추가하지 말 것
+
+FIELD-BY-FIELD RULES:
+- CC: 환자 표현 그대로 + (onset: 시점) 필수
+- PI: 모든 증상 특성 포함! (quality, location, timing, severity, aggravating/relieving factors)
+  예: "조이는 것처럼 아프고 오후에 심해짐" → 반드시 포함
+- ROS: 대화에서 언급된 증상만! 의학 약어 사용
+  ⚠️ 언급되지 않은 증상 추가 금지 (SOB, chest pain 등 임의 추가 금지)
+  예: N/V(-), HA(+), dizziness(+)
+- PMH: 약어 + duration (DM (10y), HTN (3y))
+- Meds: 모든 약물 + 용량 + 용법
+- Allergies: "None" (NKDA 금지)
+- SHx: 
+  - 안 함 → (-)
+  - 함 → (+)
+  - 가끔/특이사항 → 환자 표현 그대로! 예: Alcohol(가끔 한 잔 정도), Smoking(예전에 피웠다가 끊음)
+- FHx: 한국식 (부: DM, HTN / 모: 특이사항 없음)
+- VS: 측정된 모든 값 (BP, HR, BT, RR, SpO2)
+- PE: 
+  - 안 했으면 "None"
+  - 했으면 실제 소견 기록! (예: "Neuro: no focal deficit")
+- Labs: 검사 결과 (결과 없으면 비워둠)
+- Imaging: 영상 결과/소견 (결과 없으면 비워둠)
+- Assessment:
+  - assessment.value = "# Dx" (의사가 확정한 경우만)
+  - assessment.ddxList = 의사 r/o + AI 추천 DDx
+- Plan: 오더만! (F/U 절대 포함 금지!)
+  - 검사 오더: CBC, BMP, Brain CT 등
+  - 약 처방/변경: Increase amlodipine, Acetaminophen PRN 등
+  - 반드시 의사가 말한 오더 그대로 기입 (CT를 US로 바꾸는 등 금지)
+- F/U: 구체적 f/u만 (예: "f/u 1wk") - Plan과 완전 분리!
+
+[진료 대화]
+${conversation}`;
+
+  try {
+    console.log('🚀 Streaming 차트 생성 시작...');
+    
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${OPENAI_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt }
+        ],
+        max_tokens: fastMode ? 1500 : 2000,
+        temperature: 0.2,
+        stream: true, // Streaming 활성화!
+      }),
+      signal: abortSignal,
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('❌ Streaming API 오류:', response.status, errorText);
+      return null;
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) {
+      console.error('❌ Response body reader 없음');
+      return null;
+    }
+
+    const decoder = new TextDecoder();
+    let fullContent = '';
+    let lastValidChart: GeneratedChart | null = null;
+    let lastUpdateTime = 0;
+    let lastFieldCount = 0;
+    let lastContentHash = '';
+    const UPDATE_THROTTLE_MS = 1200; // 더 촘촘한 실시간 업데이트
+
+    // 차트 내용 해시 생성 (변경 감지용)
+    const getContentHash = (chart: GeneratedChart): string => {
+      return Object.keys(chart)
+        .sort()
+        .map(k => {
+          const v = chart[k]?.value;
+          return `${k}:${typeof v === 'string' ? v.trim() : JSON.stringify(v)}`;
+        })
+        .join('|');
+    };
+
+    // Streaming 읽기
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      const chunk = decoder.decode(value, { stream: true });
+      const lines = chunk.split('\n').filter(line => line.trim() !== '');
+
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          const data = line.slice(6);
+          if (data === '[DONE]') continue;
+
+          try {
+            const parsed = JSON.parse(data);
+            const delta = parsed.choices?.[0]?.delta?.content || '';
+            fullContent += delta;
+
+            const now = Date.now();
+            const partialChart = tryParsePartialJson(fullContent, allFields, conversation);
+            
+            if (partialChart && Object.keys(partialChart).length > 0) {
+              const fieldCount = Object.keys(partialChart).filter(k => {
+                const v = partialChart[k]?.value;
+                return v && (typeof v === 'string' ? v.trim() : (v as string[]).length > 0);
+              }).length;
+              
+              const contentHash = getContentHash(partialChart);
+              
+              // 내용이 실제로 변경되었고, (새 필드 추가 또는 throttle 시간 경과) 
+              const contentChanged = contentHash !== lastContentHash;
+              const shouldUpdate = contentChanged && (
+                fieldCount > lastFieldCount || 
+                now - lastUpdateTime > UPDATE_THROTTLE_MS
+              );
+              
+              if (shouldUpdate) {
+                console.log(`📊 Streaming 업데이트: ${fieldCount}개 필드 (변경됨)`);
+                lastValidChart = partialChart;
+                lastFieldCount = fieldCount;
+                lastUpdateTime = now;
+                lastContentHash = contentHash;
+                onPartialUpdate(partialChart);
+              }
+            }
+          } catch {
+            // JSON 파싱 실패는 무시 (아직 완성 안됨)
+          }
+        }
+      }
+    }
+
+    // 최종 파싱
+    console.log('📝 Streaming 완료, 최종 파싱...');
+    const finalChart = parseFullChartJson(fullContent, allFields, conversation);
+    
+    if (finalChart) {
+      onPartialUpdate(finalChart);
+      return finalChart;
+    }
+
+    return lastValidChart;
+  } catch (error) {
+    if ((error as Error).name === 'AbortError') {
+      console.log('🛑 Streaming 요청 취소됨');
+      return lastValidChart;
+    }
+    console.error('❌ Streaming 오류:', error);
+      return null;
+  }
+}
+
+// 부분 JSON 파싱 시도
+function tryParsePartialJson(content: string, fields: ChartField[], conversation: string): GeneratedChart | null {
+  try {
+    // markdown 코드블록 제거
+    let jsonStr = content
+      .replace(/```json\n?/g, '')
+      .replace(/```\n?/g, '')
+      .trim();
+
+    // 불완전한 JSON 보완 시도
+    // 열린 중괄호/대괄호 개수 세기
+    const openBraces = (jsonStr.match(/{/g) || []).length;
+    const closeBraces = (jsonStr.match(/}/g) || []).length;
+    const openBrackets = (jsonStr.match(/\[/g) || []).length;
+    const closeBrackets = (jsonStr.match(/]/g) || []).length;
+
+    // 닫히지 않은 문자열 처리 (마지막 미완성 값 제거)
+    if (jsonStr.includes('"') && (jsonStr.match(/"/g) || []).length % 2 !== 0) {
+      // 마지막 따옴표 이후 제거
+      const lastQuoteIndex = jsonStr.lastIndexOf('"');
+      const beforeLastQuote = jsonStr.substring(0, lastQuoteIndex);
+      const secondLastQuoteIndex = beforeLastQuote.lastIndexOf('"');
+      if (secondLastQuoteIndex > 0) {
+        jsonStr = jsonStr.substring(0, secondLastQuoteIndex) + '""';
+      }
+    }
+
+    // 닫는 괄호 추가
+    jsonStr += ']'.repeat(Math.max(0, openBrackets - closeBrackets));
+    jsonStr += '}'.repeat(Math.max(0, openBraces - closeBraces));
+
+    const rawData = JSON.parse(jsonStr);
+    return parseRawChartData(rawData, fields, conversation);
+  } catch {
+    return null;
+  }
+}
+
+// 최종 JSON 파싱
+function parseFullChartJson(content: string, fields: ChartField[], conversation: string): GeneratedChart | null {
+  try {
+    let jsonStr = content
+      .replace(/```json\n?/g, '')
+      .replace(/```\n?/g, '')
+      .trim();
+
+    let rawData: Record<string, unknown>;
+    try {
+      rawData = JSON.parse(jsonStr);
+    } catch {
+      // 키 따옴표 추가 시도
+      jsonStr = jsonStr.replace(/(\s*)(\w+)(\s*):/g, '$1"$2"$3:');
+      jsonStr = jsonStr.replace(/""/g, '"');
+      rawData = JSON.parse(jsonStr);
+    }
+
+    return parseRawChartData(rawData, fields, conversation);
+  } catch (error) {
+    console.error('❌ 최종 JSON 파싱 실패:', error);
+    return null;
+  }
+}
+
+// rawData를 GeneratedChart로 변환
+function parseRawChartData(rawData: Record<string, unknown>, fields: ChartField[], conversation: string): GeneratedChart {
+  const chartData: GeneratedChart = {};
+
+  fields.forEach(field => {
+    const rawValue = rawData[field.id];
+    const isArrayField = field.type === 'tags' || field.type === 'list';
+
+    const base: ChartFieldValue = {
+      value: isArrayField ? [] : '',
+      isConfirmed: true,
+      source: 'stated',
+      confidence: 'high',
+      rationale: '',
+      evidence: [],
+    };
+
+    if (rawValue && typeof rawValue === 'object' && 'value' in (rawValue as any)) {
+      const fv = rawValue as any;
+      const source: 'stated' | 'inferred' = fv.source === 'inferred' ? 'inferred' : 'stated';
+      const evidence = normalizeEvidence(fv.evidence);
+      const rationale = typeof fv.rationale === 'string' ? cleanStringValue(fv.rationale) : '';
+      const confidence = normalizeConfidence(fv.confidence);
+
+      // DDx 리스트 파싱 (assessment 필드용) - 기존 함수와 동일
+      let ddxList: DdxItem[] | undefined = undefined;
+      if (field.id === 'assessment' && fv.ddxList && Array.isArray(fv.ddxList)) {
+        // 1. 기본 파싱
+        let parsedList = fv.ddxList.map((item: any, index: number) => ({
+          id: item.id || `ddx_${index + 1}`,
+          diagnosis: typeof item.diagnosis === 'string' ? item.diagnosis : '',
+          reason: typeof item.reason === 'string' ? item.reason : '',
+          confidence: normalizeConfidence(item.confidence),
+          isConfirmed: item.isConfirmed === true,
+          isRemoved: item.isRemoved === true,
+          source: (item.source === 'doctor' ? 'doctor' : 'ai') as 'doctor' | 'ai',
+        })).filter((item: DdxItem) => item.diagnosis.trim() !== '');
+        
+        // 2. confidence >= medium만 포함 (low 제외)
+        parsedList = parsedList.filter((item: DdxItem) => 
+          item.confidence === 'high' || item.confidence === 'medium'
+        );
+        
+        // 3. doctor 먼저, 그 다음 confidence 순으로 정렬 (high > medium)
+        parsedList.sort((a: DdxItem, b: DdxItem) => {
+          // doctor 소스를 먼저
+          if (a.source !== b.source) {
+            return a.source === 'doctor' ? -1 : 1;
+          }
+          // 같은 소스면 confidence 순
+          const order = { high: 0, medium: 1, low: 2 };
+          return order[a.confidence] - order[b.confidence];
+        });
+        
+        // 4. 최대 5개로 제한
+        ddxList = parsedList.slice(0, 5);
+        
+        console.log(`📋 [Streaming] DDx 필터링: ${fv.ddxList.length}개 → ${ddxList?.length ?? 0}개 (confidence >= medium)`);
+      }
+
+      if (isArrayField) {
+        const arr = normalizeArrayValue(fv.value);
+        chartData[field.id] = {
+          ...base,
+          value: arr,
+          isConfirmed: fv.isConfirmed === true,
+          source,
+          confidence,
+          rationale,
+          evidence,
+          ...(ddxList && { ddxList }),
+        };
+      } else {
+        const str = typeof fv.value === 'string' ? cleanStringValue(fv.value) : '';
+        chartData[field.id] = {
+          ...base,
+          value: str,
+          isConfirmed: fv.isConfirmed === true,
+          source,
+          confidence,
+          rationale,
+          evidence,
+          ...(ddxList && { ddxList }),
+        };
+      }
+    } else if (rawValue !== undefined && rawValue !== null) {
+      // 단순 값인 경우 (객체는 빈 문자열로)
+      if (isArrayField) {
+        chartData[field.id] = { ...base, value: normalizeArrayValue(rawValue) };
+      } else {
+        chartData[field.id] = { ...base, value: safeString(rawValue) };
+      }
+    }
+  });
+
+  return sanitizeChartData(chartData, conversation, fields);
+}
+
+// 변수 초기화를 위한 임시 변수 (streaming abort용)
+let lastValidChart: GeneratedChart | null = null;
 
 export type ChartData = GeneratedChart;

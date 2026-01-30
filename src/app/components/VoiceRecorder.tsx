@@ -2,7 +2,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { Button } from '@/app/components/ui/button';
 import { Mic, Square, Loader2 } from 'lucide-react';
 import { useDeepgram } from '@/services/deepgramService';
-import { generateChartFromTranscript, correctSTTErrors, ChartData } from '@/services/chartService';
+import { generateChartFromTranscriptStreaming, correctSTTErrors, ChartData } from '@/services/chartService';
 import { toast } from 'sonner';
 
 interface Segment {
@@ -10,6 +10,10 @@ interface Segment {
   speaker: 'doctor' | 'patient' | 'pending';
 }
 
+const MAX_CONTEXT_SEGMENTS = 8;
+const ENABLE_STT_CORRECTION = true;
+const buildSegmentsKey = (segments: Segment[]) =>
+  segments.map(segment => `${segment.speaker}:${segment.text}`).join('|');
 interface VoiceRecorderProps {
   onTranscriptUpdate: (text: string) => void;
   onRealtimeSegment: (text: string) => void;
@@ -17,7 +21,10 @@ interface VoiceRecorderProps {
   onFullUpdate: (transcript: string, segments: Segment[]) => void;
   onRecordingStart: () => void;
   onProcessingStart: () => void;
+  onPartialChartUpdate?: (partial: ChartData) => void;
   onRecordingComplete: (transcript: string, chartResult: ChartData | null) => void;
+  onApiStart?: () => void;
+  onApiEnd?: () => void;
   onRecordingProgress?: (progress: number) => void;
   department?: string;
   // 모바일 마이크 연동을 위한 외부 상태
@@ -33,7 +40,10 @@ export function VoiceRecorder({
   onFullUpdate,
   onRecordingStart,
   onProcessingStart,
+  onPartialChartUpdate,
   onRecordingComplete,
+  onApiStart,
+  onApiEnd,
   onRecordingProgress,
   department = 'internal',
   isRemoteRecording = false,
@@ -46,6 +56,8 @@ export function VoiceRecorder({
   const [audioLevel, setAudioLevel] = useState(0);
   const [waveformTick, setWaveformTick] = useState(0);
   const timerRef = useRef<number | null>(null);
+  const lastFastCorrectionKeyRef = useRef('');
+  const lastFastCorrectedSegmentsRef = useRef<Segment[] | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const animationFrameRef = useRef<number | null>(null);
@@ -191,23 +203,63 @@ export function VoiceRecorder({
 
     if (finalTranscript) {
       try {
-        // 1. STT 오류 교정 (의학 용어 등)
-        console.log('[Local] Correcting STT errors...');
-        const correctedSegments = await correctSTTErrors(finalSegments);
+        onApiStart?.();
+        const segmentsForFast = finalSegments.slice(-MAX_CONTEXT_SEGMENTS);
+        let fastCorrectedSegments = segmentsForFast;
+        if (ENABLE_STT_CORRECTION) {
+          const correctionKey = buildSegmentsKey(segmentsForFast);
+          if (
+            lastFastCorrectionKeyRef.current === correctionKey &&
+            lastFastCorrectedSegmentsRef.current
+          ) {
+            fastCorrectedSegments = lastFastCorrectedSegmentsRef.current;
+          } else {
+            fastCorrectedSegments = await correctSTTErrors(segmentsForFast);
+            lastFastCorrectionKeyRef.current = correctionKey;
+            lastFastCorrectedSegmentsRef.current = fastCorrectedSegments;
+          }
+        }
+
+        // 2. 전체 교정은 백그라운드로 진행 (UI는 완료 후 업데이트)
+        if (ENABLE_STT_CORRECTION) {
+          void correctSTTErrors(finalSegments)
+            .then((fullyCorrected) => {
+              onRealtimeSegmentsUpdate(fullyCorrected);
+              const fastSegments = fullyCorrected.slice(-MAX_CONTEXT_SEGMENTS);
+              lastFastCorrectionKeyRef.current = buildSegmentsKey(fastSegments);
+              lastFastCorrectedSegmentsRef.current = fastSegments;
+            })
+            .catch((error) => {
+              console.warn('STT correction (background) failed:', error);
+            });
+        } else {
+          onRealtimeSegmentsUpdate(finalSegments);
+        }
         
-        // 2. 교정된 세그먼트로 UI 업데이트
-        onRealtimeSegmentsUpdate(correctedSegments);
-        
-        // 3. 교정된 텍스트로 차트 생성
-        const correctedTranscript = correctedSegments.map(s => s.text).join(' ');
-        const result = await generateChartFromTranscript(correctedTranscript, correctedSegments, department);
+        // 3. 빠른 교정본으로 차트 생성 (Streaming)
+        const contextSegments = fastCorrectedSegments;
+        const correctedTranscript = contextSegments.map(s => s.text).join(' ');
+        const result = await generateChartFromTranscriptStreaming(
+          correctedTranscript,
+          contextSegments,
+          department,
+          (partial) => {
+            onPartialChartUpdate?.(partial);
+          },
+          undefined,
+          true
+        );
         onRecordingComplete(correctedTranscript, result);
       } catch (error) {
         console.error('Chart generation error:', error);
         toast.error('차트 생성 중 오류가 발생했습니다');
         onRecordingComplete(finalTranscript, null);
+      } finally {
+        onApiEnd?.();
       }
     } else {
+      lastFastCorrectionKeyRef.current = '';
+      lastFastCorrectedSegmentsRef.current = null;
       toast.info('녹음된 내용이 없습니다');
       onRecordingComplete('', null);
     }
