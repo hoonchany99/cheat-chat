@@ -13,7 +13,7 @@ import { Button } from '@/app/components/ui/button';
 import { Input } from '@/app/components/ui/input';
 import { Toaster } from '@/app/components/ui/sonner';
 import { toast } from 'sonner';
-import { RotateCcw, Stethoscope, FileText, Mail, Loader2, MessageSquare, Send, ChevronRight, MessageCircle, Smartphone, PanelLeft, Target, ChevronUp, Check, AlertCircle, Plus, Play, Square } from 'lucide-react';
+import { RotateCcw, Stethoscope, FileText, Mail, Loader2, MessageSquare, Send, ChevronRight, MessageCircle, Smartphone, PanelLeft, Target, Check, AlertCircle, Plus, Play, Square } from 'lucide-react';
 import { Textarea } from '@/app/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/app/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel } from '@/app/components/ui/select';
@@ -200,7 +200,7 @@ function MainApp() {
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [feedbackStep, setFeedbackStep] = useState<'input' | 'info'>('input');
   const [subscribeOpen, setSubscribeOpen] = useState(false);
-  const [mobileTab, setMobileTab] = useState<'transcript' | 'chart'>('transcript');
+  const [mobileTab, setMobileTab] = useState<'transcript' | 'chart' | 'ddx'>('transcript');
   const [remoteMicOpen, setRemoteMicOpen] = useState(false);
   const [isRemoteConnected, setIsRemoteConnected] = useState(false);
   const [remoteRecordingTime, setRemoteRecordingTime] = useState(0);
@@ -214,7 +214,6 @@ function MainApp() {
   const testAbortRef = useRef<AbortController | null>(null);
   const [silenceTimeout, setSilenceTimeout] = useState<NodeJS.Timeout | null>(null);
   const [isTranscriptCollapsed, setIsTranscriptCollapsed] = useState(false);
-  const [isMobileAPExpanded, setIsMobileAPExpanded] = useState(false);
   const [newDdxIds, setNewDdxIds] = useState<Set<string>>(new Set()); // 새로 추가된 DDx 추적
   const previousDdxIdsRef = useRef<Set<string>>(new Set());
   const bumpPendingApi = useCallback((delta: number) => {
@@ -1389,10 +1388,10 @@ function MainApp() {
       <main className="flex-1 container mx-auto px-4 py-6 overflow-hidden min-h-0">
         <div className="flex flex-col gap-6 h-full min-h-0">
           {/* Recording Control */}
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm px-6 py-5">
-            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm px-4 py-4 sm:px-6 sm:py-5">
+            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 sm:gap-5">
               {/* Recording Section */}
-              <div className="flex flex-col sm:flex-row sm:items-center gap-4 w-full">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 w-full">
                 <div className="flex items-center gap-3 flex-wrap">
                   <VoiceRecorder
                     onTranscriptUpdate={handleTranscriptUpdate}
@@ -1440,7 +1439,7 @@ function MainApp() {
                   </Button>
                 </div>
 
-                <div className="flex items-center gap-2 sm:ml-auto">
+                <div className="flex items-center gap-2 sm:ml-auto w-full sm:w-auto justify-end">
                   <Button
                     variant="ghost"
                     size="icon"
@@ -1464,7 +1463,7 @@ function MainApp() {
                     title="데모"
                   >
                     {isTestRunning ? <Square className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-                    {isTestRunning ? '중지' : '데모'}
+                    <span className="hidden sm:inline">{isTestRunning ? '중지' : '데모'}</span>
                   </Button>
                 </div>
               </div>
@@ -1807,10 +1806,10 @@ function MainApp() {
           {/* Mobile: Tab + Bottom A/P Panel */}
           <div className="lg:hidden flex flex-col flex-1 min-h-0">
             {/* Tab Switcher */}
-            <div className="flex gap-2 bg-white rounded-xl border border-slate-200 p-1.5 mb-4">
+            <div className="flex gap-1.5 bg-white rounded-xl border border-slate-200 p-1.5 mb-4">
               <button
                 onClick={() => setMobileTab('transcript')}
-                className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-sm font-medium transition-all ${
                   mobileTab === 'transcript'
                     ? 'bg-cyan-500 text-white shadow-sm'
                     : 'text-slate-600 hover:bg-slate-50'
@@ -1824,7 +1823,7 @@ function MainApp() {
               </button>
               <button
                 onClick={() => setMobileTab('chart')}
-                className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-sm font-medium transition-all ${
                   mobileTab === 'chart'
                     ? 'bg-teal-500 text-white shadow-sm'
                     : 'text-slate-600 hover:bg-slate-50'
@@ -1832,6 +1831,17 @@ function MainApp() {
               >
                 <FileText className="w-4 h-4" />
                 차트
+              </button>
+              <button
+                onClick={() => setMobileTab('ddx')}
+                className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                  mobileTab === 'ddx'
+                    ? 'bg-amber-500 text-white shadow-sm'
+                    : 'text-slate-600 hover:bg-slate-50'
+                }`}
+              >
+                <Target className="w-4 h-4" />
+                DDx
               </button>
             </div>
 
@@ -1853,66 +1863,52 @@ function MainApp() {
                   activeFields={chartSettings.activeFields}
                 />
               </div>
-            </div>
-
-            {/* Bottom DDx Panel */}
-            <div className={`mt-4 bg-gradient-to-r from-teal-500 to-cyan-500 rounded-2xl shadow-lg overflow-hidden transition-all duration-300 ${
-              isMobileAPExpanded ? 'h-[280px]' : 'h-14'
-            }`}>
-              <button
-                onClick={() => setIsMobileAPExpanded(!isMobileAPExpanded)}
-                className="w-full px-4 py-3 flex items-center justify-between text-white"
-              >
-                <div className="flex items-center gap-3">
-                  <Target className="w-5 h-5" />
-                  <div className="text-left">
-                    <div className="text-sm font-semibold">DDx 추천</div>
-                    {!isMobileAPExpanded && chartData?.assessment?.ddxList && (
-                      <div className="text-[10px] opacity-80">
-                        {chartData.assessment.ddxList.filter(d => !d.isRemoved).length}개 추천
-                      </div>
+              <div className={`${mobileTab === 'ddx' ? 'block' : 'hidden'} h-full`}>
+                <div className="h-full bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                  <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-200 bg-slate-50">
+                    <Target className="w-4 h-4 text-amber-600" />
+                    <div className="text-sm font-semibold text-slate-700">DDx 추천</div>
+                    {chartData?.assessment?.ddxList && (
+                      <span className="text-[10px] text-slate-500">
+                        {chartData.assessment.ddxList.filter(d => !d.isRemoved).length}개
+                      </span>
                     )}
                   </div>
-                </div>
-                <ChevronUp className={`w-5 h-5 transition-transform ${isMobileAPExpanded ? '' : 'rotate-180'}`} />
-              </button>
-              
-              {isMobileAPExpanded && (
-                <div className="h-[calc(100%-56px)] bg-white/95 overflow-y-auto p-3">
-                  {/* DDx 내용 */}
-                  <div className="space-y-2 text-sm">
-                    {chartData?.diagnosisConfirmed?.value && (
-                      <div className="p-2 bg-teal-100 rounded-lg">
-                        <span className="font-bold text-teal-800"># {
-                          Array.isArray(chartData.diagnosisConfirmed.value) 
-                            ? chartData.diagnosisConfirmed.value.join(', ')
-                            : chartData.diagnosisConfirmed.value
-                        }</span>
-                      </div>
-                    )}
-                    {chartData?.assessment?.ddxList?.filter(d => !d.isRemoved && !d.isConfirmed).map((ddx, i) => (
-                      <div key={i} className="p-2 bg-amber-50 rounded-lg text-amber-800">
-                        r/o {ddx.diagnosis}
-                      </div>
-                    ))}
-                    {chartData?.plan?.value && (
-                      <div className="p-2 bg-slate-100 rounded-lg text-slate-700 whitespace-pre-wrap">
-                        {typeof chartData.plan.value === 'string' ? chartData.plan.value : ''}
-                      </div>
-                    )}
-                    {!chartData && (
-                      <div className="text-center py-4 text-slate-400">
-                        녹음 후 분석 결과가 표시됩니다
-                      </div>
-                    )}
+                  <div className="h-[calc(100%-48px)] overflow-y-auto p-3">
+                    <div className="space-y-2 text-sm">
+                      {chartData?.diagnosisConfirmed?.value && (
+                        <div className="p-2 bg-teal-100 rounded-lg">
+                          <span className="font-bold text-teal-800"># {
+                            Array.isArray(chartData.diagnosisConfirmed.value) 
+                              ? chartData.diagnosisConfirmed.value.join(', ')
+                              : chartData.diagnosisConfirmed.value
+                          }</span>
+                        </div>
+                      )}
+                      {chartData?.assessment?.ddxList?.filter(d => !d.isRemoved && !d.isConfirmed).map((ddx, i) => (
+                        <div key={i} className="p-2 bg-amber-50 rounded-lg text-amber-800">
+                          r/o {ddx.diagnosis}
+                        </div>
+                      ))}
+                      {chartData?.plan?.value && (
+                        <div className="p-2 bg-slate-100 rounded-lg text-slate-700 whitespace-pre-wrap">
+                          {typeof chartData.plan.value === 'string' ? chartData.plan.value : ''}
+                        </div>
+                      )}
+                      {!chartData && (
+                        <div className="text-center py-4 text-slate-400">
+                          녹음 후 분석 결과가 표시됩니다
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
-              )}
+              </div>
             </div>
           </div>
 
           {/* Email Subscribe Section */}
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm px-6 py-5 lg:ml-auto lg:w-fit">
+          <div className="hidden lg:block bg-white rounded-2xl border border-slate-200 shadow-sm px-6 py-5 lg:ml-auto lg:w-fit">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-5">
               <div className="flex items-center gap-4">
                 <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-teal-500 to-teal-600 flex items-center justify-center shrink-0">
