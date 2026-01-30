@@ -3,7 +3,6 @@ import { Button } from '@/app/components/ui/button';
 import { Input } from '@/app/components/ui/input';
 import { Textarea } from '@/app/components/ui/textarea';
 import { Badge } from '@/app/components/ui/badge';
-import { ScrollArea } from '@/app/components/ui/scroll-area';
 import { toast } from 'sonner';
 import { 
   FileText, 
@@ -13,9 +12,11 @@ import {
   AlertCircle,
   Sparkles,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  MessageCircle,
+  Edit3
 } from 'lucide-react';
-import { ChartField, DEPARTMENT_PRESETS, DdxItem, ChartFieldValue, DEFAULT_FIELDS } from '@/services/chartService';
+import { ChartField, DdxItem, ChartFieldValue, DEFAULT_FIELDS, DEPARTMENT_PRESETS } from '@/services/chartService';
 
 export type { DdxItem, ChartFieldValue };
 
@@ -43,19 +44,32 @@ const chartAnimationStyles = `
   }
   
   .field-typing {
-    animation: fieldHighlight 1.5s ease-out;
+    animation: fieldPulse 0.6s ease-in-out infinite;
+    box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.3), 0 0 20px rgba(20, 184, 166, 0.2);
+  }
+  
+  @keyframes fieldPulse {
+    0%, 100% { 
+      box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.3), 0 0 20px rgba(20, 184, 166, 0.2);
+      transform: scale(1);
+    }
+    50% { 
+      box-shadow: 0 0 0 4px rgba(20, 184, 166, 0.5), 0 0 25px rgba(20, 184, 166, 0.3);
+      transform: scale(1.005);
+    }
   }
   
   .typing-cursor::after {
-    content: '|';
-    animation: blink 0.8s step-end infinite;
+    content: '▋';
+    animation: cursorBlink 0.5s step-end infinite;
     color: #14b8a6;
     font-weight: bold;
+    margin-left: 2px;
   }
   
-  @keyframes blink {
-    0%, 50% { border-color: transparent; }
-    51%, 100% { border-color: #14b8a6; }
+  @keyframes cursorBlink {
+    0%, 50% { opacity: 1; }
+    51%, 100% { opacity: 0; }
   }
   
   .chart-shimmer {
@@ -65,30 +79,32 @@ const chartAnimationStyles = `
   }
 `;
 
-// 필드별 placeholder
+// Field placeholders (description + example)
 const FIELD_PLACEHOLDERS: Record<string, string> = {
-  chiefComplaint: "환자 표현 + onset (e.g., 의식이 없어요. (onset: 오늘 아침))",
-  historyOfPresentIllness: "상환은 + ~함 체 (e.g., 상환은 금일 아침 의식 소실 발생함. 유사 증상 과거력 없음.)",
-  pertinentROS: "English (+/-) (e.g., N/V(-), LOC(+), fever(-), CP(-))",
-  pastMedicalHistory: "Abbrev + duration (e.g., DM (since childhood), HTN (x3y))",
-  pastSurgicalHistory: "s/p surgery (year) (e.g., s/p appendectomy (2020))",
-  medications: "Drug + dose if mentioned (e.g., metformin 500mg)",
-  allergies: "\"None\" if no allergies (NOT NKDA)",
-  socialHistory: "English (+/-) (e.g., Smoking (-), Alcohol (-))",
-  familyHistory: "Korean style (e.g., 부: DM, 모: 특이사항 없음)",
-  vitalSigns: "BP/HR/BT/RR/SpO2",
-  physicalExam: "\"None\" or full (+/-) findings (e.g., Mental status: drowsy)",
-  labResults: "Mentioned results only",
-  imaging: "Mentioned findings only",
-  assessment: "# Confirmed Dx (의사 확정 시만)\n\nr/o DDx는 아래 리스트로 자동 표시",
-  diagnosisConfirmed: "# Confirmed Dx (DDx 확정 시 추가)",
-  plan: "[Orders]\n- Blood glucose\n\n[AI Suggestions]\n- Brain CT (LOC + Hx)",
-  followUp: "Specific only (e.g., f/u 1wk) or leave empty",
+  chiefComplaint: "Patient's main complaint. e.g., LOC since this morning",
+  historyOfPresentIllness: "Narrative of present illness. e.g., Pt developed LOC this AM after BM.",
+  pertinentROS: "Relevant symptoms. e.g., N/V(-), LOC(+), fever(-)",
+  pastMedicalHistory: "Past medical history. e.g., DM (since childhood), HTN (x3y)",
+  pastSurgicalHistory: "Surgical history. e.g., s/p appendectomy (2020)",
+  medications: "Current medications. e.g., metformin 500mg bid",
+  allergies: "Drug allergies. e.g., None, PCN",
+  socialHistory: "Social history. e.g., Smoking (-), Alcohol (-)",
+  familyHistory: "Family history. e.g., Father: DM, Mother: HTN",
+  vitalSigns: "Vital signs. e.g., BP 120/80, HR 72, BT 36.5",
+  physicalExam: "Physical exam findings. e.g., Mental status: drowsy",
+  labResults: "Lab results. e.g., WBC 12.0, Hgb 14.2",
+  imaging: "Imaging findings. e.g., CXR - no infiltrate",
+  plan: "Treatment plan and orders. e.g., Blood glucose, Brain CT",
+  followUp: "Follow-up plan. e.g., f/u 1wk",
   notes: "Additional notes",
+  // Internal medicine
+  problemList: "Problem list. e.g., 1) DM 2) HTN",
+  // Dermatology
+  lesionDescription: "Lesion morphology. e.g., erythematous papules on trunk",
 };
 
-// Assessment/Plan 필드 ID
-const FIXED_FIELDS = ['assessment', 'diagnosisConfirmed', 'plan', 'followUp'];
+// Assessment/Plan 필드 ID (A/P 패널에서만 처리, 차트에서는 제외)
+const AP_FIELDS = ['assessment', 'diagnosisConfirmed', 'plan', 'followUp'];
 
 export interface ChartData {
   [key: string]: ChartFieldValue;
@@ -96,52 +112,148 @@ export interface ChartData {
 
 interface ChartingResultProps {
   chartData: ChartData | null;
-  isGenerating: boolean;
-  recordingProgress: number;
   isRecording: boolean;
   /** 'compact': 기본, 'wide': 3열 레이아웃용 (내부 2열) */
   layout?: 'compact' | 'wide';
+  /** 선택된 과 ID */
+  department?: string;
+  /** 사용자 커스텀 필드 (차트 설정에서 수정된 필드) */
+  activeFields?: ChartField[];
 }
 
 export function ChartingResult({
   chartData,
-  isGenerating,
   isRecording,
-  layout = 'compact'
+  layout = 'compact',
+  department = 'general',
+  activeFields
 }: ChartingResultProps) {
   const [editableData, setEditableData] = useState<ChartData>({});
   const [isCopied, setIsCopied] = useState(false);
   const [expandedFields, setExpandedFields] = useState<Set<string>>(new Set());
   const [typingFields, setTypingFields] = useState<Set<string>>(new Set());
   const [previousValues, setPreviousValues] = useState<Record<string, string>>({});
+  const [displayedValues, setDisplayedValues] = useState<Record<string, string>>({}); // 한 글자씩 표시되는 값
   const fieldRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const typingQueueRef = useRef<string[]>([]);
+  const isProcessingQueueRef = useRef(false);
+  const typingIntervalsRef = useRef<Record<string, NodeJS.Timeout>>({});
 
-  // 기본 필드 목록
+  // 사용자 커스텀 필드가 있으면 사용, 없으면 과별 기본 필드
   const baseFields = useMemo(() => {
-    const allFields: ChartField[] = [];
-    DEPARTMENT_PRESETS.forEach(preset => {
-      preset.fields.forEach(field => {
-        if (!allFields.find(f => f.id === field.id)) {
-          allFields.push(field);
-        }
-      });
-    });
-    return allFields.length > 0 ? allFields : DEFAULT_FIELDS;
-  }, []);
+    if (activeFields && activeFields.length > 0) {
+      return activeFields;
+    }
+    const preset = DEPARTMENT_PRESETS.find(p => p.id === department);
+    return preset?.fields || DEFAULT_FIELDS;
+  }, [department, activeFields]);
 
-  // 스크롤 영역 필드 vs 고정 영역 필드 분리
-  const { scrollFields, fixedFields } = useMemo(() => {
-    const scroll = baseFields.filter(f => !FIXED_FIELDS.includes(f.id));
-    const fixed = baseFields.filter(f => FIXED_FIELDS.includes(f.id));
-    return { scrollFields: scroll, fixedFields: fixed };
+  // 차트 필드 (A/P 제외) vs A/P 필드 분리
+  const { chartFields, apFields } = useMemo(() => {
+    const chart = baseFields.filter(f => !AP_FIELDS.includes(f.id));
+    const ap = baseFields.filter(f => AP_FIELDS.includes(f.id));
+    return { chartFields: chart, apFields: ap };
   }, [baseFields]);
 
-  // 데이터 변경 감지 및 타이핑 애니메이션
+  // 한 글자씩 타이핑 애니메이션
+  const startTypingAnimation = useCallback((fieldId: string, targetValue: string) => {
+    console.log('🎬 타이핑 시작:', fieldId, '→', targetValue.substring(0, 30) + '...');
+    
+    // 기존 인터벌 정리
+    if (typingIntervalsRef.current[fieldId]) {
+      clearInterval(typingIntervalsRef.current[fieldId]);
+    }
+
+    // 새 값이 기존 값을 포함하면 이어서 타이핑, 아니면 처음부터
+    let charIndex = 0;
+    
+    // 초기화
+    setDisplayedValues(prev => ({ ...prev, [fieldId]: '' }));
+
+    // 타이핑 시작
+    setTypingFields(prev => new Set([...prev, fieldId]));
+
+    // 해당 필드로 스크롤
+    setTimeout(() => {
+      const fieldElement = fieldRefs.current[fieldId];
+      if (fieldElement) {
+        fieldElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 50);
+
+    // 글자당 50ms (의사 타자 속도)
+    const interval = setInterval(() => {
+      if (charIndex < targetValue.length) {
+        charIndex++;
+        setDisplayedValues(prev => ({
+          ...prev,
+          [fieldId]: targetValue.substring(0, charIndex)
+        }));
+      } else {
+        // 타이핑 완료
+        console.log('✅ 타이핑 완료:', fieldId);
+        clearInterval(interval);
+        delete typingIntervalsRef.current[fieldId];
+        setTypingFields(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(fieldId);
+          return newSet;
+        });
+        // 타이핑 완료 후 실제 값으로 설정
+        setDisplayedValues(prev => ({ ...prev, [fieldId]: targetValue }));
+      }
+    }, 50);
+
+    typingIntervalsRef.current[fieldId] = interval;
+  }, []);
+
+  // 순차적 타이핑 큐 처리
+  const processTypingQueue = useCallback(() => {
+    if (isProcessingQueueRef.current || typingQueueRef.current.length === 0) {
+      console.log('⏸️ 큐 처리 스킵 - processing:', isProcessingQueueRef.current, 'queue:', typingQueueRef.current.length);
+      return;
+    }
+
+    isProcessingQueueRef.current = true;
+    const fieldId = typingQueueRef.current.shift()!;
+    console.log('📝 큐에서 필드 처리:', fieldId, '남은 큐:', typingQueueRef.current.length);
+    
+    const targetValue = editableData[fieldId]?.value;
+    const targetString = typeof targetValue === 'string' 
+      ? targetValue 
+      : Array.isArray(targetValue) 
+        ? targetValue.join(', ') 
+        : '';
+
+    if (targetString) {
+      startTypingAnimation(fieldId, targetString);
+      
+      // 타이핑 완료 예상 시간 후 다음 필드 처리
+      const duration = Math.min(4000, Math.max(500, targetString.length * 50));
+      setTimeout(() => {
+        isProcessingQueueRef.current = false;
+        if (typingQueueRef.current.length > 0) {
+          console.log('➡️ 다음 필드로 이동, 남은:', typingQueueRef.current.length);
+          setTimeout(processTypingQueue, 100); // 필드 간 짧은 대기
+        }
+      }, duration);
+    } else {
+      console.log('⚠️ 값 없음:', fieldId);
+      isProcessingQueueRef.current = false;
+      if (typingQueueRef.current.length > 0) {
+        processTypingQueue();
+      }
+    }
+  }, [editableData, startTypingAnimation]);
+
+  // 데이터 변경 감지 및 타이핑 큐에 추가
   useEffect(() => {
     if (chartData) {
-      const newTypingFields = new Set<string>();
+      const changedFields: string[] = [];
       
-      Object.keys(chartData).forEach(fieldId => {
+      // chartFields 순서대로 변경된 필드 확인
+      chartFields.forEach(field => {
+        const fieldId = field.id;
         const newValue = typeof chartData[fieldId]?.value === 'string' 
           ? chartData[fieldId].value as string 
           : Array.isArray(chartData[fieldId]?.value) 
@@ -150,22 +262,25 @@ export function ChartingResult({
         const oldValue = previousValues[fieldId] || '';
         
         if (newValue !== oldValue && newValue.length > 0) {
-          newTypingFields.add(fieldId);
-          
-          setTimeout(() => {
-            const fieldElement = fieldRefs.current[fieldId];
-            if (fieldElement) {
-              fieldElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            }
-          }, 100);
+          changedFields.push(fieldId);
         }
       });
       
-      if (newTypingFields.size > 0) {
-        setTypingFields(newTypingFields);
-        setTimeout(() => setTypingFields(new Set()), 1500);
+      // 변경된 필드가 있으면 큐에 추가하고 처리 시작
+      if (changedFields.length > 0) {
+        console.log('🔄 변경된 필드 감지:', changedFields);
+        // 중복 제거하고 큐에 추가
+        const existingQueue = new Set(typingQueueRef.current);
+        changedFields.forEach(f => {
+          if (!existingQueue.has(f)) {
+            typingQueueRef.current.push(f);
+          }
+        });
+        console.log('📋 현재 큐:', [...typingQueueRef.current]);
+        processTypingQueue();
       }
       
+      // 이전 값 업데이트
       const newPrevValues: Record<string, string> = {};
       Object.keys(chartData).forEach(fieldId => {
         const val = chartData[fieldId]?.value;
@@ -175,7 +290,7 @@ export function ChartingResult({
       
       setEditableData(chartData);
     }
-  }, [chartData]);
+  }, [chartData, chartFields, processTypingQueue]);
 
   const handleFieldChange = useCallback((fieldId: string, value: string | string[]) => {
     setEditableData(prev => ({
@@ -183,26 +298,10 @@ export function ChartingResult({
       [fieldId]: {
         ...prev[fieldId],
         value,
-        isConfirmed: prev[fieldId]?.isConfirmed ?? false,
-        source: prev[fieldId]?.source ?? 'stated',
+        isConfirmed: true,
+        source: 'user' as any, // 사용자가 수정함
       }
     }));
-  }, []);
-
-  const handleConfirmField = useCallback((fieldId: string) => {
-    setEditableData(prev => ({
-      ...prev,
-      [fieldId]: { ...prev[fieldId], isConfirmed: true, source: 'stated' as const }
-    }));
-    toast.success('확정되었습니다');
-  }, []);
-
-  const handleUnconfirmField = useCallback((fieldId: string) => {
-    setEditableData(prev => ({
-      ...prev,
-      [fieldId]: { ...prev[fieldId], isConfirmed: false, source: 'inferred' as const }
-    }));
-    toast.info('확정이 취소되었습니다');
   }, []);
 
   // DDx 핸들러들
@@ -303,10 +402,36 @@ export function ChartingResult({
 
   // 복사 핸들러
   const handleCopyChart = useCallback(() => {
-    const allFields = [...scrollFields, ...fixedFields];
+    const allFields = [...chartFields, ...apFields];
+    
+    // DDx 리스트 가져오기
+    const ddxList = (chartData as any)?.assessment?.ddxList;
+    const allDdx = ddxList && Array.isArray(ddxList) 
+      ? ddxList.filter((d: DdxItem) => !d.isRemoved)
+      : [];
+    
+    // 확정된 Dx와 r/o 분리
+    const confirmedDx = allDdx.filter((d: DdxItem) => d.isConfirmed);
+    const roDdx = allDdx.filter((d: DdxItem) => !d.isConfirmed);
     
     const chartText = allFields.map(field => {
       const fieldValue = editableData[field.id];
+      
+      // Assessment 필드는 DDx 리스트로 대체
+      if (field.id === 'assessment') {
+        const dxLines = confirmedDx.map((d: DdxItem) => `# ${d.diagnosis}`).join('\n');
+        const roLines = roDdx.map((d: DdxItem) => `r/o ${d.diagnosis}`).join('\n');
+        const displayValue = [dxLines, roLines].filter(Boolean).join('\n');
+        
+        if (!displayValue) return null;
+        
+        const fieldLabel = field.nameEn && field.nameEn !== field.name ? field.nameEn : field.name;
+        return `[${fieldLabel}]\n${displayValue}`;
+      }
+      
+      // diagnosisConfirmed 필드는 스킵 (Assessment에 이미 포함됨)
+      if (field.id === 'diagnosisConfirmed') return null;
+      
       if (!fieldValue) return null;
       
       const value = fieldValue.value;
@@ -323,7 +448,7 @@ export function ChartingResult({
     setIsCopied(true);
     toast.success('차트가 클립보드에 복사되었습니다');
     setTimeout(() => setIsCopied(false), 2000);
-  }, [editableData, scrollFields, fixedFields]);
+  }, [editableData, chartFields, apFields, chartData]);
 
   // DDx 리스트 렌더링
   const renderDDxList = (ddxList: DdxItem[]) => {
@@ -403,8 +528,12 @@ export function ChartingResult({
     const isExpanded = expandedFields.has(field.id);
 
     const isArray = field.type === 'tags' || field.type === 'list';
-    const stringValue = typeof value === 'string' ? value : '';
-    const hasContent = isArray ? (Array.isArray(value) ? value.length > 0 : false) : stringValue.trim().length > 0;
+    // 타이핑 중이면 displayedValues, 아니면 실제 값
+    const actualStringValue = typeof value === 'string' ? value : '';
+    const stringValue = isTyping ? (displayedValues[field.id] || '') : actualStringValue;
+    const hasContent = isArray 
+      ? (Array.isArray(value) ? value.length > 0 : false) 
+      : actualStringValue.trim().length > 0;
     const hasDetails = isInferred && (rationale || evidence.length > 0);
 
     const bgClass = !hasContent
@@ -427,22 +556,21 @@ export function ChartingResult({
               {field.nameEn && field.nameEn !== field.name ? `${field.nameEn} (${field.name})` : field.name}
             </span>
             {field.required && <span className="text-red-500">*</span>}
-            {isTyping && <span className="typing-cursor text-[10px] text-teal-500">입력 중</span>}
+            {isTyping && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-teal-500 text-white text-[10px] font-medium animate-pulse">
+                <span className="w-1.5 h-1.5 bg-white rounded-full animate-ping" />
+                입력 중
+              </span>
+            )}
           </label>
 
           <div className="flex items-center gap-1.5">
             {hasContent && (
               <span className={`text-[10px] flex items-center gap-0.5 px-1.5 py-0.5 rounded-full ${
-                isConfirmed ? 'bg-teal-100 text-teal-700' : isInferred ? 'bg-amber-100 text-amber-700' : 'bg-yellow-100 text-yellow-700'
+                source === 'user' ? 'bg-blue-100 text-blue-700' : isInferred ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600'
               }`}>
-                {isConfirmed ? <><CheckCircle2 className="w-2.5 h-2.5" />확정</> : isInferred ? <><Sparkles className="w-2.5 h-2.5" />AI</> : <><AlertCircle className="w-2.5 h-2.5" />?</>}
+                {source === 'user' ? <><Edit3 className="w-2.5 h-2.5" />사용자 작성</> : isInferred ? <><Sparkles className="w-2.5 h-2.5" />AI 추천</> : <><MessageCircle className="w-2.5 h-2.5" />대화 기반</>}
               </span>
-            )}
-            {hasContent && !isConfirmed && field.id !== 'chiefComplaint' && field.id !== 'historyOfPresentIllness' && (
-              <Button variant="outline" size="sm" onClick={() => handleConfirmField(field.id)} className="h-5 text-[10px] px-1.5 bg-white">확정</Button>
-            )}
-            {hasContent && isConfirmed && field.id !== 'chiefComplaint' && field.id !== 'historyOfPresentIllness' && (
-              <Button variant="ghost" size="sm" onClick={() => handleUnconfirmField(field.id)} className="h-5 text-[10px] px-1.5 text-slate-400">취소</Button>
             )}
           </div>
         </div>
@@ -463,8 +591,9 @@ export function ChartingResult({
 
         {isArray ? (
           (() => {
-            const textValue = Array.isArray(value) ? value.join(', ') : (value || '');
-            const parsedTags = textValue.split(',').map(s => s.trim()).filter(s => s);
+            const actualTextValue = Array.isArray(value) ? value.join(', ') : (value || '');
+            const textValue = isTyping ? (displayedValues[field.id] || '') : actualTextValue;
+            const parsedTags = actualTextValue.split(',').map(s => s.trim()).filter(s => s);
             return (
               <>
                 {parsedTags.length > 0 && (
@@ -474,20 +603,29 @@ export function ChartingResult({
                     ))}
                   </div>
                 )}
-                <Textarea value={textValue} onChange={(e) => handleFieldChange(field.id, e.target.value)}
-                  className={`${compact ? 'min-h-[40px] text-xs' : 'min-h-[50px] text-sm'} bg-white border-slate-200 whitespace-pre-wrap`}
-                  placeholder={FIELD_PLACEHOLDERS[field.id] || ""} />
+                <Textarea 
+                  value={textValue} 
+                  onChange={(e) => handleFieldChange(field.id, e.target.value)}
+                  className={`${compact ? 'min-h-[40px] text-xs' : 'min-h-[50px] text-sm'} bg-white border-slate-200 whitespace-pre-wrap ${isTyping ? 'caret-teal-500' : ''}`}
+                  placeholder={FIELD_PLACEHOLDERS[field.id] || ""} 
+                />
               </>
             );
           })()
         ) : field.type === 'text' ? (
-          <Input value={stringValue} onChange={(e) => handleFieldChange(field.id, e.target.value)}
+          <Input 
+            value={stringValue} 
+            onChange={(e) => handleFieldChange(field.id, e.target.value)}
             placeholder={FIELD_PLACEHOLDERS[field.id] || ""}
-            className={`bg-white border-slate-200 ${compact ? 'text-xs h-7' : 'text-sm'}`} />
+            className={`bg-white border-slate-200 ${compact ? 'text-xs h-7' : 'text-sm'} ${isTyping ? 'caret-teal-500' : ''}`}
+          />
         ) : (
-          <Textarea value={stringValue} onChange={(e) => handleFieldChange(field.id, e.target.value)}
-            className={`${compact ? 'min-h-[40px] text-xs' : 'min-h-[60px] text-sm'} bg-white border-slate-200 whitespace-pre-wrap`}
-            placeholder={FIELD_PLACEHOLDERS[field.id] || ""} />
+          <Textarea 
+            value={stringValue} 
+            onChange={(e) => handleFieldChange(field.id, e.target.value)}
+            className={`${compact ? 'min-h-[40px] text-xs' : 'min-h-[60px] text-sm'} bg-white border-slate-200 whitespace-pre-wrap ${isTyping ? 'caret-teal-500' : ''}`}
+            placeholder={FIELD_PLACEHOLDERS[field.id] || ""}
+          />
         )}
 
         {field.id === 'assessment' && fieldValue?.ddxList && fieldValue.ddxList.length > 0 && renderDDxList(fieldValue.ddxList)}
@@ -497,87 +635,46 @@ export function ChartingResult({
 
   const hasAnyData = Object.keys(editableData).length > 0;
 
-  // Wide 레이아웃 (데스크톱 3열용)
+  // Wide 레이아웃 (데스크톱 3열용 - AI 차트만, A/P는 별도 패널)
   if (layout === 'wide') {
     return (
       <>
         <style>{chartAnimationStyles}</style>
-        <div className="flex h-full gap-4">
-          {/* 좌측: S/O 필드들 */}
-          <div className="flex-1 flex flex-col bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-            <div className="flex-none px-4 py-3 border-b border-slate-100">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-slate-500 to-slate-600 flex items-center justify-center">
-                    <FileText className="w-4 h-4 text-white" />
-                  </div>
-                  <div>
-                    <h3 className="font-semibold text-sm text-slate-800">S/O</h3>
-                    <p className="text-[10px] text-slate-500">Subjective & Objective</p>
-                  </div>
+        <div className="flex flex-col h-full bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+          {/* Header */}
+          <div className="flex-none px-4 py-3 border-b border-slate-100">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-teal-500 to-teal-600 flex items-center justify-center">
+                  <FileText className="w-4 h-4 text-white" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-sm text-slate-800">AI 차트</h3>
+                  <p className="text-[10px] text-slate-500">
+                    {isRecording ? '실시간 업데이트' : 'Subjective & Objective'}
+                  </p>
                 </div>
               </div>
+              {hasAnyData && (
+                <Button variant="outline" size="sm" onClick={handleCopyChart} className="h-7 text-xs border-teal-200 text-teal-700 hover:bg-teal-50">
+                  {isCopied ? <><Check className="w-3 h-3 mr-1" />복사됨</> : <><Copy className="w-3 h-3 mr-1" />EMR 복사</>}
+                </Button>
+              )}
             </div>
-            {isGenerating ? (
-              <div className="flex-1 flex flex-col items-center justify-center">
-                <Sparkles className="w-8 h-8 text-slate-400 animate-pulse mb-2" />
-                <p className="text-sm text-slate-500">분석 중...</p>
-              </div>
-            ) : (
-              <ScrollArea className="flex-1">
-                <div className="p-3 space-y-2">
-                  {scrollFields.map(field => renderField(field, typingFields.has(field.id), false))}
-                </div>
-              </ScrollArea>
-            )}
           </div>
-
-          {/* 우측: Assessment & Plan (고정) */}
-          <div className="w-[320px] flex-none flex flex-col bg-gradient-to-br from-teal-50 to-cyan-50 rounded-2xl border-2 border-teal-200 shadow-sm overflow-hidden">
-            <div className="flex-none px-4 py-3 border-b border-teal-200 bg-white/50">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-teal-500 to-cyan-500 flex items-center justify-center">
-                    <span className="text-white text-sm">🎯</span>
-                  </div>
-                  <div>
-                    <h3 className="font-bold text-sm text-teal-800">A/P</h3>
-                    <p className="text-[10px] text-teal-600">
-                      {isGenerating ? '분석 중...' : isRecording ? '실시간' : 'Assessment & Plan'}
-                    </p>
-                  </div>
-                </div>
-                {hasAnyData && (
-                  <Button variant="outline" size="sm" onClick={handleCopyChart} className="h-6 text-[10px] border-teal-300 text-teal-700 bg-white">
-                    {isCopied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-                  </Button>
-                )}
-              </div>
+          
+          {/* Content - 스크롤 가능 */}
+          <div className="flex-1 overflow-y-auto">
+            <div className="p-3 space-y-2">
+              {chartFields.map(field => renderField(field, typingFields.has(field.id), false))}
             </div>
-            {isGenerating ? (
-              <div className="flex-1 flex flex-col items-center justify-center">
-                <div className="relative w-12 h-12 mb-2">
-                  <div className="absolute inset-0 rounded-xl border-2 border-teal-300 animate-spin" style={{ animationDuration: '2s' }} />
-                  <div className="absolute inset-1 rounded-lg bg-gradient-to-br from-teal-500 to-cyan-500 flex items-center justify-center">
-                    <Sparkles className="w-5 h-5 text-white animate-pulse" />
-                  </div>
-                </div>
-                <p className="text-sm text-teal-700 font-medium">DDx 분석 중...</p>
-              </div>
-            ) : (
-              <ScrollArea className="flex-1">
-                <div className="p-3 space-y-2">
-                  {fixedFields.map(field => renderField(field, typingFields.has(field.id), true))}
-                </div>
-              </ScrollArea>
-            )}
           </div>
         </div>
       </>
     );
   }
 
-  // Compact 레이아웃 (기본, 모바일)
+  // Compact 레이아웃 (기본, 모바일 - A/P 제외, 하단 패널에서 표시)
   return (
     <>
       <style>{chartAnimationStyles}</style>
@@ -593,7 +690,7 @@ export function ChartingResult({
               <div>
                 <h3 className="font-semibold text-sm text-slate-800">AI 차트</h3>
                 <p className="text-[10px] text-slate-500">
-                  {isGenerating ? '분석 중...' : isRecording ? '녹음 중' : '대화 분석 → 차트 작성'}
+                  {isRecording ? '실시간 업데이트' : 'S/O 필드'}
                 </p>
               </div>
             </div>
@@ -605,48 +702,11 @@ export function ChartingResult({
           </div>
         </div>
         
-        {isGenerating ? (
-          <div className="flex-1 flex flex-col items-center justify-center text-center">
-            <div className="relative w-14 h-14 mb-3">
-              <div className="absolute inset-0 rounded-xl border-2 border-teal-200 animate-spin" style={{ animationDuration: '3s' }} />
-              <div className="absolute inset-1 rounded-lg bg-gradient-to-br from-teal-500 to-cyan-500 flex items-center justify-center">
-                <Sparkles className="w-6 h-6 text-white animate-pulse" />
-              </div>
-            </div>
-            <p className="text-slate-700 font-semibold text-sm">AI 차트 생성 중...</p>
-            <div className="flex items-center gap-1 mt-3">
-              <div className="w-1.5 h-1.5 rounded-full bg-teal-500 animate-bounce" style={{ animationDelay: '0ms' }} />
-              <div className="w-1.5 h-1.5 rounded-full bg-teal-500 animate-bounce" style={{ animationDelay: '150ms' }} />
-              <div className="w-1.5 h-1.5 rounded-full bg-teal-500 animate-bounce" style={{ animationDelay: '300ms' }} />
-            </div>
+        <div className="flex-1 overflow-y-auto">
+          <div className="p-3 space-y-2">
+            {chartFields.map(field => renderField(field, typingFields.has(field.id), false))}
           </div>
-        ) : (
-          <>
-            {/* 스크롤 영역 - 일반 필드들 */}
-            <div className="flex-1 overflow-hidden">
-              <ScrollArea className="h-full">
-                <div className="p-3 space-y-2">
-                  {scrollFields.map(field => renderField(field, typingFields.has(field.id), false))}
-                </div>
-              </ScrollArea>
-            </div>
-            
-            {/* 고정 영역 - Assessment & Plan */}
-            <div className="flex-none border-t-2 border-teal-200 bg-gradient-to-br from-teal-50 to-cyan-50">
-              <div className="px-3 py-2 border-b border-teal-100">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-sm">🎯</span>
-                  <span className="text-xs font-bold text-teal-700">Assessment & Plan</span>
-                </div>
-              </div>
-              <ScrollArea className="h-[200px]">
-                <div className="p-3 space-y-2">
-                  {fixedFields.map(field => renderField(field, typingFields.has(field.id), true))}
-                </div>
-              </ScrollArea>
-            </div>
-          </>
-        )}
+        </div>
       </div>
     </>
   );

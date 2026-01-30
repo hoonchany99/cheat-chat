@@ -1,5 +1,5 @@
 import { useRef, useEffect, useState } from 'react';
-import { MessageSquare, Stethoscope, User, Loader2, Copy, Check } from 'lucide-react';
+import { MessageSquare, Stethoscope, User, Loader2, Copy, Check, PanelLeftClose } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/app/components/ui/button';
 
@@ -12,11 +12,13 @@ interface TranscriptViewerProps {
   finalTranscript: string;
   isRecording: boolean;
   realtimeSegments: Segment[];
+  onCollapse?: () => void;
 }
 
 export function TranscriptViewer({
   isRecording,
-  realtimeSegments
+  realtimeSegments,
+  onCollapse
 }: TranscriptViewerProps) {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const scrollEndRef = useRef<HTMLDivElement>(null);
@@ -63,7 +65,9 @@ export function TranscriptViewer({
             </div>
             <div>
               <h3 className="font-semibold text-sm text-slate-800">실시간 대화</h3>
-              <p className="text-[10px] text-slate-500">AI가 대화를 듣고 정리합니다</p>
+              <p className="text-[10px] text-slate-500">
+                {isRecording ? '음성 인식 중...' : '대화 내용이 표시됩니다'}
+              </p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -75,7 +79,7 @@ export function TranscriptViewer({
                 className="h-7 text-xs border-cyan-200 text-cyan-700 hover:bg-cyan-50 gap-1"
               >
                 {copiedAll ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-                전체 복사
+                복사
               </Button>
             )}
             {isRecording && (
@@ -83,6 +87,15 @@ export function TranscriptViewer({
                 <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
                 <span className="text-xs font-medium text-red-600">녹음 중</span>
               </div>
+            )}
+            {onCollapse && (
+              <button
+                onClick={onCollapse}
+                className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400"
+                title="대화창 접기"
+              >
+                <PanelLeftClose className="w-4 h-4" />
+              </button>
             )}
           </div>
         </div>

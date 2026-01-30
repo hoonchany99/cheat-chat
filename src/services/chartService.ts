@@ -23,15 +23,16 @@ export interface DdxItem {
   diagnosis: string;
   reason: string;
   confidence: 'low' | 'medium' | 'high';
-  isConfirmed: boolean;
-  isRemoved: boolean;
+  isConfirmed: boolean;  // 사용자가 확정함
+  isRemoved: boolean;    // 사용자가 제외함
+  source: 'doctor' | 'ai';  // doctor: 의사가 언급, ai: AI 추천
 }
 
 // 차트 필드 값 타입
 export interface ChartFieldValue {
   value: string | string[];
   isConfirmed: boolean;
-  source?: 'stated' | 'inferred';
+  source?: 'stated' | 'inferred' | 'user'; // user: 사용자가 직접 수정
   confidence?: 'low' | 'medium' | 'high';
   rationale?: string;
   evidence?: string[];
@@ -66,12 +67,12 @@ export const DEFAULT_FIELDS: ChartField[] = [
   { id: 'pertinentROS', name: '관련 증상', nameEn: 'ROS (+/-)', type: 'textarea', required: false, description: '영어 (+/-) 형식. N/V(-), fever(-), CP(-), LOC(+).' },
 
   // Background - English/abbreviations with duration
-  { id: 'pastMedicalHistory', name: '과거력', nameEn: 'PMH', type: 'tags', required: false, description: '영어 약어 + duration. DM (since childhood), HTN (x3y).' },
-  { id: 'pastSurgicalHistory', name: '수술력', nameEn: 'Surgical Hx', type: 'tags', required: false, description: '영어. s/p appendectomy (2020).' },
+  { id: 'pastMedicalHistory', name: '과거력', nameEn: 'Past History', type: 'tags', required: false, description: '영어 약어 + duration. DM (since childhood), HTN (x3y).' },
+  { id: 'pastSurgicalHistory', name: '수술력', nameEn: 'Surgical History', type: 'tags', required: false, description: '영어. s/p appendectomy (2020).' },
   { id: 'medications', name: '복용약', nameEn: 'Meds', type: 'tags', required: false, description: '영어. 용량 포함 시 추가.' },
   { id: 'allergies', name: '알레르기', nameEn: 'Allergies', type: 'tags', required: false, description: '영어. 없으면 "None" (NKDA ❌).' },
-  { id: 'socialHistory', name: '사회력', nameEn: 'SHx', type: 'textarea', required: false, description: '영어 (+/-). Smoking (-), Alcohol (-). 특이사항만 한국어.' },
-  { id: 'familyHistory', name: '가족력', nameEn: 'FHx', type: 'textarea', required: false, description: '한국식. 부: DM, 모: 특이사항 없음.' },
+  { id: 'socialHistory', name: '사회력', nameEn: 'Social History', type: 'textarea', required: false, description: '영어 (+/-). Smoking (-), Alcohol (-). 특이사항만 한국어.' },
+  { id: 'familyHistory', name: '가족력', nameEn: 'Family History', type: 'textarea', required: false, description: '한국식. 부: DM, 모: 특이사항 없음.' },
 
   // O - English (+/-)
   { id: 'vitalSigns', name: '활력징후', nameEn: 'VS', type: 'text', required: false, description: 'BP/HR/BT/RR/SpO2.' },
@@ -162,11 +163,16 @@ GOOD: "None"
 BAD: "NKDA"
 
 === SHx RULES ===
-- Standard items in English (+/-)
-- Special context in Korean
+- 안 함/없음 → (-)
+- 함/있음 → (+)
+- 가끔/특이사항 → 환자 표현 그대로 한국어로!
 GOOD:
 "Smoking (-), Alcohol (-)"
-"특이사항: 최근 과음 있었음"
+"Smoking (-), Alcohol(가끔 한 잔 정도)"
+"Smoking(예전에 피웠다가 5년 전 끊음), Alcohol (-)"
+BAD:
+"Alcohol (occasional)" ❌ → "Alcohol(가끔 한 잔 정도)" ✓
+"Smoking (quit)" ❌ → "Smoking(끊음, 10년 전)" ✓
 
 === FHx RULES (KOREAN STYLE) ===
 - Use 부/모 format
@@ -214,8 +220,10 @@ RULES:
 - ONLY include DDx with medium or high confidence.
 - Avoid vague terms (e.g., "cardiac problem" ❌, "brain issue" ❌).
 - DDx should be clinically meaningful and specific.
-- Each ddxList item: {id, diagnosis, reason, confidence, isConfirmed: false, isRemoved: false}
-- Priority: high confidence first, then medium.
+- Each ddxList item: {id, diagnosis, reason, confidence, isConfirmed: false, isRemoved: false, source: "doctor"|"ai"}
+  - source: "doctor" = 의사가 "의심된다/것 같다"고 언급한 진단
+  - source: "ai" = AI가 대화 분석해서 추천 (의사가 언급 안 한 것만)
+- Priority: doctor first, then ai (high > medium)
 
 === ROLE SEPARATION ===
 - Do NOT generate diagnosisInferred field. DDx list in Assessment is sufficient.
@@ -227,6 +235,7 @@ RULES:
 - If NO orders were mentioned, leave Plan EMPTY.
 - No explanatory sentences. Orders only.
 - AI suggestions: include reason in parentheses, max 1-2 lines
+⚠️ Plan에 F/U 내용 절대 포함 금지! (f/u 1wk, 외래 예약 등 → F/U 필드로!)
 
 [Orders]
 - [test/medication] (only if stated)
@@ -235,6 +244,7 @@ RULES:
 - Blood glucose check (LOC + DM history)
 
 === FOLLOW-UP RULE (STRICT) ===
+- F/U 내용은 F/U 필드에만! Plan에 넣지 말 것!
 - Do NOT write generic follow-up statements.
 - Leave F/U EMPTY if not explicitly discussed.
 - NEVER write: "검사 결과에 따라 f/u 결정" ❌
@@ -272,8 +282,30 @@ GENERAL OP NOTE:
     id: 'internal',
     name: '내과',
     fields: [
-      ...DEFAULT_FIELDS,
-      { id: 'problemList', name: '문제목록', nameEn: 'Problem List', type: 'list', required: false, description: '언급된 문제만 1) 2) 형태. 항목 간 한 줄 띄움.' },
+      // S - Subjective
+      { id: 'chiefComplaint', name: '주호소', nameEn: 'CC', type: 'textarea', required: true, description: '한국어. 환자 표현 + (onset: 시점).' },
+      { id: 'historyOfPresentIllness', name: '현병력', nameEn: 'PI', type: 'textarea', required: true, description: '"상환은" + "~함 체". 3-6문장.' },
+      { id: 'pertinentROS', name: '관련 증상', nameEn: 'ROS (+/-)', type: 'textarea', required: false, description: '영어 (+/-) 형식.' },
+      // Background
+      { id: 'pastMedicalHistory', name: '과거력', nameEn: 'Past History', type: 'tags', required: false, description: '영어 약어 + duration. DM (x10y), HTN (x3y).' },
+      { id: 'pastSurgicalHistory', name: '수술력', nameEn: 'Surgical History', type: 'tags', required: false, description: '영어. s/p appendectomy (2020).' },
+      { id: 'medications', name: '복용약', nameEn: 'Meds', type: 'tags', required: false, description: '영어. 용량 포함.' },
+      { id: 'allergies', name: '알레르기', nameEn: 'Allergies', type: 'tags', required: false, description: '영어. 없으면 "None".' },
+      { id: 'socialHistory', name: '사회력', nameEn: 'Social History', type: 'textarea', required: false, description: '영어 (+/-). Smoking (-), Alcohol (-).' },
+      { id: 'familyHistory', name: '가족력', nameEn: 'Family History', type: 'textarea', required: false, description: '한국식. 부: DM, 모: HTN.' },
+      // O - Objective
+      { id: 'vitalSigns', name: '활력징후', nameEn: 'VS', type: 'text', required: false, description: 'BP/HR/BT/RR/SpO2.' },
+      { id: 'physicalExam', name: '진찰소견', nameEn: 'PE', type: 'textarea', required: false, description: '영어. 안 했으면 "None".' },
+      { id: 'labResults', name: '검사결과', nameEn: 'Labs', type: 'textarea', required: false, description: '영어. 언급된 결과만.' },
+      { id: 'imaging', name: '영상검사', nameEn: 'Imaging', type: 'textarea', required: false, description: '영어. 언급된 것만.' },
+      // A - Assessment (Problem List → Assessment → Dx 순서)
+      { id: 'problemList', name: '문제목록', nameEn: 'Problem List', type: 'tags', required: false, description: '만성질환 목록. 1) DM 2) HTN 형식.' },
+      { id: 'assessment', name: '평가', nameEn: 'Assessment', type: 'textarea', required: true, description: '# 확정Dx + r/o DDx만.' },
+      { id: 'diagnosisConfirmed', name: '확정 진단', nameEn: 'Dx (#)', type: 'tags', required: false, description: 'DDx 확정 시 # 표시.' },
+      // P - Plan
+      { id: 'plan', name: '계획', nameEn: 'Plan', type: 'textarea', required: true, description: '영어 오더.' },
+      { id: 'followUp', name: '추적관찰', nameEn: 'F/U', type: 'textarea', required: false, description: '구체적 f/u만. 없으면 비움.' },
+      { id: 'notes', name: '기타', nameEn: 'Notes', type: 'textarea', required: false, description: '메모.' },
     ],
     promptContext: `
 ${BASE_CHARTING_STYLE}
@@ -292,7 +324,7 @@ INTERNAL MEDICINE EMPHASIS:
       { id: 'historyOfPresentIllness', name: '현병력', nameEn: 'PI', type: 'textarea', required: true, description: '"상환은" + "~함 체". 3-6문장. 발생시기/경과/악화요인.' },
       { id: 'lesionDescription', name: '병변 기술', nameEn: 'Lesion', type: 'textarea', required: false, description: 'ENGLISH. Morphology/distribution mentioned only. No guessing.' },
       { id: 'pertinentROS', name: '관련 증상', nameEn: 'ROS (+/-)', type: 'textarea', required: false, description: 'ENGLISH (+/-). pruritus(+), pain(-), oozing(-), fever(-) etc.' },
-      { id: 'pastMedicalHistory', name: '과거력', nameEn: 'PMH', type: 'tags', required: false, description: 'ENGLISH abbrev. atopic derm, eczema + duration if mentioned.' },
+      { id: 'pastMedicalHistory', name: '과거력', nameEn: 'Past History', type: 'tags', required: false, description: 'ENGLISH abbrev. atopic derm, eczema + duration if mentioned.' },
       { id: 'medications', name: '복용약', nameEn: 'Meds', type: 'tags', required: false, description: 'ENGLISH. Mentioned meds only.' },
       { id: 'allergies', name: '알레르기', nameEn: 'Allergies', type: 'tags', required: false, description: 'ENGLISH. "None" if no allergies (NOT NKDA).' },
       { id: 'physicalExam', name: '진찰소견', nameEn: 'PE', type: 'textarea', required: false, description: 'ENGLISH (+/-). "None" if not examined, otherwise full findings.' },
@@ -363,14 +395,7 @@ export function getFieldsForDepartment(departmentId: string): ChartField[] {
 // ==================== 차트 생성 ====================
 
 // 개별 필드 값 (확실/추측 구분 + 추론 메타데이터)
-export interface ChartFieldValue {
-  value: string | string[];
-  isConfirmed: boolean; // true: 대화에서 직접 언급됨
-  source?: 'stated' | 'inferred'; // stated=발화 기반, inferred=AI 추론
-  confidence?: 'low' | 'medium' | 'high'; // inferred일 때 필수
-  rationale?: string; // inferred: 1-2줄
-  evidence?: string[]; // 1-2개의 짧은 인용
-}
+// ChartFieldValue는 위에서 이미 정의됨 (중복 제거)
 
 export interface GeneratedChart {
   [fieldId: string]: ChartFieldValue;
@@ -596,7 +621,8 @@ export async function generateChart(
             reason: "Brief reason for this DDx",
             confidence: "high|medium|low",
             isConfirmed: false,
-            isRemoved: false
+            isRemoved: false,
+            source: "doctor|ai"
           }
         ]
       };
@@ -662,19 +688,21 @@ ${settings.additionalPrompt ? `\nADDITIONAL INSTRUCTIONS:\n${settings.additional
 FIELDS TO FILL:
 ${fieldDescriptions}
 
-CONFIDENCE & INFERENCE:
-- isConfirmed=true ONLY when content is CLEARLY and EXPLICITLY stated AND medically interpretable.
-- If unclear, garbled, or ambiguous → isConfirmed=false (or leave blank).
+RECORD vs AI INFERENCE:
+- 차트는 기본적으로 "기록"임. 대화에서 나온 내용은 모두 isConfirmed=true, source="stated"
+- AI 추론은 DDx 추천과 Plan 추천만 해당
 
 RULES:
-- CC, PI: isConfirmed=true, source="stated" (direct patient quotes)
-- ROS, PMH, Meds, Allergies, SHx, FHx, VS, PE, Labs:
-  - isConfirmed=true ONLY if clearly stated and medically meaningful
-  - If unclear/garbled (e.g., "소아잠도" instead of "소아당뇨"), leave blank or write "Unclear" with isConfirmed=false
+- CC, PI, ROS, PMH, Meds, Allergies, SHx, FHx, VS, PE, Labs, Imaging:
+  - 대화에서 언급된 내용 → isConfirmed=true, source="stated"
+  - 언급 안됨 → 비워둠 ("" or [])
 - Assessment: 
   - value = "# Dx" ONLY if doctor confirmed (otherwise EMPTY)
-  - ddxList = AI r/o items, isConfirmed=false, source="inferred"
-- Plan [AI Suggestions]: isConfirmed=false, source="inferred"
+  - ddxList = AI DDx 추천, isConfirmed=false, source="inferred"
+- Plan:
+  - [Orders] 의사가 언급한 오더 → isConfirmed=true, source="stated"
+  - [AI Suggestions] AI 추천 → isConfirmed=false, source="inferred"
+- F/U: 의사가 언급한 경우 → isConfirmed=true, source="stated"
 
 OUTPUT FORMAT (PURE JSON ONLY):
 ${JSON.stringify(jsonSchema, null, 2)}
@@ -701,25 +729,50 @@ CRITICAL:
             content:
 `다음 진료 대화를 바탕으로 한국 병원 외래 EMR처럼 작성해줘.
 
-CRITICAL RULES:
-- CC: 환자 표현 + (onset: 시점) 필수 포함
-- PI: "~함 체" 서술 + "상환은" 사용 (호소함, 발생함, 있었음) - "환자는/~님은" 금지
-- PMH: 약어 + duration (DM (since childhood), HTN (x3y))
-- Allergies: "None" 사용 (NKDA 금지)
-- SHx: Smoking (-), Alcohol (-) 형식
-- FHx: 한국식 (부: DM, 모: 특이사항 없음)
-- PE: 안 했으면 "None", 했으면 전부 (+/-) 기록
-- Assessment/DDx/Dx/Plan: 영어 (진단명 한국어 번역 금지)
+⚠️ CRITICAL RULES:
+1. 대화에서 언급된 내용만 기록! (언급 안 된 내용 임의 추가 금지)
+2. 언급된 내용은 빠짐없이 기록!
+3. "일반적으로 확인하는 항목"이라고 임의로 추가하지 말 것
 
-ASSESSMENT FORMAT (CRITICAL):
-- assessment.value = "# Dx" ONLY if doctor explicitly confirmed diagnosis (otherwise EMPTY "")
-- assessment.ddxList = AI r/o items array. 각 항목: {id, diagnosis, reason, confidence, isConfirmed: false, isRemoved: false}
-- NO Summary, NO Provider Impression, NO explanations - ONLY diagnosis structure
+FIELD-BY-FIELD RULES:
+- CC: 환자 표현 그대로 + (onset: 시점) 필수
+- PI: 모든 증상 특성 포함! (quality, location, timing, severity, aggravating/relieving factors)
+  예: "조이는 것처럼 아프고 오후에 심해짐" → 반드시 포함
+- ROS: 대화에서 언급된 증상만! 의학 약어 사용
+  ⚠️ 언급되지 않은 증상 추가 금지 (SOB, chest pain 등 임의 추가 금지)
+  예: N/V(-), HA(+), dizziness(+)
+  ⚠️ "Nausea (-), Vomiting (-)" 금지 → "N/V(-)" 사용
+- PMH: 약어 + duration (DM (10y), HTN (3y))
+- Meds: 모든 약물 + 용량 + 용법
+- Allergies: "None" (NKDA 금지)
+- SHx: 
+  - 안 함 → (-)
+  - 함 → (+)
+  - 가끔/특이사항 → 환자 표현 그대로! 예: Alcohol(가끔 한 잔 정도), Smoking(예전에 피웠다가 끊음)
+- FHx: 한국식 (부: DM, HTN / 모: 특이사항 없음)
+- VS: 측정된 모든 값 (BP, HR, BT, RR, SpO2)
+- PE: 
+  - 안 했으면 "None"
+  - 했으면 실제 소견 기록! (예: "Neuro: no focal deficit")
+- Labs: 검사 결과 (결과 없으면 비워둠)
+- Imaging: 영상 결과/소견 (결과 없으면 비워둠)
+- Assessment:
+  - assessment.value = "# Dx" (의사가 확정한 경우만: "~입니다", "~이에요")
+  - assessment.ddxList = 두 종류:
+    1. source: "doctor" = 의사가 언급한 r/o ("의심된다", "것 같다")
+    2. source: "ai" = AI가 대화 분석해서 추천하는 DDx
+  ⚠️ AI 추천은 의사가 언급하지 않은 가능한 진단만!
+- diagnosisConfirmed: 비워둘 것 (Assessment에서 # 표시로 충분)
+- Plan: 오더만! (F/U 절대 포함 금지!)
+  - 검사 오더: CBC, BMP, Brain CT 등
+  - 약 처방/변경: Increase amlodipine, Acetaminophen PRN 등
+  - 상담/교육: 등
+  ⚠️ Plan에 "f/u 1wk", "외래 예약" 등 F/U 내용 넣지 말 것!
+- F/U: 구체적 f/u만 (예: "f/u 1wk") - Plan과 완전 분리!
 
-PLAN FORMAT:
-- [Orders] 의사 오더만
-- [AI Suggestions] 근거 필수 (예: Blood glucose check (LOC + DM history))
-- Follow-up: 구체적 내용만, 없으면 비움
+ASSESSMENT FORMAT:
+- assessment.value = "# Dx" ONLY if doctor confirmed
+- assessment.ddxList = AI DDx 추천
 
 [진료 대화]
 ${conversation}`
@@ -763,11 +816,12 @@ ${conversation}`
         const rawValue = rawData[field.id];
         const isArrayField = field.type === 'tags' || field.type === 'list';
 
+        // 기본값: 기록이므로 isConfirmed=true
         const base: ChartFieldValue = {
           value: isArrayField ? [] : '',
-          isConfirmed: false,
+          isConfirmed: true, // 기본은 기록 (true)
           source: 'stated',
-          confidence: 'low',
+          confidence: 'high', // 기록은 high
           rationale: '',
           evidence: [],
         };
@@ -799,6 +853,7 @@ ${conversation}`
               confidence: normalizeConfidence(item.confidence),
               isConfirmed: item.isConfirmed === true,
               isRemoved: item.isRemoved === true,
+              source: (item.source === 'doctor' ? 'doctor' : 'ai') as 'doctor' | 'ai',
             })).filter(item => item.diagnosis.trim() !== '');
             
             // 2. confidence >= medium만 포함 (low 제외)
@@ -852,20 +907,21 @@ ${conversation}`
           }
         }
 
-        // 안전장치: inferred이면 isConfirmed는 반드시 false
+        // 안전장치: source에 따른 isConfirmed 설정
         if (chartData[field.id].source === 'inferred') {
+          // AI 추론은 항상 isConfirmed=false
           chartData[field.id].isConfirmed = false;
+        } else if (chartData[field.id].source === 'stated') {
+          // 대화 기록은 항상 isConfirmed=true (값이 있는 경우)
+          const val = chartData[field.id].value;
+          const hasValue = typeof val === 'string' ? val.trim().length > 0 : Array.isArray(val) ? val.length > 0 : false;
+          chartData[field.id].isConfirmed = hasValue;
+          chartData[field.id].confidence = 'high';
         }
 
         // 안전장치: evidence는 최대 2개
         if (chartData[field.id].evidence && chartData[field.id].evidence!.length > 2) {
           chartData[field.id].evidence = chartData[field.id].evidence!.slice(0, 2);
-        }
-
-        // 안전장치: confidence는 inferred에서만 의미있음(그래도 UI 편의상 유지)
-        if (chartData[field.id].source === 'stated') {
-          // stated인데 confidence/high 같은 게 와도 크게 문제는 없지만, 보수적으로 low로 고정하고 싶으면 아래 주석 해제
-          // chartData[field.id].confidence = 'low';
         }
       });
 
