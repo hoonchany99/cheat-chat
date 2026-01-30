@@ -1864,45 +1864,297 @@ function MainApp() {
                 />
               </div>
               <div className={`${mobileTab === 'ddx' ? 'block' : 'hidden'} h-full`}>
-                <div className="h-full bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                  <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-200 bg-slate-50">
-                    <Target className="w-4 h-4 text-amber-600" />
-                    <div className="text-sm font-semibold text-slate-700">DDx 추천</div>
-                    {chartData?.assessment?.ddxList && (
-                      <span className="text-[10px] text-slate-500">
-                        {chartData.assessment.ddxList.filter(d => !d.isRemoved).length}개
-                      </span>
-                    )}
-                  </div>
-                  <div className="h-[calc(100%-48px)] overflow-y-auto p-3">
-                    <div className="space-y-2 text-sm">
-                      {chartData?.diagnosisConfirmed?.value && (
-                        <div className="p-2 bg-teal-100 rounded-lg">
-                          <span className="font-bold text-teal-800"># {
-                            Array.isArray(chartData.diagnosisConfirmed.value) 
-                              ? chartData.diagnosisConfirmed.value.join(', ')
-                              : chartData.diagnosisConfirmed.value
-                          }</span>
-                        </div>
-                      )}
-                      {chartData?.assessment?.ddxList?.filter(d => !d.isRemoved && !d.isConfirmed).map((ddx, i) => (
-                        <div key={i} className="p-2 bg-amber-50 rounded-lg text-amber-800">
-                          r/o {ddx.diagnosis}
-                        </div>
-                      ))}
-                      {chartData?.plan?.value && (
-                        <div className="p-2 bg-slate-100 rounded-lg text-slate-700 whitespace-pre-wrap">
-                          {typeof chartData.plan.value === 'string' ? chartData.plan.value : ''}
-                        </div>
-                      )}
-                      {!chartData && (
-                        <div className="text-center py-4 text-slate-400">
-                          녹음 후 분석 결과가 표시됩니다
-                        </div>
-                      )}
+                <div className="h-full bg-gradient-to-br from-teal-50 to-cyan-50 rounded-2xl border-2 border-teal-200 shadow-sm overflow-hidden flex flex-col">
+                  {/* DDx Header */}
+                  <div className="flex-none px-4 py-3 border-b border-teal-200 bg-white/50">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-teal-500 to-cyan-500 flex items-center justify-center">
+                        <Target className="w-4 h-4 text-white" />
+                      </div>
+                      <div>
+                        <h3 className="font-bold text-sm text-teal-800">DDx 추천</h3>
+                        <p className="text-[10px] text-teal-600">
+                          {(isRecording || isRemoteRecording) ? '실시간 업데이트' : '감별진단'}
+                        </p>
+                      </div>
                     </div>
                   </div>
+
+                  {/* DDx Content */}
+                  <div className="flex-1 overflow-y-auto p-3 flex flex-col"
+                    style={{ gap: chartData || isRecording || isRemoteRecording ? '0.75rem' : '0' }}>
+                    
+                    {/* Dx/r/o 수동 추가 - 녹음 끝나고 차트 있을 때만 */}
+                    {!isRecording && !isRemoteRecording && chartData && (
+                      <div className="mb-1">
+                        {!showDiagnosisForm ? (
+                          <button
+                            onClick={() => setShowDiagnosisForm(true)}
+                            className="w-full py-2 px-3 rounded-lg border border-dashed border-slate-300 text-slate-500 text-xs hover:border-teal-400 hover:text-teal-600 hover:bg-teal-50/50 transition-all flex items-center justify-center gap-1.5"
+                          >
+                            <Plus className="w-3.5 h-3.5" /> 진단 추가
+                          </button>
+                        ) : (
+                          <div className="bg-white rounded-xl p-3 border border-teal-200 shadow-sm animate-in slide-in-from-top-2 duration-200">
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="text-[10px] font-bold text-slate-600 flex items-center gap-1">
+                                <Plus className="w-3 h-3" /> 진단 추가
+                              </div>
+                              <button 
+                                onClick={() => {
+                                  setShowDiagnosisForm(false);
+                                  setNewDiagnosisInput('');
+                                }}
+                                className="text-slate-400 hover:text-slate-600 text-xs"
+                              >
+                                ✕
+                              </button>
+                            </div>
+                            <div className="flex gap-1.5 mb-2">
+                              <button
+                                onClick={() => setNewDiagnosisType('dx')}
+                                className={`flex-1 text-[10px] py-1.5 rounded-md border transition-all ${
+                                  newDiagnosisType === 'dx' 
+                                    ? 'bg-teal-500 text-white border-teal-500 font-medium' 
+                                    : 'bg-slate-50 text-slate-500 border-slate-200 hover:border-teal-300'
+                                }`}
+                              >
+                                # Dx
+                              </button>
+                              <button
+                                onClick={() => setNewDiagnosisType('ro')}
+                                className={`flex-1 text-[10px] py-1.5 rounded-md border transition-all ${
+                                  newDiagnosisType === 'ro' 
+                                    ? 'bg-blue-500 text-white border-blue-500 font-medium' 
+                                    : 'bg-slate-50 text-slate-500 border-slate-200 hover:border-blue-300'
+                                }`}
+                              >
+                                r/o
+                              </button>
+                            </div>
+                            <div className="flex gap-1.5">
+                              <Input
+                                value={newDiagnosisInput}
+                                onChange={(e) => setNewDiagnosisInput(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') handleAddDiagnosis();
+                                  if (e.key === 'Escape') {
+                                    setShowDiagnosisForm(false);
+                                    setNewDiagnosisInput('');
+                                  }
+                                }}
+                                placeholder="진단명 (예: Tension headache)"
+                                className="flex-1 h-7 text-xs"
+                                autoFocus
+                              />
+                              <Button
+                                onClick={() => {
+                                  handleAddDiagnosis();
+                                  setShowDiagnosisForm(false);
+                                }}
+                                disabled={!newDiagnosisInput.trim()}
+                                size="sm"
+                                className="h-7 px-2.5 bg-teal-500 hover:bg-teal-600"
+                              >
+                                추가
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* 확정 진단 (확정된 DDx) */}
+                    {chartData?.assessment?.ddxList?.filter(d => d.isConfirmed).map((ddx) => (
+                      <div key={ddx.id} className="bg-teal-100 rounded-xl p-3 border border-teal-300">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <div className="text-[10px] font-bold text-teal-600 mb-0.5 flex items-center gap-1">
+                              <Check className="w-3 h-3" /> 확정 진단
+                            </div>
+                            <div className="text-sm font-semibold text-teal-900"># {ddx.diagnosis}</div>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleUnconfirmDdx(ddx.id)}
+                            className="h-6 text-[10px] text-teal-600 hover:text-teal-800 hover:bg-teal-200"
+                          >
+                            취소
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+
+                    {/* 대화 기반 r/o (미확정) */}
+                    {chartData?.assessment?.ddxList && chartData.assessment.ddxList.filter(d => !d.isRemoved && !d.isConfirmed && d.source === 'doctor').length > 0 && (
+                      <div className="space-y-2">
+                        <div className="text-[10px] font-bold text-blue-600 px-1 flex items-center gap-1">
+                          <MessageCircle className="w-3 h-3" /> 대화 기반 r/o
+                        </div>
+                        {chartData.assessment.ddxList
+                          .filter(d => !d.isRemoved && !d.isConfirmed && d.source === 'doctor')
+                          .map((ddx) => (
+                            <div 
+                              key={ddx.id} 
+                              className="bg-blue-50 rounded-lg p-2.5 border border-blue-200 shadow-sm"
+                            >
+                              <div className="flex items-center justify-between mb-1">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm font-medium text-blue-800">r/o {ddx.diagnosis}</span>
+                                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">
+                                    💬 대화
+                                  </span>
+                                </div>
+                              </div>
+                              {ddx.reason && (
+                                <p className="text-[10px] text-slate-500 mb-2">{ddx.reason}</p>
+                              )}
+                              <div className="flex gap-1.5">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleConfirmDdx(ddx.id)}
+                                  className="h-6 text-[10px] flex-1 border-teal-300 text-teal-700 hover:bg-teal-50"
+                                >
+                                  <Check className="w-3 h-3 mr-1" /> 확정
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleRemoveDdx(ddx.id)}
+                                  className="h-6 text-[10px] flex-1 border-slate-300 text-slate-500 hover:bg-slate-50"
+                                >
+                                  제외
+                                </Button>
+                              </div>
+                            </div>
+                          ))}
+                      </div>
+                    )}
+
+                    {/* AI DDx 추천 (미확정) */}
+                    {chartData?.assessment?.ddxList && chartData.assessment.ddxList.filter(d => !d.isRemoved && !d.isConfirmed && d.source !== 'doctor').length > 0 && (
+                      <div className="space-y-2">
+                        <div className="text-[10px] font-bold text-amber-600 px-1 flex items-center gap-1">
+                          <AlertCircle className="w-3 h-3" /> AI DDx 추천
+                        </div>
+                        {chartData.assessment.ddxList
+                          .filter(d => !d.isRemoved && !d.isConfirmed && d.source !== 'doctor')
+                          .map((ddx, index) => (
+                            <div 
+                              key={ddx.id} 
+                              className={`bg-white rounded-lg p-2.5 border shadow-sm transition-all duration-300 ${
+                                newDdxIds.has(ddx.id) 
+                                  ? 'border-amber-400 animate-[slideInRight_0.3s_ease-out]' 
+                                  : 'border-amber-200'
+                              }`}
+                              style={{ animationDelay: newDdxIds.has(ddx.id) ? `${index * 100}ms` : '0ms' }}
+                            >
+                              <div className="flex items-center justify-between mb-1">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm font-medium text-amber-800">r/o {ddx.diagnosis}</span>
+                                  <span className={`text-[10px] px-1.5 py-0.5 rounded ${
+                                    ddx.confidence === 'high' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
+                                  }`}>
+                                    {ddx.confidence === 'high' ? '높음' : '중간'}
+                                  </span>
+                                </div>
+                              </div>
+                              {ddx.reason && (
+                                <p className="text-[10px] text-slate-500 mb-2">{ddx.reason}</p>
+                              )}
+                              <div className="flex gap-1.5">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleConfirmDdx(ddx.id)}
+                                  className="h-6 text-[10px] flex-1 border-teal-300 text-teal-700 hover:bg-teal-50"
+                                >
+                                  <Check className="w-3 h-3 mr-1" /> 확정
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleRemoveDdx(ddx.id)}
+                                  className="h-6 text-[10px] flex-1 border-slate-300 text-slate-500 hover:bg-slate-50"
+                                >
+                                  제외
+                                </Button>
+                              </div>
+                            </div>
+                          ))}
+                      </div>
+                    )}
+
+                    {/* 제외된 DDx (복구 가능) */}
+                    {chartData?.assessment?.ddxList && chartData.assessment.ddxList.filter(d => d.isRemoved).length > 0 && (
+                      <div className="space-y-1.5">
+                        <div className="text-[10px] font-bold text-slate-400 px-1">제외됨</div>
+                        {chartData.assessment.ddxList
+                          .filter(d => d.isRemoved)
+                          .map((ddx) => (
+                            <div key={ddx.id} className="bg-slate-100 rounded-lg p-2 border border-slate-200 flex items-center justify-between">
+                              <span className="text-xs text-slate-400 line-through">{ddx.diagnosis}</span>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleRestoreDdx(ddx.id)}
+                                className="h-5 text-[10px] text-slate-500 hover:text-slate-700"
+                              >
+                                복구
+                              </Button>
+                            </div>
+                          ))}
+                      </div>
+                    )}
+
+                    {/* 녹음 중 - DDx 분석 중 애니메이션 */}
+                    {(isRecording || isRemoteRecording) && (!chartData?.assessment?.ddxList || chartData.assessment.ddxList.filter(d => !d.isRemoved).length === 0) && (
+                      <div className="flex-1 flex flex-col items-center justify-center text-center">
+                        <div className="relative mb-3">
+                          <div className="w-12 h-12 rounded-full bg-gradient-to-br from-teal-100 to-cyan-100 flex items-center justify-center">
+                            <Stethoscope className="w-6 h-6 text-teal-500" />
+                          </div>
+                          <div className="absolute inset-0 rounded-full border-2 border-teal-400 border-t-transparent animate-spin" />
+                        </div>
+                        <p className="text-sm font-medium text-teal-700">대화 분석 중</p>
+                        <p className="text-xs text-slate-400 mt-1">DDx를 추천합니다...</p>
+                      </div>
+                    )}
+
+                    {/* 빈 상태 - 녹음 전 */}
+                    {!chartData && !isRecording && !isRemoteRecording && (
+                      <div className="flex-1 flex flex-col items-center justify-center text-center">
+                        <Target className="w-10 h-10 text-teal-300 mb-2" />
+                        <p className="text-sm text-slate-500">녹음을 시작하면</p>
+                        <p className="text-sm text-slate-500">DDx가 추천됩니다</p>
+                      </div>
+                    )}
+                  </div>
                 </div>
+              </div>
+            </div>
+
+            {/* Mobile CTA */}
+            <div className="mt-3 flex-none">
+              <div className="bg-white/95 border border-slate-200 rounded-xl shadow-sm px-3 py-3 backdrop-blur">
+                <div className="flex items-center gap-2">
+                  <Mail className="w-4 h-4 text-teal-600" />
+                  <div className="text-xs font-semibold text-slate-700">정식 출시 알림 받기</div>
+                </div>
+                <form onSubmit={handleEmailInputSubmit} className="mt-2 flex gap-2">
+                  <Input
+                    type="email"
+                    placeholder="your@email.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="flex-1 h-9 text-sm"
+                  />
+                  <Button type="submit" className="h-9 px-3 text-sm bg-teal-600 hover:bg-teal-700">
+                    구독
+                  </Button>
+                </form>
               </div>
             </div>
           </div>
