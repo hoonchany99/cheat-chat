@@ -20,7 +20,6 @@ import {
   User,
   Activity,
   CheckCircle2,
-  HelpCircle,
   Loader2,
   Send,
   Mail
@@ -114,7 +113,6 @@ interface DemoConversation {
 
 interface ChartFieldData {
   value: string;
-  isConfirmed: boolean;
 }
 
 // 데모 대화 스크립트
@@ -141,11 +139,11 @@ const DEMO_CHARTS: Record<string, {
       { id: 'plan', label: 'P' },
     ],
     data: {
-      cc: { value: '두통 3일', isConfirmed: true },
-      pi: { value: '3d onset, squeezing type, p.m. aggravation, N(+)/V(-)', isConfirmed: true },
-      ros: { value: 'Dz(-), visual Sx(-)', isConfirmed: true },
-      assessment: { value: 'TTH, r/o migraine', isConfirmed: false },
-      plan: { value: '1. Tylenol 500mg prn\n2. f/u 1wk', isConfirmed: false },
+      cc: { value: '두통 3일' },
+      pi: { value: '3d onset, squeezing type, p.m. aggravation, N(+)/V(-)' },
+      ros: { value: 'Dz(-), visual Sx(-)' },
+      assessment: { value: 'TTH, r/o migraine' },
+      plan: { value: '1. Tylenol 500mg prn\n2. f/u 1wk' },
     },
   },
   internal: {
@@ -156,10 +154,10 @@ const DEMO_CHARTS: Record<string, {
       { id: 'plan', label: 'P' },
     ],
     data: {
-      cc: { value: '두통 3일', isConfirmed: true },
-      pi: { value: '3d h/o diffuse HA, afternoon aggravation, N(+)/V(-)', isConfirmed: true },
-      assessment: { value: 'TTH (Tension-type HA)', isConfirmed: false },
-      plan: { value: '1. AAP 500mg prn\n2. f/u 1wk', isConfirmed: false },
+      cc: { value: '두통 3일' },
+      pi: { value: '3d h/o diffuse HA, afternoon aggravation, N(+)/V(-)' },
+      assessment: { value: 'TTH (Tension-type HA)' },
+      plan: { value: '1. AAP 500mg prn\n2. f/u 1wk' },
     },
   },
 };
@@ -427,22 +425,10 @@ export function LandingPage({ onStart }: LandingPageProps) {
     }, 120);
   };
 
-  // 확정 애니메이션
-  const startConfirmAnimation = (deptId: string, onComplete: () => void) => {
-    const chartConfig = DEMO_CHARTS[deptId] || DEMO_CHARTS.general;
-    const unconfirmedFields = chartConfig.fields.filter(f => !chartConfig.data[f.id]?.isConfirmed);
-    
-    if (unconfirmedFields.length > 0) {
-      addTimeout(() => {
-        setChartData(prev => ({
-          ...prev,
-          [unconfirmedFields[0].id]: { ...prev[unconfirmedFields[0].id], isConfirmed: true }
-        }));
-        addTimeout(onComplete, 1000);
-      }, 600);
-    } else {
-      addTimeout(onComplete, 800);
-    }
+  // 차트 확정 애니메이션 (UI 전환용)
+  const startConfirmAnimation = (_deptId: string, onComplete: () => void) => {
+    // 간단한 딜레이 후 완료
+    addTimeout(onComplete, 800);
   };
 
   // 자동 데모 시작
@@ -635,13 +621,13 @@ export function LandingPage({ onStart }: LandingPageProps) {
       <header className="border-b bg-white/80 backdrop-blur-sm sticky top-0 z-50">
         <div className="container mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="bg-gradient-to-br from-teal-500 to-teal-600 text-white p-2 rounded-xl shadow-lg shadow-teal-500/20">
+            <div className="bg-gradient-to-br from-blue-600 to-blue-700 text-white p-2 rounded-xl shadow-lg shadow-blue-500/20">
               <Stethoscope className="w-5 h-5" />
             </div>
-            <span className="font-bold text-lg">Cheat Chat AI</span>
+            <span className="font-bold text-2xl">Savvy</span>
           </div>
           
-          <Button onClick={onStart} className="bg-teal-600 hover:bg-teal-700 shadow-lg shadow-teal-600/20">
+          <Button onClick={onStart} className="bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-600/20">
             시작하기
             <ChevronRight className="w-4 h-4 ml-1" />
           </Button>
@@ -651,20 +637,20 @@ export function LandingPage({ onStart }: LandingPageProps) {
       {/* Hero Section */}
       <section className="py-24 px-4 relative overflow-hidden">
         {/* Animated background decoration */}
-        <div className="absolute top-20 left-10 w-72 h-72 bg-teal-100 rounded-full blur-3xl opacity-40 animate-float" />
+        <div className="absolute top-20 left-10 w-72 h-72 bg-blue-100 rounded-full blur-3xl opacity-40 animate-float" />
         <div className="absolute bottom-10 right-10 w-96 h-96 bg-blue-100 rounded-full blur-3xl opacity-30 animate-float" style={{ animationDelay: '2s' }} />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-cyan-50 rounded-full blur-3xl opacity-20 animate-pulse" />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-slate-50 rounded-full blur-3xl opacity-20 animate-pulse" />
         
         <div className="container mx-auto max-w-4xl text-center relative">
-          <div className="animate-fade-in-up inline-flex items-center gap-2 px-4 py-2 rounded-full bg-teal-50 border border-teal-100 text-teal-700 text-sm font-medium mb-8">
-            <div className="w-2 h-2 rounded-full bg-teal-500 animate-pulse" />
+          <div className="animate-fade-in-up inline-flex items-center gap-2 px-4 py-2 rounded-full bg-blue-50 border border-blue-100 text-blue-700 text-sm font-medium mb-8">
+            <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
             AI 기반 의료 차팅 솔루션
           </div>
 
           <h1 className="animate-fade-in-up delay-200 text-4xl md:text-5xl lg:text-6xl font-bold text-slate-900 mb-6 leading-tight">
             진료 대화를
             <br />
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-teal-600 to-cyan-600">
+            <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-slate-600">
               AI가 자동으로 차팅
             </span>
           </h1>
@@ -679,7 +665,7 @@ export function LandingPage({ onStart }: LandingPageProps) {
             <Button
               size="lg"
               onClick={onStart}
-              className="w-full sm:w-auto text-base px-8 py-6 bg-gradient-to-r from-teal-600 to-teal-500 hover:from-teal-700 hover:to-teal-600 shadow-xl shadow-teal-600/25 transition-all hover:shadow-2xl hover:shadow-teal-600/30 hover:scale-105 animate-pulse-glow"
+              className="w-full sm:w-auto text-base px-8 py-6 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 shadow-xl shadow-blue-600/25 transition-all hover:shadow-2xl hover:shadow-blue-600/30 hover:scale-105 animate-pulse-glow"
             >
               <Play className="w-5 h-5 mr-2" />
               바로 시작하기
@@ -689,11 +675,11 @@ export function LandingPage({ onStart }: LandingPageProps) {
 
           <div className="animate-fade-in-up delay-600 flex items-center justify-center gap-6 text-sm text-slate-500">
             <span className="flex items-center gap-1.5">
-              <Check className="w-4 h-4 text-teal-500" />
+              <Check className="w-4 h-4 text-blue-500" />
               로그인 필요없음
             </span>
             <span className="flex items-center gap-1.5">
-              <Check className="w-4 h-4 text-teal-500" />
+              <Check className="w-4 h-4 text-blue-500" />
               무료 체험
             </span>
           </div>
@@ -712,7 +698,7 @@ export function LandingPage({ onStart }: LandingPageProps) {
                   <div className={`relative w-12 h-12 rounded-full flex items-center justify-center transition-all shadow-lg ${
                     isRecording 
                       ? 'bg-red-500 shadow-red-500/30' 
-                      : 'bg-gradient-to-br from-teal-500 to-teal-600 shadow-teal-500/30'
+                      : 'bg-gradient-to-br from-blue-600 to-blue-700 shadow-blue-500/30'
                   }`}>
                     {isRecording ? (
                       <Square className="w-4 h-4 text-white fill-white" />
@@ -751,7 +737,7 @@ export function LandingPage({ onStart }: LandingPageProps) {
                 {/* Left - 실시간 대화 */}
                 <div className="p-5 bg-white border-r border-slate-100 flex flex-col">
                   <div className="flex items-center gap-2 mb-3">
-                    <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-cyan-500 to-cyan-600 flex items-center justify-center">
+                    <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-slate-500 to-slate-600 flex items-center justify-center">
                       <Activity className="w-3.5 h-3.5 text-white" />
                     </div>
                     <span className="text-sm font-semibold text-slate-700">실시간 대화</span>
@@ -777,11 +763,11 @@ export function LandingPage({ onStart }: LandingPageProps) {
                           <div key={index} className={`flex ${conv.speaker === 'doctor' ? 'justify-end' : 'justify-start'}`}>
                             <div className={`max-w-[85%] rounded-xl px-3 py-2 ${
                               conv.speaker === 'doctor'
-                                ? 'bg-gradient-to-br from-teal-500 to-teal-600 text-white'
+                                ? 'bg-gradient-to-br from-blue-600 to-blue-700 text-white'
                                 : 'bg-white border border-slate-200'
                             }`}>
                               <div className={`text-[10px] mb-0.5 font-medium flex items-center gap-1 ${
-                                conv.speaker === 'doctor' ? 'text-teal-100' : 'text-slate-500'
+                                conv.speaker === 'doctor' ? 'text-blue-100' : 'text-slate-500'
                               }`}>
                                 {conv.speaker === 'doctor' ? (
                                   <><Stethoscope className="w-2.5 h-2.5" /> 의사</>
@@ -803,24 +789,24 @@ export function LandingPage({ onStart }: LandingPageProps) {
                 </div>
 
                 {/* Right - AI 차트 */}
-                <div className="p-5 bg-gradient-to-br from-teal-50/50 to-cyan-50/50 flex flex-col">
+                <div className="p-5 bg-gradient-to-br from-blue-50/50 to-slate-50/50 flex flex-col">
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2">
-                      <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-teal-500 to-teal-600 flex items-center justify-center">
+                      <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-blue-600 to-blue-700 flex items-center justify-center">
                         <FileText className="w-3.5 h-3.5 text-white" />
                       </div>
                       <span className="text-sm font-semibold text-slate-700">AI 생성 차트</span>
                     </div>
                     {showChart && chartProgress >= 100 && (
                       <div className={`h-6 px-2 rounded text-[10px] font-medium flex items-center gap-1 transition-all ${
-                        copied ? 'bg-teal-600 text-white' : 'bg-white border border-slate-200 text-slate-600'
+                        copied ? 'bg-blue-600 text-white' : 'bg-white border border-slate-200 text-slate-600'
                       }`}>
                         {copied ? <><Check className="w-3 h-3" /> 복사됨</> : <><Copy className="w-3 h-3" /> EMR에 복사</>}
                       </div>
                     )}
                   </div>
                   
-                  <div className="flex-1 bg-white rounded-xl border border-teal-100 p-3 max-h-[220px] overflow-y-scroll hide-scrollbar pointer-events-none">
+                  <div className="flex-1 bg-white rounded-xl border border-blue-100 p-3 max-h-[220px] overflow-y-scroll hide-scrollbar pointer-events-none">
                     {!showChart ? (
                       <div className="h-full flex items-center justify-center text-slate-400 text-xs">
                         녹음 종료 후 AI가 차트를 생성합니다
@@ -836,33 +822,17 @@ export function LandingPage({ onStart }: LandingPageProps) {
                             if (chartProgress < (index + 1) * progressPerField) return null;
                             
                             const fieldData = chartData[field.id];
-                            const isConfirmed = fieldData?.isConfirmed ?? false;
                             const value = fieldData?.value || '-';
                             
                             return (
                               <div 
                                 key={field.id} 
-                                className={`p-2 rounded-lg border transition-all ${
-                                  isConfirmed 
-                                    ? 'bg-teal-50/50 border-teal-200' 
-                                    : 'bg-amber-50/50 border-amber-200'
-                                }`}
+                                className="p-2 rounded-lg border transition-all bg-blue-50/50 border-blue-200"
                               >
                                 <div className="flex items-center gap-1.5 mb-0.5">
-                                  {isConfirmed ? (
-                                    <CheckCircle2 className="w-3 h-3 text-teal-600" />
-                                  ) : (
-                                    <HelpCircle className="w-3 h-3 text-amber-500" />
-                                  )}
-                                  <span className={`text-[10px] font-bold uppercase ${
-                                    isConfirmed ? 'text-teal-700' : 'text-amber-700'
-                                  }`}>
+                                  <CheckCircle2 className="w-3 h-3 text-blue-600" />
+                                  <span className="text-[10px] font-bold uppercase text-blue-700">
                                     {field.label}
-                                  </span>
-                                  <span className={`text-[9px] ml-auto ${
-                                    isConfirmed ? 'text-teal-500' : 'text-amber-500'
-                                  }`}>
-                                    {isConfirmed ? '확정' : 'AI 추측'}
                                   </span>
                                 </div>
                                 <p className="text-[11px] text-slate-700 whitespace-pre-line pl-4">
@@ -894,10 +864,10 @@ export function LandingPage({ onStart }: LandingPageProps) {
 
           <div className="grid md:grid-cols-3 gap-8">
             <div className={`text-center group hover:-translate-y-2 transition-all duration-300 scroll-hidden stagger-1 ${howItWorksSection.isVisible ? 'scroll-visible' : ''}`}>
-              <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-teal-500 to-teal-600 flex items-center justify-center mx-auto mb-5 shadow-xl shadow-teal-500/30 group-hover:scale-110 group-hover:rotate-3 transition-all duration-300">
+              <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-600 to-blue-700 flex items-center justify-center mx-auto mb-5 shadow-xl shadow-blue-500/30 group-hover:scale-110 group-hover:rotate-3 transition-all duration-300">
                 <Mic className="w-7 h-7 text-white" />
               </div>
-              <div className="text-xs font-bold text-teal-600 mb-2 tracking-wide">STEP 1</div>
+              <div className="text-xs font-bold text-blue-600 mb-2 tracking-wide">STEP 1</div>
               <h3 className="font-bold text-slate-900 mb-2 text-lg">녹음 시작</h3>
               <p className="text-sm text-slate-500 leading-relaxed">
                 마이크 버튼을 클릭하여<br />진료 대화를 녹음합니다.
@@ -905,10 +875,10 @@ export function LandingPage({ onStart }: LandingPageProps) {
             </div>
 
             <div className={`text-center group hover:-translate-y-2 transition-all duration-300 scroll-hidden stagger-2 ${howItWorksSection.isVisible ? 'scroll-visible' : ''}`}>
-              <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-cyan-500 to-cyan-600 flex items-center justify-center mx-auto mb-5 shadow-xl shadow-cyan-500/30 group-hover:scale-110 group-hover:rotate-3 transition-all duration-300">
+              <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-slate-500 to-slate-600 flex items-center justify-center mx-auto mb-5 shadow-xl shadow-slate-500/30 group-hover:scale-110 group-hover:rotate-3 transition-all duration-300">
                 <MessageSquare className="w-7 h-7 text-white" />
               </div>
-              <div className="text-xs font-bold text-cyan-600 mb-2 tracking-wide">STEP 2</div>
+              <div className="text-xs font-bold text-slate-600 mb-2 tracking-wide">STEP 2</div>
               <h3 className="font-bold text-slate-900 mb-2 text-lg">실시간 변환</h3>
               <p className="text-sm text-slate-500 leading-relaxed">
                 AI가 음성을 텍스트로 변환하고<br />화자를 자동 구분합니다.
@@ -933,13 +903,13 @@ export function LandingPage({ onStart }: LandingPageProps) {
       <section ref={benefitsSection.ref} className="py-24 px-4 bg-slate-50">
         <div className="container mx-auto max-w-4xl">
           <h2 className={`text-2xl md:text-3xl font-bold text-center text-slate-900 mb-16 scroll-hidden ${benefitsSection.isVisible ? 'scroll-visible' : ''}`}>
-            왜 Cheat Chat AI인가요?
+            왜 Savvy인가요?
           </h2>
 
           <div className="grid sm:grid-cols-2 gap-5">
             <Card className={`border-0 shadow-lg hover:shadow-xl hover:-translate-y-1 transition-all duration-300 bg-white group cursor-default scroll-hidden stagger-1 ${benefitsSection.isVisible ? 'scroll-visible' : ''}`}>
               <CardContent className="p-6 flex gap-4">
-                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-teal-500 to-teal-600 flex items-center justify-center shrink-0 shadow-lg shadow-teal-500/25 group-hover:scale-110 transition-transform">
+                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-600 to-blue-700 flex items-center justify-center shrink-0 shadow-lg shadow-blue-500/25 group-hover:scale-110 transition-transform">
                   <Clock className="w-6 h-6 text-white" />
                 </div>
                 <div>
@@ -953,7 +923,7 @@ export function LandingPage({ onStart }: LandingPageProps) {
 
             <Card className={`border-0 shadow-lg hover:shadow-xl hover:-translate-y-1 transition-all duration-300 bg-white group cursor-default scroll-hidden stagger-2 ${benefitsSection.isVisible ? 'scroll-visible' : ''}`}>
               <CardContent className="p-6 flex gap-4">
-                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-cyan-500 to-cyan-600 flex items-center justify-center shrink-0 shadow-lg shadow-cyan-500/25 group-hover:scale-110 transition-transform">
+                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-slate-500 to-slate-600 flex items-center justify-center shrink-0 shadow-lg shadow-slate-500/25 group-hover:scale-110 transition-transform">
                   <Zap className="w-6 h-6 text-white" />
                 </div>
                 <div>
@@ -997,19 +967,19 @@ export function LandingPage({ onStart }: LandingPageProps) {
       </section>
 
       {/* CTA Section */}
-      <section ref={ctaSection.ref} className="py-24 px-4 bg-gradient-to-br from-teal-600 to-cyan-600 overflow-hidden">
+      <section ref={ctaSection.ref} className="py-24 px-4 bg-gradient-to-br from-blue-600 to-slate-600 overflow-hidden">
         <div className="container mx-auto max-w-2xl text-center">
           <h2 className={`text-2xl md:text-3xl font-bold text-white mb-4 scroll-hidden ${ctaSection.isVisible ? 'scroll-visible' : ''}`}>
             지금 바로 체험해보세요
           </h2>
-          <p className={`text-teal-100 mb-10 scroll-hidden stagger-1 ${ctaSection.isVisible ? 'scroll-visible' : ''}`}>
+          <p className={`text-blue-100 mb-10 scroll-hidden stagger-1 ${ctaSection.isVisible ? 'scroll-visible' : ''}`}>
             로그인 없이 무료로 사용할 수 있습니다.
           </p>
 
           <Button
             size="lg"
             onClick={onStart}
-            className={`bg-white text-teal-700 hover:bg-teal-50 shadow-xl mb-12 px-8 hover:scale-105 transition-transform scroll-scale-hidden stagger-2 ${ctaSection.isVisible ? 'scroll-scale-visible' : ''}`}
+            className={`bg-white text-blue-700 hover:bg-blue-50 shadow-xl mb-12 px-8 hover:scale-105 transition-transform scroll-scale-hidden stagger-2 ${ctaSection.isVisible ? 'scroll-scale-visible' : ''}`}
           >
             <Play className="w-5 h-5 mr-2" />
             시작하기
@@ -1020,7 +990,7 @@ export function LandingPage({ onStart }: LandingPageProps) {
             <h3 className="font-semibold text-white mb-2">
               정식 출시 알림 받기
             </h3>
-            <p className="text-teal-100 text-sm mb-5">
+            <p className="text-blue-100 text-sm mb-5">
               새로운 기능 소식을 이메일로 받아보세요.
             </p>
 
@@ -1038,12 +1008,12 @@ export function LandingPage({ onStart }: LandingPageProps) {
                   placeholder="your@email.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="flex-1 bg-white/20 border-white/30 text-white placeholder:text-teal-200 focus:bg-white/30"
+                  className="flex-1 bg-white/20 border-white/30 text-white placeholder:text-blue-200 focus:bg-white/30"
                 />
                 <Button 
                   type="submit" 
                   disabled={isSubmitting}
-                  className="bg-white text-teal-700 hover:bg-teal-50 px-6"
+                  className="bg-white text-blue-700 hover:bg-blue-50 px-6"
                 >
                   {isSubmitting ? '...' : '구독'}
                 </Button>
@@ -1057,7 +1027,7 @@ export function LandingPage({ onStart }: LandingPageProps) {
                 if (!open) setFeedbackStep('input');
               }}>
                 <DialogTrigger asChild>
-                  <Button variant="ghost" size="sm" className="text-teal-100 hover:text-white hover:bg-white/10">
+                  <Button variant="ghost" size="sm" className="text-blue-100 hover:text-white hover:bg-white/10">
                     <MessageSquare className="w-4 h-4 mr-1.5" />
                     피드백 보내기
                   </Button>
@@ -1065,7 +1035,7 @@ export function LandingPage({ onStart }: LandingPageProps) {
                 <DialogContent className="sm:max-w-md">
                   <DialogHeader>
                     <DialogTitle className="flex items-center gap-2">
-                      <MessageSquare className="w-5 h-5 text-teal-600" />
+                      <MessageSquare className="w-5 h-5 text-blue-600" />
                       {feedbackStep === 'input' ? '피드백 보내기' : '추가 정보 (선택)'}
                     </DialogTitle>
                   </DialogHeader>
@@ -1084,7 +1054,7 @@ export function LandingPage({ onStart }: LandingPageProps) {
                         </Button>
                         <Button 
                           onClick={handleFeedbackNext}
-                          className="bg-teal-600 hover:bg-teal-700"
+                          className="bg-blue-600 hover:bg-blue-700"
                         >
                           다음
                           <ChevronRight className="w-4 h-4 ml-1" />
@@ -1156,7 +1126,7 @@ export function LandingPage({ onStart }: LandingPageProps) {
                         <Button 
                           type="submit" 
                           disabled={isSendingFeedback}
-                          className="bg-teal-600 hover:bg-teal-700"
+                          className="bg-blue-600 hover:bg-blue-700"
                         >
                           {isSendingFeedback ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Send className="w-4 h-4 mr-2" />}
                           보내기
@@ -1174,7 +1144,7 @@ export function LandingPage({ onStart }: LandingPageProps) {
             <DialogContent className="sm:max-w-md">
               <DialogHeader>
                 <DialogTitle className="flex items-center gap-2">
-                  <Mail className="w-5 h-5 text-teal-600" />
+                  <Mail className="w-5 h-5 text-blue-600" />
                   조금만 더 알려주세요!
                 </DialogTitle>
               </DialogHeader>
@@ -1231,7 +1201,7 @@ export function LandingPage({ onStart }: LandingPageProps) {
                   <Button 
                     type="submit" 
                     disabled={isSubmitting}
-                    className="bg-teal-600 hover:bg-teal-700"
+                    className="bg-blue-600 hover:bg-blue-700"
                   >
                     {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Mail className="w-4 h-4 mr-2" />}
                     완료
@@ -1248,10 +1218,10 @@ export function LandingPage({ onStart }: LandingPageProps) {
         <div className="container mx-auto px-4">
           <div className="flex items-center justify-between text-sm text-slate-500">
             <div className="flex items-center gap-2">
-              <div className="bg-gradient-to-br from-teal-500 to-teal-600 text-white p-1 rounded-lg">
+              <div className="bg-gradient-to-br from-blue-600 to-blue-700 text-white p-1 rounded-lg">
                 <Stethoscope className="w-4 h-4" />
               </div>
-              <span className="font-medium">Cheat Chat AI</span>
+              <span className="font-bold text-lg">Savvy</span>
             </div>
             <p>© 2026 Utopify Technologies</p>
           </div>

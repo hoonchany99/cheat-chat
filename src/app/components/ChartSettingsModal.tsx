@@ -116,7 +116,7 @@ function SortableFieldItem({ field, index, onToggleRequired, onRemove }: Sortabl
       <Button
         variant={field.required ? "default" : "ghost"}
         size="sm"
-        className={`h-6 text-xs px-2 ${field.required ? 'bg-teal-600 hover:bg-teal-700' : ''}`}
+        className={`h-6 text-xs px-2 ${field.required ? 'bg-blue-600 hover:bg-blue-700' : ''}`}
         onClick={() => onToggleRequired(field.id)}
       >
         {field.required ? '필수' : '선택'}
@@ -258,7 +258,7 @@ export function ChartSettingsModal({ settings, onSettingsChange, departmentName 
       <DialogContent className="max-w-2xl max-h-[80vh] sm:max-h-[85vh] flex flex-col overflow-hidden">
         <DialogHeader className="flex-shrink-0">
           <DialogTitle className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-teal-500 to-teal-600 flex items-center justify-center">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-600 to-blue-700 flex items-center justify-center">
               <Building2 className="w-4 h-4 text-white" />
             </div>
             차트 설정
@@ -285,13 +285,13 @@ export function ChartSettingsModal({ settings, onSettingsChange, departmentName 
                     variant={localSettings.selectedDepartment === preset.id ? 'default' : 'outline'}
                     className={`h-auto py-3 flex flex-col items-start gap-1 ${
                       localSettings.selectedDepartment === preset.id 
-                        ? 'bg-teal-600 hover:bg-teal-700 text-white' 
-                        : 'hover:border-teal-300 hover:bg-teal-50'
+                        ? 'bg-blue-600 hover:bg-blue-700 text-white' 
+                        : 'hover:border-blue-300 hover:bg-blue-50'
                     }`}
                     onClick={() => handleDepartmentChange(preset.id)}
                   >
                     <span className="font-medium">{preset.name}</span>
-                    <span className={`text-xs ${localSettings.selectedDepartment === preset.id ? 'text-teal-100' : 'opacity-70'}`}>
+                    <span className={`text-xs ${localSettings.selectedDepartment === preset.id ? 'text-blue-100' : 'opacity-70'}`}>
                       {preset.fields.length}개 필드
                     </span>
                   </Button>
@@ -390,7 +390,7 @@ export function ChartSettingsModal({ settings, onSettingsChange, departmentName 
                     <option value="textarea">텍스트 (여러 줄)</option>
                     <option value="tags">태그 (목록)</option>
                   </select>
-                  <Button onClick={handleAddField} disabled={!newFieldName.trim()} className="bg-teal-600 hover:bg-teal-700">
+                  <Button onClick={handleAddField} disabled={!newFieldName.trim()} className="bg-blue-600 hover:bg-blue-700">
                     <Plus className="w-4 h-4" />
                   </Button>
                 </div>
@@ -423,7 +423,7 @@ export function ChartSettingsModal({ settings, onSettingsChange, departmentName 
           <Button variant="outline" onClick={() => setOpen(false)}>
             취소
           </Button>
-          <Button onClick={handleSave} className="bg-teal-600 hover:bg-teal-700">
+          <Button onClick={handleSave} className="bg-blue-600 hover:bg-blue-700">
             설정 저장
           </Button>
         </DialogFooter>

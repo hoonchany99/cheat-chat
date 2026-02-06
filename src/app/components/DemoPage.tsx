@@ -21,8 +21,7 @@ import {
   Copy,
   Check,
   History,
-  CheckCircle2,
-  HelpCircle
+  CheckCircle2
 } from 'lucide-react';
 import { DEPARTMENT_PRESETS } from '@/services/chartService';
 
@@ -179,10 +178,9 @@ const PAST_RECORDS: Record<string, PastRecord[]> = {
   '5': [],
 };
 
-// 진료과별 필드 및 차트 데이터 (확정/추측 구분 포함)
+// 진료과별 필드 및 차트 데이터
 interface ChartFieldData {
   value: string;
-  isConfirmed: boolean; // true: 대화에서 언급됨, false: AI 추측
 }
 
 const DEPARTMENT_CHARTS: Record<string, { 
@@ -200,13 +198,13 @@ const DEPARTMENT_CHARTS: Record<string, {
       { id: 'plan', label: 'Plan' },
     ],
     data: {
-      cc: { value: '두통 3일', isConfirmed: true },
-      pi: { value: '3d onset, global squeezing type, p.m. aggravation, mild N/V(+), Dz(-)', isConfirmed: true },
-      ros: { value: 'Gen: sleep deprivation, fatigue\nNeuro: HA(+), Dz(-), visual Sx(-)', isConfirmed: true },
-      pmh: { value: 'No significant Hx', isConfirmed: true },
-      medications: { value: 'MVI qd', isConfirmed: true },
-      assessment: { value: 'TTH (Tension-Type Headache), likely stress-induced', isConfirmed: false },
-      plan: { value: '1. Tylenol 500mg 1T prn\n2. Sleep hygiene education\n3. f/u 1wk', isConfirmed: false },
+      cc: { value: '두통 3일' },
+      pi: { value: '3d onset, global squeezing type, p.m. aggravation, mild N/V(+), Dz(-)' },
+      ros: { value: 'Gen: sleep deprivation, fatigue\nNeuro: HA(+), Dz(-), visual Sx(-)' },
+      pmh: { value: 'No significant Hx' },
+      medications: { value: 'MVI qd' },
+      assessment: { value: 'TTH (Tension-Type Headache), likely stress-induced' },
+      plan: { value: '1. Tylenol 500mg 1T prn\n2. Sleep hygiene education\n3. f/u 1wk' },
     },
   },
   internal: {
@@ -221,14 +219,14 @@ const DEPARTMENT_CHARTS: Record<string, {
       { id: 'plan', label: 'P' },
     ],
     data: {
-      cc: { value: '두통 3일', isConfirmed: true },
-      pi: { value: '3d onset, diffuse squeezing HA, afternoon aggravation, N(+)/V(-)', isConfirmed: true },
-      vitals: { value: 'BP 128/82, HR 76, BT 36.5℃, SpO2 98% RA', isConfirmed: false },
-      ros: { value: 'Gen: fatigue, ↓sleep\nNeuro: HA(+), Dz(-), LOC(-), visual Δ(-)', isConfirmed: true },
-      pmh: { value: 'NKA except PCN', isConfirmed: true },
-      labs: { value: 'CBC/LFT/RFT: pending', isConfirmed: false },
-      assessment: { value: 'TTH, r/o 2° causes', isConfirmed: false },
-      plan: { value: '1. AAP 500mg prn\n2. ✓ CBC/BMP/TSH\n3. RTC 1wk', isConfirmed: false },
+      cc: { value: '두통 3일' },
+      pi: { value: '3d onset, diffuse squeezing HA, afternoon aggravation, N(+)/V(-)' },
+      vitals: { value: 'BP 128/82, HR 76, BT 36.5℃, SpO2 98% RA' },
+      ros: { value: 'Gen: fatigue, ↓sleep\nNeuro: HA(+), Dz(-), LOC(-), visual Δ(-)' },
+      pmh: { value: 'NKA except PCN' },
+      labs: { value: 'CBC/LFT/RFT: pending' },
+      assessment: { value: 'TTH, r/o 2° causes' },
+      plan: { value: '1. AAP 500mg prn\n2. ✓ CBC/BMP/TSH\n3. RTC 1wk' },
     },
   },
   orthopedic: {
@@ -242,13 +240,13 @@ const DEPARTMENT_CHARTS: Record<string, {
       { id: 'plan', label: 'P' },
     ],
     data: {
-      cc: { value: '왼쪽 무릎 통증 1주일', isConfirmed: true },
-      moi: { value: 'Twisting injury during hiking', isConfirmed: true },
-      pain: { value: 'NRS 6/10, ↑ amb, ↓ rest', isConfirmed: true },
-      pe: { value: 'ROM 0-100°, (+) McMurray, (-) Lachman, mild effusion, NVI', isConfirmed: true },
-      imaging: { value: 'XR: no fx/disloc\nMRI: MM tear (Grade II)', isConfirmed: true },
-      assessment: { value: 'Lt. MM tear', isConfirmed: false },
-      plan: { value: '1. → Arthroscopic meniscectomy\n2. Celebrex 200mg bid x2wk\n3. PT post-op', isConfirmed: false },
+      cc: { value: '왼쪽 무릎 통증 1주일' },
+      moi: { value: 'Twisting injury during hiking' },
+      pain: { value: 'NRS 6/10, ↑ amb, ↓ rest' },
+      pe: { value: 'ROM 0-100°, (+) McMurray, (-) Lachman, mild effusion, NVI' },
+      imaging: { value: 'XR: no fx/disloc\nMRI: MM tear (Grade II)' },
+      assessment: { value: 'Lt. MM tear' },
+      plan: { value: '1. → Arthroscopic meniscectomy\n2. Celebrex 200mg bid x2wk\n3. PT post-op' },
     },
   },
   psychiatry: {
@@ -261,12 +259,12 @@ const DEPARTMENT_CHARTS: Record<string, {
       { id: 'plan', label: 'P' },
     ],
     data: {
-      cc: { value: '우울감, 불면 1개월', isConfirmed: true },
-      hpi: { value: '1mo h/o ↓mood, insomnia (DIS/DMS), anhedonia, poor conc.', isConfirmed: true },
-      mse: { value: 'A: kempt, cooperative\nM: "우울해요"\nAf: constricted, congruent\nT: no delusion\nP: no AH/VH\nC: A&Ox4', isConfirmed: true },
-      risk: { value: 'SI(-), HI(-), no plan/intent, no access', isConfirmed: true },
-      assessment: { value: 'MDD, single episode, mod severity', isConfirmed: false },
-      plan: { value: '1. Lexapro 10mg qhs\n2. → CBT\n3. RTC 2wk, safety plan given', isConfirmed: false },
+      cc: { value: '우울감, 불면 1개월' },
+      hpi: { value: '1mo h/o ↓mood, insomnia (DIS/DMS), anhedonia, poor conc.' },
+      mse: { value: 'A: kempt, cooperative\nM: "우울해요"\nAf: constricted, congruent\nT: no delusion\nP: no AH/VH\nC: A&Ox4' },
+      risk: { value: 'SI(-), HI(-), no plan/intent, no access' },
+      assessment: { value: 'MDD, single episode, mod severity' },
+      plan: { value: '1. Lexapro 10mg qhs\n2. → CBT\n3. RTC 2wk, safety plan given' },
     },
   },
   pediatrics: {
@@ -279,12 +277,12 @@ const DEPARTMENT_CHARTS: Record<string, {
       { id: 'plan', label: 'P' },
     ],
     data: {
-      cc: { value: '발열, 기침 2일', isConfirmed: true },
-      hpi: { value: '2d h/o fever (Tmax 38.5℃), cough, rhinorrhea, V(-), PO good', isConfirmed: true },
-      dev: { value: 'Age-appropriate milestones', isConfirmed: false },
-      vaccine: { value: 'UTD per NIP', isConfirmed: true },
-      assessment: { value: 'Acute viral URI', isConfirmed: false },
-      plan: { value: '1. Supportive care\n2. AAP 10mg/kg prn fever\n3. RTC if fever >3d/worsening', isConfirmed: false },
+      cc: { value: '발열, 기침 2일' },
+      hpi: { value: '2d h/o fever (Tmax 38.5℃), cough, rhinorrhea, V(-), PO good' },
+      dev: { value: 'Age-appropriate milestones' },
+      vaccine: { value: 'UTD per NIP' },
+      assessment: { value: 'Acute viral URI' },
+      plan: { value: '1. Supportive care\n2. AAP 10mg/kg prn fever\n3. RTC if fever >3d/worsening' },
     },
   },
   dental: {
@@ -297,12 +295,12 @@ const DEPARTMENT_CHARTS: Record<string, {
       { id: 'plan', label: 'P' },
     ],
     data: {
-      cc: { value: '왼쪽 아래 어금니 시림', isConfirmed: true },
-      history: { value: 'Last visit 6mo ago, no recent Tx', isConfirmed: true },
-      exam: { value: '#36 MOD caries, cold(+), perc(-), palp(-)', isConfirmed: true },
-      xray: { value: 'PA: caries → pulp, no periapical RL', isConfirmed: true },
-      assessment: { value: '#36 Deep caries c̄ reversible pulpitis', isConfirmed: false },
-      plan: { value: '1. CR restoration\n2. Desensitizing agent\n3. f/u 1wk', isConfirmed: false },
+      cc: { value: '왼쪽 아래 어금니 시림' },
+      history: { value: 'Last visit 6mo ago, no recent Tx' },
+      exam: { value: '#36 MOD caries, cold(+), perc(-), palp(-)' },
+      xray: { value: 'PA: caries → pulp, no periapical RL' },
+      assessment: { value: '#36 Deep caries c̄ reversible pulpitis' },
+      plan: { value: '1. CR restoration\n2. Desensitizing agent\n3. f/u 1wk' },
     },
   },
   surgery: {
@@ -315,12 +313,12 @@ const DEPARTMENT_CHARTS: Record<string, {
       { id: 'plan', label: 'P' },
     ],
     data: {
-      cc: { value: '오른쪽 아랫배 통증 1일', isConfirmed: true },
-      hpi: { value: '1d h/o RLQ pain, N/V(+), anorexia(+), fever(+)', isConfirmed: true },
-      pe: { value: 'RLQ TTP, (+) rebound, (+) McBurney, (+) Rovsing', isConfirmed: true },
-      labs: { value: 'WBC 14K, CRP 8.5\nCT: appendix 12mm, fat stranding', isConfirmed: true },
-      assessment: { value: 'Acute appendicitis', isConfirmed: false },
-      plan: { value: '1. NPO/IVF\n2. Abx (Ceftri/Flagyl)\n3. → Lap appy', isConfirmed: false },
+      cc: { value: '오른쪽 아랫배 통증 1일' },
+      hpi: { value: '1d h/o RLQ pain, N/V(+), anorexia(+), fever(+)' },
+      pe: { value: 'RLQ TTP, (+) rebound, (+) McBurney, (+) Rovsing' },
+      labs: { value: 'WBC 14K, CRP 8.5\nCT: appendix 12mm, fat stranding' },
+      assessment: { value: 'Acute appendicitis' },
+      plan: { value: '1. NPO/IVF\n2. Abx (Ceftri/Flagyl)\n3. → Lap appy' },
     },
   },
 };
@@ -438,41 +436,10 @@ export function DemoPage({ onBack }: DemoPageProps) {
     }, 150);
   };
 
-  // 확정 애니메이션
-  const startConfirmAnimation = (deptId: string, onComplete: () => void) => {
-    const chartConfig = DEPARTMENT_CHARTS[deptId] || DEPARTMENT_CHARTS.general;
-    const unconfirmedFields = chartConfig.fields.filter(f => !chartConfig.data[f.id]?.isConfirmed);
-    
-    // 첫 번째 추측 필드 확정
-    if (unconfirmedFields.length > 0) {
-      addTimeout(() => {
-        setChartData(prev => ({
-          ...prev,
-          [unconfirmedFields[0].id]: {
-            ...prev[unconfirmedFields[0].id],
-            isConfirmed: true
-          }
-        }));
-        
-        // 두 번째 추측 필드 확정
-        if (unconfirmedFields.length > 1) {
-          addTimeout(() => {
-            setChartData(prev => ({
-              ...prev,
-              [unconfirmedFields[1].id]: {
-                ...prev[unconfirmedFields[1].id],
-                isConfirmed: true
-              }
-            }));
-            addTimeout(onComplete, 1500);
-          }, 1000);
-        } else {
-          addTimeout(onComplete, 1500);
-        }
-      }, 800);
-    } else {
-      addTimeout(onComplete, 1000);
-    }
+  // 차트 확정 애니메이션 (UI 전환용)
+  const startConfirmAnimation = (_deptId: string, onComplete: () => void) => {
+    // 간단한 딜레이 후 완료
+    addTimeout(onComplete, 1000);
   };
 
   // 자동 데모 시작
@@ -564,7 +531,7 @@ export function DemoPage({ onBack }: DemoPageProps) {
             className="flex items-center gap-2 mb-4 text-slate-600 hover:text-slate-800 transition-colors"
           >
             <Stethoscope className="w-5 h-5 text-teal-600" />
-            <span className="font-bold text-slate-800">Cheat Chat AI</span>
+            <span className="font-bold text-xl text-slate-800">Savvy</span>
           </button>
           
           {/* 검색 (비활성화) */}
@@ -927,40 +894,17 @@ export function DemoPage({ onBack }: DemoPageProps) {
                               if (chartProgress < requiredProgress) return null;
                               
                               const fieldData = chartData[field.id];
-                              const isConfirmed = fieldData?.isConfirmed ?? false;
                               const value = fieldData?.value || '-';
                               
                               return (
                                 <div 
                                   key={field.id} 
-                                  className={`animate-fade-in p-3 rounded-xl border transition-all ${
-                                    isConfirmed 
-                                      ? 'bg-teal-50/50 border-teal-200' 
-                                      : 'bg-amber-50/50 border-amber-200'
-                                  }`}
+                                  className="animate-fade-in p-3 rounded-xl border transition-all bg-teal-50/50 border-teal-200"
                                 >
                                   <div className="flex items-center gap-2 mb-1">
-                                    {isConfirmed ? (
-                                      <CheckCircle2 className="w-3.5 h-3.5 text-teal-600" />
-                                    ) : (
-                                      <HelpCircle className="w-3.5 h-3.5 text-amber-500" />
-                                    )}
-                                    <span className={`text-xs font-bold uppercase tracking-wide ${
-                                      isConfirmed ? 'text-teal-700' : 'text-amber-700'
-                                    }`}>
+                                    <CheckCircle2 className="w-3.5 h-3.5 text-teal-600" />
+                                    <span className="text-xs font-bold uppercase tracking-wide text-teal-700">
                                       {field.label}
-                                    </span>
-                                    <span className={`text-[10px] ml-auto flex items-center gap-1 ${
-                                      isConfirmed ? 'text-teal-500' : 'text-amber-500'
-                                    }`}>
-                                      {isConfirmed ? (
-                                        <>
-                                          <Check className="w-3 h-3" />
-                                          확정됨
-                                        </>
-                                      ) : (
-                                        'AI 추측'
-                                      )}
                                     </span>
                                   </div>
                                   <p className="text-sm text-slate-700 whitespace-pre-line pl-5.5">

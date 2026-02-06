@@ -26,7 +26,7 @@
   </g>
   
   <!-- Logo Text -->
-  <text x="540" y="240" font-family="system-ui, -apple-system, sans-serif" font-size="48" font-weight="bold" fill="#0f172a">Cheat Chat AI</text>
+  <text x="540" y="240" font-family="system-ui, -apple-system, sans-serif" font-size="48" font-weight="bold" fill="#0f172a">Savvy</text>
   
   <!-- Tagline -->
   <text x="600" y="320" font-family="system-ui, -apple-system, sans-serif" font-size="32" fill="#0d9488" text-anchor="middle" font-weight="600">AI 기반 의료 차팅 솔루션</text>

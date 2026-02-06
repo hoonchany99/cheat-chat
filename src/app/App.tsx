@@ -1,19 +1,19 @@
-import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { VoiceRecorder } from './components/VoiceRecorder';
-import { TranscriptViewer } from './components/TranscriptViewer';
 import { ChartingResult, ChartData } from './components/ChartingResult';
 import { LandingPage } from './components/LandingPage';
 import { DemoPage } from './components/DemoPage';
 import { ChartSettingsModal } from './components/ChartSettingsModal';
 import { MobileMicPage } from './components/MobileMicPage';
 import { RemoteMicModal } from './components/RemoteMicModal';
+import { PatientSidebar } from './components/PatientSidebar';
 import { ChartSettings, DEFAULT_CHART_SETTINGS, DEPARTMENT_PRESETS, generateChartFromTranscriptStreaming, correctSTTErrors, DdxItem } from '@/services/chartService';
 import { classifyUtterancesWithGPT } from '@/services/deepgramService';
 import { Button } from '@/app/components/ui/button';
 import { Input } from '@/app/components/ui/input';
 import { Toaster } from '@/app/components/ui/sonner';
 import { toast } from 'sonner';
-import { RotateCcw, Stethoscope, FileText, Mail, Loader2, MessageSquare, Send, ChevronRight, MessageCircle, Smartphone, PanelLeft, Target, Check, AlertCircle, Plus, Play, Square } from 'lucide-react';
+import { RotateCcw, Stethoscope, Mail, Loader2, MessageSquare, Send, ChevronRight, Smartphone, Play, Square, User, Bell, Menu, X } from 'lucide-react';
 import { Textarea } from '@/app/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/app/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel } from '@/app/components/ui/select';
@@ -22,6 +22,18 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGr
 const GOOGLE_SHEETS_URL = 'https://script.google.com/macros/s/AKfycbw5uH766QFw6m0kLchHySCPH7UUXX1F0TCxZe4ygqRiGEvhcSKKSr_nQ0gs_88GCDA/exec';
 const MAX_CONTEXT_SEGMENTS = 8;
 const ENABLE_STT_CORRECTION = true;
+const MAX_SESSIONS = 5;
+
+// 환자 세션 타입
+export interface PatientSession {
+  id: string;
+  patientName: string;
+  patientMemo: string;
+  chartData: ChartData | null;
+  freeText: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
 
 // DDx 애니메이션 스타일
 const ddxAnimationStyles = `
@@ -190,6 +202,43 @@ function MainApp() {
   const [isRecording, setIsRecording] = useState(false);
   const [isRemoteRecording, setIsRemoteRecording] = useState(false);
   const [chartData, setChartData] = useState<ChartData | null>(null);
+  const [freeText, setFreeText] = useState(''); // 차트 자유 편집 텍스트
+  
+  // 환자 정보
+  const [patientName, setPatientName] = useState('');
+  const [patientMemo, setPatientMemo] = useState('');
+  
+  // 환자 세션 관리 - 초기 세션 1개 생성
+  const initialSessionId = `session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  const [sessions, setSessions] = useState<PatientSession[]>(() => [{
+    id: initialSessionId,
+    patientName: '',
+    patientMemo: '',
+    chartData: null,
+    freeText: '',
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  }]);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(initialSessionId);
+  const [sidebarOpen, setSidebarOpen] = useState(false); // 모바일 drawer용
+  const [showWelcomeModal, setShowWelcomeModal] = useState(false); // 첫 방문 환영 모달
+  
+  // 첫 방문 체크
+  useEffect(() => {
+    const hasVisited = localStorage.getItem('cheat-chat-visited');
+    if (!hasVisited) {
+      setShowWelcomeModal(true);
+    }
+  }, []);
+
+  const handleCloseWelcomeModal = useCallback(() => {
+    setShowWelcomeModal(false);
+    localStorage.setItem('cheat-chat-visited', 'true');
+  }, []);
+  
+  // 타임스탬프
+  const [sessionStartTime, setSessionStartTime] = useState<Date | null>(null);
+  const [sessionEndTime, setSessionEndTime] = useState<Date | null>(null);
   const [isGeneratingChart, setIsGeneratingChart] = useState(false);
   const [recordingProgress, setRecordingProgress] = useState(0);
   const [chartSettings, setChartSettings] = useState<ChartSettings>(DEFAULT_CHART_SETTINGS);
@@ -200,7 +249,6 @@ function MainApp() {
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [feedbackStep, setFeedbackStep] = useState<'input' | 'info'>('input');
   const [subscribeOpen, setSubscribeOpen] = useState(false);
-  const [mobileTab, setMobileTab] = useState<'transcript' | 'chart' | 'ddx'>('transcript');
   const [remoteMicOpen, setRemoteMicOpen] = useState(false);
   const [isRemoteConnected, setIsRemoteConnected] = useState(false);
   const [remoteRecordingTime, setRemoteRecordingTime] = useState(0);
@@ -213,19 +261,10 @@ function MainApp() {
   const pendingApiRef = useRef(0);
   const testAbortRef = useRef<AbortController | null>(null);
   const [silenceTimeout, setSilenceTimeout] = useState<NodeJS.Timeout | null>(null);
-  const [isTranscriptCollapsed, setIsTranscriptCollapsed] = useState(false);
-  const [newDdxIds, setNewDdxIds] = useState<Set<string>>(new Set()); // 새로 추가된 DDx 추적
-  const previousDdxIdsRef = useRef<Set<string>>(new Set());
-  const [hasNewDdx, setHasNewDdx] = useState(false);
   const bumpPendingApi = useCallback((delta: number) => {
     pendingApiRef.current = Math.max(0, pendingApiRef.current + delta);
     setPendingApiCount(pendingApiRef.current);
   }, []);
-  
-  // 수동 Dx/r/o 추가 상태
-  const [newDiagnosisInput, setNewDiagnosisInput] = useState('');
-  const [newDiagnosisType, setNewDiagnosisType] = useState<'dx' | 'ro'>('ro');
-  const [showDiagnosisForm, setShowDiagnosisForm] = useState(false);
   
   // 사용자 정보 상태
   const [userAge, setUserAge] = useState('');
@@ -240,13 +279,12 @@ function MainApp() {
 
   const selectedDepartment = DEPARTMENT_PRESETS.find(d => d.id === chartSettings.selectedDepartment);
   const selectedDepartmentName = selectedDepartment?.name || '내과';
-  const activeDdxCount = useMemo(() => {
-    return chartData?.assessment?.ddxList?.filter(d => !d.isRemoved).length ?? 0;
-  }, [chartData?.assessment?.ddxList]);
 
   // 🧪 테스트용: 실시간 시뮬레이션 (실제 녹음처럼 대화가 하나씩 추가됨)
   const [isTestRunning, setIsTestRunning] = useState(false);
+  const [testRecordingTime, setTestRecordingTime] = useState(0);
   const testIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const testTimerRef = useRef<NodeJS.Timeout | null>(null);
   const testSegmentsRef = useRef<Segment[]>([]);
   const isGeneratingRef = useRef(false); // API 요청 중인지 추적
   const pendingUpdateRef = useRef(false); // 대기 중인 업데이트가 있는지
@@ -383,7 +421,6 @@ function MainApp() {
     if (!allowShx && mergedData.socialHistory?.source !== 'user') {
       mergedData.socialHistory = {
         value: '',
-        isConfirmed: false,
         source: 'stated',
         confidence: 'low',
         rationale: '',
@@ -394,7 +431,6 @@ function MainApp() {
     if (!allowFhx && mergedData.familyHistory?.source !== 'user') {
       mergedData.familyHistory = {
         value: '',
-        isConfirmed: false,
         source: 'stated',
         confidence: 'low',
         rationale: '',
@@ -422,146 +458,96 @@ function MainApp() {
       setIsRecording(false);
       isGeneratingRef.current = false;
       pendingUpdateRef.current = false;
+      // 데모 중지 시 타임스탬프 설정
+      setSessionEndTime(new Date());
       handleReset();
       toast.info('데모 중지됨');
       return;
     }
 
     // 테스트 시나리오 풀 (10개) - 랜덤 재생
-    const commonInfo: Segment[] = [
-      { text: '과거에 큰 수술 받은 적 있나요?', speaker: 'doctor' },
-      { text: '없어요.', speaker: 'patient' },
-      { text: '현재 복용 중인 약은요?', speaker: 'doctor' },
-      { text: '정기적으로 먹는 약은 없어요.', speaker: 'patient' },
-      { text: '통증은 0부터 10까지면 어느 정도인가요?', speaker: 'doctor' },
-      { text: '지금은 7 정도예요.', speaker: 'patient' },
-      { text: '알레르기는요?', speaker: 'doctor' },
-      { text: '없어요.', speaker: 'patient' },
-      { text: '담배나 술은 하세요?', speaker: 'doctor' },
-      { text: '담배는 안 피우고 술은 가끔 한 잔 정도예요.', speaker: 'patient' },
-      { text: '가족력은요?', speaker: 'doctor' },
-      { text: '특이사항 없다고 들었어요.', speaker: 'patient' },
-      { text: '최근 해외여행이나 감염 접촉은 없었죠?', speaker: 'doctor' },
-      { text: '없었어요.', speaker: 'patient' },
-    ];
-
+    // 전문적인 3개 시나리오
     const testScenarios: Segment[][] = [
+      // 시나리오 1: 급성 관상동맥 증후군 (ACS) - 63세 남성
       [
-        { text: '안녕하세요, 어디가 불편해서 오셨어요?', speaker: 'doctor' },
-        { text: '오른쪽 아랫배가 너무 아파요. 어제 저녁부터 점점 심해졌어요.', speaker: 'patient' },
-        { text: '처음엔 어디부터 아프기 시작했나요?', speaker: 'doctor' },
-        { text: '처음엔 배꼽 주변이 아팠는데, 밤부터 오른쪽 아래로 내려갔어요.', speaker: 'patient' },
-        { text: '통증은 계속 있나요, 아니면 왔다 갔다 하나요?', speaker: 'doctor' },
-        { text: '계속 아프고 움직이면 더 아파요.', speaker: 'patient' },
-        { text: '열이나 오한은 있었어요?', speaker: 'doctor' },
-        { text: '새벽에 열이 38도쯤 났고 오한도 조금 있었어요.', speaker: 'patient' },
-        { text: '메스꺼움이나 구토는요?', speaker: 'doctor' },
-        { text: '메스꺼움은 있는데 토하진 않았어요.', speaker: 'patient' },
-        { text: '설사나 변비는요?', speaker: 'doctor' },
-        { text: '설사는 없고, 변은 어제 한 번 봤어요.', speaker: 'patient' },
-        ...commonInfo,
-        { text: '진찰해볼게요. 오른쪽 아래를 눌렀을 때 많이 아프네요. 반발통도 있습니다.', speaker: 'doctor' },
-        { text: '혈액검사랑 복부 CT 찍고, 수술 팀에도 컨설트 하겠습니다.', speaker: 'doctor' },
-        { text: '지금은 급성 충수염이 의심됩니다.', speaker: 'doctor' },
+        { text: '안녕하세요, 어떻게 오셨어요?', speaker: 'doctor' },
+        { text: '가슴이 너무 답답하고 조이는 느낌이에요. 한 시간 전에 갑자기 시작됐어요.', speaker: 'patient' },
+        { text: '통증이 어디로 퍼지나요?', speaker: 'doctor' },
+        { text: '왼쪽 팔이랑 턱 쪽으로 뻗치는 느낌이 있어요.', speaker: 'patient' },
+        { text: '땀이 나거나 메스꺼움은요?', speaker: 'doctor' },
+        { text: '식은땀이 나고 속이 울렁거려요.', speaker: 'patient' },
+        { text: '숨이 차거나 어지러운 느낌은요?', speaker: 'doctor' },
+        { text: '숨이 좀 차고 어지러워요.', speaker: 'patient' },
+        { text: '과거력 여쭤볼게요. 고혈압이나 당뇨, 고지혈증 있으세요?', speaker: 'doctor' },
+        { text: '고혈압은 10년 됐고, 당뇨는 5년 됐어요. 고지혈증도 있어요.', speaker: 'patient' },
+        { text: '드시는 약은요?', speaker: 'doctor' },
+        { text: '암로디핀 5밀리 하루 한 번, 메포민 500밀리 하루 두 번, 아토바스타틴 10밀리 먹어요.', speaker: 'patient' },
+        { text: '담배는 피우세요?', speaker: 'doctor' },
+        { text: '하루에 한 갑씩 30년 넘게 피웠어요.', speaker: 'patient' },
+        { text: '가족 중에 심장병 있으신 분 계세요?', speaker: 'doctor' },
+        { text: '아버지가 50대에 심근경색으로 돌아가셨어요.', speaker: 'patient' },
+        { text: '이전에 이런 가슴 통증 있었던 적 있으세요?', speaker: 'doctor' },
+        { text: '가끔 운동하면 답답했는데 쉬면 괜찮아져서 그냥 넘겼어요.', speaker: 'patient' },
+        { text: '알레르기는요?', speaker: 'doctor' },
+        { text: '없어요.', speaker: 'patient' },
+        { text: '활력징후 체크할게요. 혈압 160/95, 맥박 98, 산소포화도 94%네요.', speaker: 'doctor' },
+        { text: '심전도 바로 찍고 Troponin 포함해서 cardiac enzyme 확인하겠습니다.', speaker: 'doctor' },
+        { text: '아스피린 300밀리 씹어서 드시고, 니트로글리세린 설하 투여하겠습니다.', speaker: 'doctor' },
+        { text: '급성 관상동맥 증후군, NSTEMI 의심되어 심장내과 협진 요청드리겠습니다.', speaker: 'doctor' },
       ],
-      [
-        { text: '안녕하세요, 어디가 불편하세요?', speaker: 'doctor' },
-        { text: '가슴이 답답하고 숨이 차요. 오늘 아침부터요.', speaker: 'patient' },
-        { text: '통증이 쥐어짜는 느낌인가요? 어디로 퍼지나요?', speaker: 'doctor' },
-        { text: '가슴 한가운데가 조이는 느낌이고 왼쪽 팔로 조금 뻐근해요.', speaker: 'patient' },
-        { text: '땀이나 메스꺼움은요?', speaker: 'doctor' },
-        { text: '식은땀이 나고 속이 좀 메스꺼워요.', speaker: 'patient' },
-        ...commonInfo,
-        { text: '심전도랑 심근효소 검사하고 흉부 X-ray 찍겠습니다.', speaker: 'doctor' },
-        { text: '지금은 급성 관상동맥 증후군이 의심됩니다.', speaker: 'doctor' },
-      ],
-      [
-        { text: '어디가 불편하셔서 오셨어요?', speaker: 'doctor' },
-        { text: '목이 너무 아프고 열이 나요. 이틀 전부터요.', speaker: 'patient' },
-        { text: '기침이나 콧물은요?', speaker: 'doctor' },
-        { text: '기침은 조금 있고 콧물은 없어요.', speaker: 'patient' },
-        { text: '음식 삼킬 때도 아픈가요?', speaker: 'doctor' },
-        { text: '삼킬 때 더 아파요.', speaker: 'patient' },
-        ...commonInfo,
-        { text: '인후 검사해볼게요. 편도가 붓고 하얀 삼출물이 있어요.', speaker: 'doctor' },
-        { text: '신속 독감 검사하고, 해열제 처방하겠습니다.', speaker: 'doctor' },
-        { text: '급성 편도염이 의심됩니다.', speaker: 'doctor' },
-      ],
-      [
-        { text: '안녕하세요, 증상이 어떻게 되세요?', speaker: 'doctor' },
-        { text: '어지럽고 눈앞이 캄캄해요. 오늘 오전에요.', speaker: 'patient' },
-        { text: '쓰러진 적은 있었나요?', speaker: 'doctor' },
-        { text: '네, 잠깐 눈앞이 하얘지면서 앉아있었어요.', speaker: 'patient' },
-        { text: '식사는 하셨어요?', speaker: 'doctor' },
-        { text: '아침은 못 먹었어요.', speaker: 'patient' },
-        ...commonInfo,
-        { text: '혈당 검사와 기립성 혈압 검사 해보겠습니다.', speaker: 'doctor' },
-        { text: '실신이 의심됩니다.', speaker: 'doctor' },
-      ],
-      [
-        { text: '어디가 아프세요?', speaker: 'doctor' },
-        { text: '허리가 아프고 소변이 따가워요. 사흘 전부터요.', speaker: 'patient' },
-        { text: '소변을 자주 보거나 피가 섞인 적은요?', speaker: 'doctor' },
-        { text: '자주 보고, 피는 잘 모르겠어요.', speaker: 'patient' },
-        { text: '열은 있었나요?', speaker: 'doctor' },
-        { text: '열이 좀 났어요.', speaker: 'patient' },
-        ...commonInfo,
-        { text: '요검사와 소변배양 검사하겠습니다.', speaker: 'doctor' },
-        { text: '급성 신우신염이 의심됩니다.', speaker: 'doctor' },
-      ],
-      [
-        { text: '오늘은 어떤 증상으로 오셨어요?', speaker: 'doctor' },
-        { text: '배가 쥐어짜듯이 아프고 설사를 해요. 오늘 새벽부터요.', speaker: 'patient' },
-        { text: '몇 번 정도 하셨나요?', speaker: 'doctor' },
-        { text: '5번 정도요. 물 같은 변이에요.', speaker: 'patient' },
-        { text: '구토는요?', speaker: 'doctor' },
-        { text: '한 번 했어요.', speaker: 'patient' },
-        ...commonInfo,
-        { text: '탈수 확인하고 수액 처치하겠습니다.', speaker: 'doctor' },
-        { text: '장염이 의심됩니다.', speaker: 'doctor' },
-      ],
-      [
-        { text: '어떤 증상이 있으세요?', speaker: 'doctor' },
-        { text: '콧물과 기침이 심하고 열이 나요. 어제부터요.', speaker: 'patient' },
-        { text: '숨쉬기 힘든가요?', speaker: 'doctor' },
-        { text: '숨이 좀 차요.', speaker: 'patient' },
-        ...commonInfo,
-        { text: '호흡기 검사해볼게요. 청진상 우하부에서 crackles가 들립니다.', speaker: 'doctor' },
-        { text: '흉부 X-ray와 혈액검사 진행하겠습니다.', speaker: 'doctor' },
-        { text: '폐렴이 의심됩니다.', speaker: 'doctor' },
-      ],
+      // 시나리오 2: 급성 충수염 - 28세 여성
       [
         { text: '어디가 불편해서 오셨어요?', speaker: 'doctor' },
-        { text: '속이 쓰리고 명치가 아파요. 한 달 전부터요.', speaker: 'patient' },
-        { text: '식사와 관계가 있나요?', speaker: 'doctor' },
-        { text: '공복에 더 심하고 식사하면 좀 나아요.', speaker: 'patient' },
-        { text: '메스꺼움이나 흑색변은요?', speaker: 'doctor' },
-        { text: '메스꺼움은 있고 흑색변은 없어요.', speaker: 'patient' },
-        ...commonInfo,
-        { text: '위내시경 예약하고, 위산억제제 처방하겠습니다.', speaker: 'doctor' },
-        { text: '소화성 궤양이 의심됩니다.', speaker: 'doctor' },
+        { text: '배가 너무 아파요. 어젯밤부터 시작됐어요.', speaker: 'patient' },
+        { text: '처음에 어디가 아프기 시작했어요?', speaker: 'doctor' },
+        { text: '처음엔 배꼽 주변이 아팠는데, 오늘 아침부터 오른쪽 아랫배로 옮겨갔어요.', speaker: 'patient' },
+        { text: '통증이 어떤 양상인가요? 찌르는 듯한지, 쥐어짜는 듯한지요.', speaker: 'doctor' },
+        { text: '처음엔 뻐근했는데 지금은 찌르는 것처럼 아파요. 움직이면 더 심해져요.', speaker: 'patient' },
+        { text: '0에서 10까지면 통증이 어느 정도예요?', speaker: 'doctor' },
+        { text: '8 정도요. 정말 많이 아파요.', speaker: 'patient' },
+        { text: '열은 있었어요?', speaker: 'doctor' },
+        { text: '오늘 아침에 재보니까 38.2도였어요. 오한도 있었어요.', speaker: 'patient' },
+        { text: '메스꺼움이나 구토는요?', speaker: 'doctor' },
+        { text: '메스껍고 한 번 토했어요. 식욕도 전혀 없어요.', speaker: 'patient' },
+        { text: '마지막 대변은 언제 보셨어요?', speaker: 'doctor' },
+        { text: '어제 저녁에 봤는데 그 이후로 못 봤어요.', speaker: 'patient' },
+        { text: '마지막 생리는요?', speaker: 'doctor' },
+        { text: '2주 전에 했어요. 주기는 규칙적이에요.', speaker: 'patient' },
+        { text: '과거력이나 수술력 있으세요?', speaker: 'doctor' },
+        { text: '없어요. 건강했어요.', speaker: 'patient' },
+        { text: '드시는 약이나 알레르기는요?', speaker: 'doctor' },
+        { text: '약은 없고, 알레르기도 없어요.', speaker: 'patient' },
+        { text: '복부 진찰할게요. 오른쪽 아랫배 McBurney point 압통 있고, 반발통 양성이네요. Rovsing sign도 양성입니다.', speaker: 'doctor' },
+        { text: 'CBC, CRP 포함해서 피검사하고 복부 CT 찍겠습니다. 임신 검사도 같이 할게요.', speaker: 'doctor' },
+        { text: '급성 충수염 의심되어 외과 협진 요청하겠습니다. 금식 유지하시고 수액 맞으면서 대기해주세요.', speaker: 'doctor' },
       ],
+      // 시나리오 3: 지역사회획득 폐렴 - 72세 여성, 기저질환 COPD
       [
-        { text: '증상이 어떻게 되세요?', speaker: 'doctor' },
-        { text: '머리가 지끈지끈 아프고 빛이 불편해요. 오늘 오전부터요.', speaker: 'patient' },
-        { text: '통증이 한쪽인가요?', speaker: 'doctor' },
-        { text: '네, 오른쪽 머리가 특히 아파요.', speaker: 'patient' },
-        { text: '메스꺼움은요?', speaker: 'doctor' },
-        { text: '있어요.', speaker: 'patient' },
-        ...commonInfo,
-        { text: '진통제 처방하고, 필요하면 뇌 CT 찍겠습니다.', speaker: 'doctor' },
-        { text: '편두통이 의심됩니다.', speaker: 'doctor' },
-      ],
-      [
-        { text: '오늘 어디가 아프세요?', speaker: 'doctor' },
-        { text: '다리가 붓고 숨이 찬 느낌이 있어요. 일주일 전부터요.', speaker: 'patient' },
-        { text: '밤에 누우면 더 숨이 차나요?', speaker: 'doctor' },
-        { text: '네, 눕기가 좀 힘들어요.', speaker: 'patient' },
-        { text: '체중이 늘었나요?', speaker: 'doctor' },
-        { text: '요즘 2킬로 정도 늘었어요.', speaker: 'patient' },
-        ...commonInfo,
-        { text: '흉부 X-ray와 BNP 검사 진행하겠습니다.', speaker: 'doctor' },
-        { text: '심부전이 의심됩니다.', speaker: 'doctor' },
+        { text: '어떻게 오셨어요?', speaker: 'doctor' },
+        { text: '기침이 심하고 숨이 너무 차요. 3일 전부터 점점 심해졌어요.', speaker: 'patient' },
+        { text: '가래는 나와요?', speaker: 'doctor' },
+        { text: '누런 가래가 많이 나와요. 피는 안 섞여 있어요.', speaker: 'patient' },
+        { text: '열은 있었어요?', speaker: 'doctor' },
+        { text: '어제 저녁에 38.5도까지 올랐어요. 오한도 있었고요.', speaker: 'patient' },
+        { text: '평소 숨찬 정도랑 비교하면 어때요?', speaker: 'doctor' },
+        { text: '평소에도 좀 차긴 한데, 지금은 가만히 있어도 숨이 차요.', speaker: 'patient' },
+        { text: '가슴이 아프거나 답답한 건요?', speaker: 'doctor' },
+        { text: '오른쪽 가슴이 기침할 때 아파요.', speaker: 'patient' },
+        { text: '과거력 여쭤볼게요. 폐 질환 있으시죠?', speaker: 'doctor' },
+        { text: '만성폐쇄성폐질환 있어요. 5년 됐어요.', speaker: 'patient' },
+        { text: '다른 질환은요?', speaker: 'doctor' },
+        { text: '고혈압이랑 골다공증 있어요.', speaker: 'patient' },
+        { text: '드시는 약은요?', speaker: 'doctor' },
+        { text: '스피리바 흡입기 쓰고, 암로디핀 5밀리, 칼슘제 먹어요.', speaker: 'patient' },
+        { text: '담배는요?', speaker: 'doctor' },
+        { text: '예전에 피웠는데 10년 전에 끊었어요.', speaker: 'patient' },
+        { text: '알레르기는요?', speaker: 'doctor' },
+        { text: '페니실린 알레르기 있어요. 두드러기 났었어요.', speaker: 'patient' },
+        { text: '활력징후 볼게요. 혈압 135/80, 맥박 102, 호흡수 24, 체온 38.3, 산소포화도 room air에서 89%입니다.', speaker: 'doctor' },
+        { text: '청진상 오른쪽 하엽에서 crackles 들리고, 타진상 둔탁음 있습니다.', speaker: 'doctor' },
+        { text: 'CBC, CRP, Procalcitonin, BMP 하고 흉부 X-ray 찍겠습니다. 객담 배양도 보내고요.', speaker: 'doctor' },
+        { text: '산소 3L 비강캐뉼라로 투여하고, 지역사회획득 폐렴으로 Levofloxacin 750밀리 하루 한 번 시작하겠습니다. 페니실린 알레르기라 퀴놀론 쓸게요.', speaker: 'doctor' },
+        { text: 'CURB-65 3점으로 입원 치료 필요합니다.', speaker: 'doctor' },
       ],
     ];
 
@@ -670,14 +656,12 @@ function MainApp() {
     testSegmentsRef.current = [];
     isGeneratingRef.current = false;
     pendingUpdateRef.current = false;
-    setNewDdxIds(new Set());
-    previousDdxIdsRef.current = new Set();
-    setShowDiagnosisForm(false);
-    setNewDiagnosisInput('');
-    setNewDiagnosisType('ro');
     lastFastCorrectionKeyRef.current = '';
     lastFastCorrectedSegmentsRef.current = null;
     setIsRecording(true);
+    // 데모 시작 시 타임스탬프 설정
+    setSessionStartTime(new Date());
+    setSessionEndTime(null);
 
     let currentIndex = 0;
 
@@ -691,11 +675,12 @@ function MainApp() {
           streamingAbortRef.current = null;
         }
         generationIdRef.current += 1;
-        setMobileTab('chart');
         await generateChartFromCurrentSegments(testSegmentsRef.current, true);
         setIsGeneratingChart(false);
         setIsTestRunning(false);
         isTestRunningRef.current = false;
+        // 데모 완료 시 타임스탬프 설정
+        setSessionEndTime(new Date());
         toast.success('🧪 시뮬레이션 완료!');
         return;
       }
@@ -713,45 +698,33 @@ function MainApp() {
 
   }, [isTestRunning, chartSettings.selectedDepartment]);
 
+  // 테스트 녹음 시간 추적
+  useEffect(() => {
+    if (isTestRunning) {
+      setTestRecordingTime(0);
+      testTimerRef.current = setInterval(() => {
+        setTestRecordingTime(prev => prev + 1);
+      }, 1000);
+    } else {
+      if (testTimerRef.current) {
+        clearInterval(testTimerRef.current);
+        testTimerRef.current = null;
+      }
+      setTestRecordingTime(0);
+    }
+    return () => {
+      if (testTimerRef.current) {
+        clearInterval(testTimerRef.current);
+      }
+    };
+  }, [isTestRunning]);
+
   // 초기 진입 시 애니메이션
   useEffect(() => {
     setPageAnimation('enter');
     const timer = setTimeout(() => setPageAnimation(''), 500);
     return () => clearTimeout(timer);
   }, []);
-
-  // DDx 변경 감지 및 애니메이션
-  useEffect(() => {
-    if (chartData?.assessment?.ddxList) {
-      const currentDdxIds = new Set(chartData.assessment.ddxList.map(d => d.id));
-      const newIds = new Set<string>();
-      
-      // 새로 추가된 DDx 찾기
-      currentDdxIds.forEach(id => {
-        if (!previousDdxIdsRef.current.has(id)) {
-          newIds.add(id);
-        }
-      });
-      
-      if (newIds.size > 0) {
-        setNewDdxIds(newIds);
-        // 2초 후 애니메이션 클래스 제거
-        setTimeout(() => setNewDdxIds(new Set()), 2000);
-        if (mobileTab !== 'ddx') {
-          setHasNewDdx(true);
-        }
-      }
-      
-      previousDdxIdsRef.current = currentDdxIds;
-    }
-  }, [chartData?.assessment?.ddxList, mobileTab]);
-
-  useEffect(() => {
-    if (mobileTab === 'ddx' && hasNewDdx) {
-      setHasNewDdx(false);
-    }
-  }, [mobileTab, hasNewDdx]);
-
 
   // 탭 전환 시 녹음 중 경고
   useEffect(() => {
@@ -932,142 +905,6 @@ function MainApp() {
     };
   }, [realtimeSegments.length, isRecording, isRemoteRecording, triggerAutoChartUpdate]);
 
-  // DDx 확정 (Assessment → Dx로 이동)
-  const handleConfirmDdx = useCallback((ddxId: string) => {
-    setChartData(prev => {
-      if (!prev?.assessment?.ddxList) return prev;
-      
-      const ddx = prev.assessment.ddxList.find(d => d.id === ddxId);
-      if (!ddx) return prev;
-      
-      // DDx 확정 처리
-      const updatedDdxList = prev.assessment.ddxList.map(d =>
-        d.id === ddxId ? { ...d, isConfirmed: true } : d
-      );
-      
-      // 확정 진단에 추가
-      const currentConfirmed = prev.diagnosisConfirmed?.value || [];
-      const confirmedArray = Array.isArray(currentConfirmed) ? currentConfirmed : [currentConfirmed];
-      const newConfirmed = [...confirmedArray.filter(Boolean), ddx.diagnosis];
-      
-      return {
-        ...prev,
-        assessment: { ...prev.assessment, ddxList: updatedDdxList },
-        diagnosisConfirmed: { ...prev.diagnosisConfirmed, value: newConfirmed, isConfirmed: true }
-      };
-    });
-  }, []);
-
-  // DDx 제외
-  const handleRemoveDdx = useCallback((ddxId: string) => {
-    setChartData(prev => {
-      if (!prev?.assessment?.ddxList) return prev;
-      
-      const updatedDdxList = prev.assessment.ddxList.map(d =>
-        d.id === ddxId ? { ...d, isRemoved: true } : d
-      );
-      
-      return {
-        ...prev,
-        assessment: { ...prev.assessment, ddxList: updatedDdxList }
-      };
-    });
-  }, []);
-
-  // DDx 복구
-  const handleRestoreDdx = useCallback((ddxId: string) => {
-    setChartData(prev => {
-      if (!prev?.assessment?.ddxList) return prev;
-      
-      const updatedDdxList = prev.assessment.ddxList.map(d =>
-        d.id === ddxId ? { ...d, isRemoved: false } : d
-      );
-      
-      return {
-        ...prev,
-        assessment: { ...prev.assessment, ddxList: updatedDdxList }
-      };
-    });
-  }, []);
-
-  // DDx 확정 취소 (Dx → Assessment로 복귀)
-  const handleUnconfirmDdx = useCallback((ddxId: string) => {
-    setChartData(prev => {
-      if (!prev?.assessment?.ddxList) return prev;
-      
-      const ddx = prev.assessment.ddxList.find(d => d.id === ddxId);
-      if (!ddx) return prev;
-      
-      // DDx 확정 취소
-      const updatedDdxList = prev.assessment.ddxList.map(d =>
-        d.id === ddxId ? { ...d, isConfirmed: false } : d
-      );
-      
-      // 확정 진단에서 제거
-      const currentConfirmed = prev.diagnosisConfirmed?.value || [];
-      const confirmedArray = Array.isArray(currentConfirmed) ? currentConfirmed : [currentConfirmed];
-      const newConfirmed = confirmedArray.filter(d => d !== ddx.diagnosis);
-      
-      return {
-        ...prev,
-        assessment: { ...prev.assessment, ddxList: updatedDdxList },
-        diagnosisConfirmed: { ...prev.diagnosisConfirmed, value: newConfirmed }
-      };
-    });
-  }, []);
-
-  // 수동으로 Dx/r/o 추가
-  const handleAddDiagnosis = useCallback(() => {
-    if (!newDiagnosisInput.trim()) return;
-    
-    const newId = `user_ddx_${Date.now()}`;
-    const newDdx = {
-      id: newId,
-      diagnosis: newDiagnosisInput.trim(),
-      reason: '사용자 추가',
-      confidence: 'high' as const,
-      isConfirmed: newDiagnosisType === 'dx', // Dx면 바로 확정
-      isRemoved: false,
-      source: 'doctor' as const, // 사용자 추가는 doctor로 표시
-    };
-    
-    setChartData(prev => {
-      if (!prev) {
-        // chartData가 없으면 새로 생성
-        return {
-          assessment: {
-            value: newDiagnosisType === 'dx' ? `# ${newDiagnosisInput.trim()}` : '',
-            isConfirmed: true,
-            source: 'user',
-            ddxList: [newDdx],
-          },
-        };
-      }
-      
-      const currentDdxList = prev.assessment?.ddxList || [];
-      const updatedDdxList = [...currentDdxList, newDdx];
-      
-      // Dx인 경우 assessment value에도 추가
-      let newAssessmentValue = prev.assessment?.value || '';
-      if (newDiagnosisType === 'dx') {
-        newAssessmentValue = newAssessmentValue 
-          ? `${newAssessmentValue}\n# ${newDiagnosisInput.trim()}`
-          : `# ${newDiagnosisInput.trim()}`;
-      }
-      
-      return {
-        ...prev,
-        assessment: {
-          ...prev.assessment,
-          value: newAssessmentValue,
-          ddxList: updatedDdxList,
-        },
-      };
-    });
-    
-    setNewDiagnosisInput('');
-  }, [newDiagnosisInput, newDiagnosisType]);
-
   // 주기적 차트 업데이트 (15초마다)
   useEffect(() => {
     if (!isRecording && !isRemoteRecording) {
@@ -1109,8 +946,27 @@ function MainApp() {
     setRecordingProgress(0);
     lastRequestedSegmentCountRef.current = 0;
     lastAutoUpdateTimeRef.current = 0;
-    setMobileTab('transcript'); // 녹음 시작 시 실시간 대화 탭으로 전환
-  }, []);
+    // 세션 시작 시간 기록
+    const now = new Date();
+    setSessionStartTime(now);
+    setSessionEndTime(null);
+    
+    // 세션이 없으면 자동 생성
+    if (!activeSessionId) {
+      const newSessionId = `session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      const newSession: PatientSession = {
+        id: newSessionId,
+        patientName: patientName || '',
+        patientMemo: patientMemo || '',
+        chartData: null,
+        freeText: '',
+        createdAt: now,
+        updatedAt: now,
+      };
+      setSessions(prev => [newSession, ...prev]);
+      setActiveSessionId(newSession.id);
+    }
+  }, [activeSessionId, patientName, patientMemo]);
 
   const handleProcessingStart = useCallback(() => {
     setIsRecording(false);
@@ -1120,16 +976,16 @@ function MainApp() {
       streamingAbortRef.current = null;
     }
     generationIdRef.current += 1;
-    setMobileTab('chart'); // 차트 생성 시작 시 차트 탭으로 전환
   }, []);
 
   const handleRecordingComplete = useCallback((transcript: string, result: ChartData | null) => {
     setIsRecording(false);
     setFinalTranscript(transcript);
+    // 세션 종료 시간 기록
+    setSessionEndTime(new Date());
     
     if (result) {
       setChartData(result);
-      setMobileTab('chart'); // 차트 생성 완료 시 차트 탭으로 전환
     }
     setIsGeneratingChart(false);
   }, []);
@@ -1146,14 +1002,163 @@ function MainApp() {
     setRecordingProgress(0);
     lastRequestedSegmentCountRef.current = 0;
     lastAutoUpdateTimeRef.current = 0;
-    setNewDdxIds(new Set());
-    previousDdxIdsRef.current = new Set();
-    setShowDiagnosisForm(false);
-    setNewDiagnosisInput('');
-    setNewDiagnosisType('ro');
     lastFastCorrectionKeyRef.current = '';
     lastFastCorrectedSegmentsRef.current = null;
   }, []);
+
+  // 세션 관리 함수들
+  const generateSessionId = useCallback(() => {
+    return `session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  }, []);
+
+  const saveCurrentSession = useCallback(() => {
+    if (!activeSessionId) return;
+    
+    setSessions(prev => prev.map(session => 
+      session.id === activeSessionId
+        ? {
+            ...session,
+            patientName,
+            patientMemo,
+            chartData,
+            freeText,
+            updatedAt: new Date(),
+          }
+        : session
+    ));
+  }, [activeSessionId, patientName, patientMemo, chartData, freeText]);
+
+  const loadSession = useCallback((session: PatientSession) => {
+    setPatientName(session.patientName);
+    setPatientMemo(session.patientMemo);
+    setChartData(session.chartData);
+    setFreeText(session.freeText || '');
+    setFinalTranscript('');
+    setRealtimeSegments([]);
+    setSessionStartTime(session.createdAt);
+    setSessionEndTime(null);
+  }, []);
+
+  // 세션 데이터 변경 시 자동으로 동기화
+  useEffect(() => {
+    if (!activeSessionId) return;
+    
+    setSessions(prev => prev.map(session => 
+      session.id === activeSessionId
+        ? {
+            ...session,
+            patientName,
+            patientMemo,
+            chartData,
+            freeText,
+            updatedAt: new Date(),
+          }
+        : session
+    ));
+  }, [activeSessionId, patientName, patientMemo, chartData, freeText]);
+
+  const handleNewSession = useCallback(() => {
+    // 현재 세션 저장
+    saveCurrentSession();
+    
+    // 최대 5개 제한 체크
+    if (sessions.length >= MAX_SESSIONS) {
+      toast.error('최대 5명까지 저장 가능합니다. 기존 환자를 삭제해주세요.');
+      return;
+    }
+    
+    // 새 세션 생성
+    const newSession: PatientSession = {
+      id: generateSessionId(),
+      patientName: '',
+      patientMemo: '',
+      chartData: null,
+      freeText: '',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    
+    setSessions(prev => [newSession, ...prev]);
+    setActiveSessionId(newSession.id);
+    
+    // 상태 초기화
+    setPatientName('');
+    setPatientMemo('');
+    setChartData(null);
+    setFreeText('');
+    setFinalTranscript('');
+    setRealtimeSegments([]);
+    setSessionStartTime(null);
+    setSessionEndTime(null);
+    setSidebarOpen(false);
+  }, [saveCurrentSession, sessions.length, generateSessionId]);
+
+  const handleSelectSession = useCallback((sessionId: string) => {
+    if (sessionId === activeSessionId) return;
+    
+    // 현재 세션 저장하고 동시에 새 세션 데이터 가져오기
+    setSessions(prev => {
+      // 현재 세션 저장
+      const updated = prev.map(session => 
+        session.id === activeSessionId
+          ? {
+              ...session,
+              patientName,
+              patientMemo,
+              chartData,
+              freeText,
+              updatedAt: new Date(),
+            }
+          : session
+      );
+      
+      // 선택한 세션 찾아서 로드
+      const targetSession = updated.find(s => s.id === sessionId);
+      if (targetSession) {
+        // setTimeout으로 state 업데이트 후 로드
+        setTimeout(() => {
+          setActiveSessionId(sessionId);
+          setPatientName(targetSession.patientName);
+          setPatientMemo(targetSession.patientMemo);
+          setChartData(targetSession.chartData);
+          setFreeText(targetSession.freeText || '');
+          setFinalTranscript('');
+          setRealtimeSegments([]);
+          setSessionStartTime(targetSession.createdAt);
+          setSessionEndTime(null);
+          setSidebarOpen(false);
+        }, 0);
+      }
+      
+      return updated;
+    });
+  }, [activeSessionId, patientName, patientMemo, chartData, freeText]);
+
+  const handleDeleteSession = useCallback((sessionId: string) => {
+    setSessions(prev => prev.filter(s => s.id !== sessionId));
+    
+    // 삭제된 세션이 활성 세션이면
+    if (sessionId === activeSessionId) {
+      const remainingSessions = sessions.filter(s => s.id !== sessionId);
+      if (remainingSessions.length > 0) {
+        // 다른 세션으로 전환
+        const nextSession = remainingSessions[0];
+        setActiveSessionId(nextSession.id);
+        loadSession(nextSession);
+      } else {
+        // 세션이 없으면 초기화
+        setActiveSessionId(null);
+        setPatientName('');
+        setPatientMemo('');
+        setChartData(null);
+        setFreeText('');
+        setFinalTranscript('');
+        setRealtimeSegments([]);
+        setSessionStartTime(null);
+        setSessionEndTime(null);
+      }
+    }
+  }, [activeSessionId, sessions, loadSession]);
 
   const resetAppState = useCallback(() => {
     if (testIntervalRef.current) {
@@ -1381,1029 +1386,469 @@ function MainApp() {
             onClick={() => handlePageTransition('landing')}
             className="flex items-center gap-2.5 hover:opacity-80 transition-opacity"
           >
-            <div className="p-1.5 rounded-lg bg-gradient-to-br from-teal-500 to-teal-600 text-white">
+            <div className="p-1.5 rounded-lg bg-blue-600 text-white">
               <Stethoscope className="w-4 h-4" />
             </div>
-            <span className="font-bold text-sm text-slate-800">Cheat Chat AI</span>
+            <span className="font-bold text-2xl text-slate-800">Savvy</span>
           </button>
 
-          <div className="flex items-center">
+          <div className="flex items-center gap-2">
             <ChartSettingsModal
               settings={chartSettings}
               onSettingsChange={setChartSettings}
               departmentName={selectedDepartmentName}
             />
+            
+            {/* 🧪 데모 버튼 */}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleTestSimulation}
+              disabled={isRecording && !isTestRunning || isRemoteRecording || isGeneratingChart}
+              className={`h-8 w-8 shrink-0 transition-all ${
+                isTestRunning 
+                  ? 'text-orange-600 bg-orange-50' 
+                  : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'
+              }`}
+              title="데모"
+            >
+              {isTestRunning ? <Square className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+            </Button>
+            
+            {/* 피드백 버튼 */}
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className="h-8 w-8 text-slate-500 hover:text-slate-700"
+              onClick={() => setFeedbackOpen(true)}
+            >
+              <MessageSquare className="w-4 h-4" />
+            </Button>
+            
+            {/* 알림 구독 버튼 */}
+            <Dialog>
+              <DialogTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:text-slate-700">
+                  <Bell className="w-4 h-4" />
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-md">
+                <DialogHeader>
+                  <DialogTitle className="flex items-center gap-2">
+                    <Mail className="w-5 h-5 text-blue-600" />
+                    정식 출시 알림 받기
+                  </DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <p className="text-sm text-slate-500">
+                    새로운 기능과 업데이트 소식을 이메일로 받아보세요.
+                  </p>
+                  <form onSubmit={handleEmailInputSubmit} className="flex gap-2">
+                    <Input
+                      type="email"
+                      placeholder="your@email.com"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      className="flex-1"
+                    />
+                    <Button type="submit" className="bg-blue-600 hover:bg-blue-700">
+                      구독
+                    </Button>
+                  </form>
+                </div>
+              </DialogContent>
+            </Dialog>
           </div>
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className="flex-1 container mx-auto px-4 py-6 overflow-hidden min-h-0">
-        <div className="flex flex-col gap-6 h-full min-h-0">
-          {/* Recording Control */}
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm px-4 py-4 sm:px-6 sm:py-5">
-            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 sm:gap-5">
-              {/* Recording Section */}
-              <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 w-full">
-                <div className="flex items-center gap-3 flex-wrap">
-                  <VoiceRecorder
-                    onTranscriptUpdate={handleTranscriptUpdate}
-                    onRealtimeSegment={handleRealtimeSegment}
-                    onRealtimeSegmentsUpdate={handleRealtimeSegmentsUpdate}
-                    onFullUpdate={handleFullUpdate}
-                    onRecordingStart={handleRecordingStart}
-                    onProcessingStart={handleProcessingStart}
-                    onPartialChartUpdate={(partial) => {
-                      setChartData(prevData => mergeChartData(prevData, partial));
-                    }}
-                    onApiStart={() => bumpPendingApi(1)}
-                    onApiEnd={() => bumpPendingApi(-1)}
-                    onRecordingComplete={handleRecordingComplete}
-                    onRecordingProgress={handleRecordingProgress}
-                    department={chartSettings.selectedDepartment}
-                    isRemoteRecording={isRemoteRecording}
-                    remoteRecordingTime={remoteRecordingTime}
-                    isExternalGenerating={isGeneratingChart}
-                  />
+      {/* Main Content with Sidebar */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* Desktop Sidebar */}
+        <aside className="hidden lg:block w-64 shrink-0">
+          <PatientSidebar
+            sessions={sessions}
+            activeSessionId={activeSessionId}
+            onSelectSession={handleSelectSession}
+            onNewSession={handleNewSession}
+            onDeleteSession={handleDeleteSession}
+            isRecording={isRecording || isRemoteRecording}
+          />
+        </aside>
 
-                  {/* 휴대폰 마이크 연결 버튼 */}
-                  <Button
-                    variant="outline"
-                    onClick={() => setRemoteMicOpen(true)}
-                    disabled={isRecording}
-                    className={`rounded-full h-9 px-3 shrink-0 gap-2 text-xs transition-all ${
-                      isRemoteRecording 
-                        ? 'border-red-500 text-red-600 bg-red-50' 
-                        : isRemoteConnected 
-                          ? 'border-green-500 text-green-600 bg-green-50' 
-                          : ''
-                    }`}
-                    title="휴대폰 마이크 연결"
-                  >
-                    <Smartphone className="w-4 h-4" />
-                    <span className="font-medium hidden sm:inline">
-                      {isRemoteRecording ? '녹음 중' : isRemoteConnected ? '연결됨' : '휴대폰 연결'}
-                    </span>
-                    {isRemoteRecording ? (
-                      <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-                    ) : isRemoteConnected ? (
-                      <span className="w-2 h-2 rounded-full bg-green-500" />
-                    ) : null}
-                  </Button>
-                </div>
-
-                <div className="flex items-center gap-2 sm:ml-auto w-full sm:w-auto justify-end">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={handleReset}
-                    disabled={isRecording || isRemoteRecording || isGeneratingChart}
-                    className="h-9 w-9 shrink-0 text-slate-500 hover:text-slate-700 hover:bg-slate-100"
-                    title="초기화"
-                  >
-                    <RotateCcw className="w-4 h-4" />
-                  </Button>
-
-                  {/* 🧪 테스트 버튼 (개발용) */}
-                  <Button
-                    onClick={handleTestSimulation}
-                    disabled={isRecording && !isTestRunning || isRemoteRecording || isGeneratingChart}
-                    className={`h-9 px-3 shrink-0 gap-2 text-xs rounded-full border transition-all ${
-                      isTestRunning 
-                        ? 'bg-slate-900 text-white border-slate-900 hover:bg-slate-800' 
-                        : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'
-                    }`}
-                    title="데모"
-                  >
-                    {isTestRunning ? <Square className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-                    <span className="hidden sm:inline">{isTestRunning ? '중지' : '데모'}</span>
-                  </Button>
-                </div>
+        {/* Mobile Sidebar Drawer */}
+        {sidebarOpen && (
+          <div className="lg:hidden fixed inset-0 z-50">
+            {/* Backdrop */}
+            <div 
+              className="absolute inset-0 bg-black/50"
+              onClick={() => setSidebarOpen(false)}
+            />
+            {/* Drawer */}
+            <div className="absolute left-0 top-0 bottom-0 w-72 bg-white shadow-xl animate-in slide-in-from-left duration-300">
+              <div className="flex items-center justify-between p-3 border-b border-slate-200">
+                <span className="font-semibold text-slate-800">환자 목록</span>
+                <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(false)}>
+                  <X className="w-4 h-4" />
+                </Button>
               </div>
-
-              {/* Usage Guide - Right aligned */}
-              <div className="hidden md:flex items-center">
-                <div className="flex items-center flex-nowrap bg-slate-50 rounded-full px-1.5 py-1.5 border border-slate-200">
-                  <div className="flex items-center gap-2 px-3 py-1">
-                    <div className="w-5 h-5 rounded-full bg-teal-500 text-white flex items-center justify-center text-xs font-bold">1</div>
-                    <span className="text-xs font-medium text-slate-600 whitespace-nowrap">녹음</span>
-                  </div>
-                  <ChevronRight className="w-3.5 h-3.5 text-slate-300" />
-                  <div className="flex items-center gap-2 px-3 py-1">
-                    <div className="w-5 h-5 rounded-full bg-cyan-500 text-white flex items-center justify-center text-xs font-bold">2</div>
-                    <span className="text-xs font-medium text-slate-600 whitespace-nowrap">변환</span>
-                  </div>
-                  <ChevronRight className="w-3.5 h-3.5 text-slate-300" />
-                  <div className="flex items-center gap-2 px-3 py-1">
-                    <div className="w-5 h-5 rounded-full bg-blue-500 text-white flex items-center justify-center text-xs font-bold">3</div>
-                    <span className="text-xs font-medium text-slate-600 whitespace-nowrap">차트</span>
-                  </div>
-                </div>
-              </div>
+              <PatientSidebar
+                sessions={sessions}
+                activeSessionId={activeSessionId}
+                onSelectSession={handleSelectSession}
+                onNewSession={handleNewSession}
+                onDeleteSession={handleDeleteSession}
+                isRecording={isRecording || isRemoteRecording}
+              />
             </div>
           </div>
+        )}
 
-          {/* Desktop: 3-Column Layout */}
-          <div className="hidden lg:flex gap-4 flex-1 min-h-0">
-            {/* 좌측: 대화창 (접을 수 있음) */}
-            <div className={`transition-all duration-300 ${isTranscriptCollapsed ? 'w-12' : 'w-[280px]'} flex-none h-full`}>
-              {isTranscriptCollapsed ? (
-                <div className="h-full bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col items-center py-4">
-                  <button
-                    onClick={() => setIsTranscriptCollapsed(false)}
-                    className="p-2 rounded-lg hover:bg-slate-100 text-slate-600 mb-2"
-                    title="대화창 펼치기"
-                  >
-                    <PanelLeft className="w-5 h-5" />
-                  </button>
-                  <div className="flex-1 flex flex-col items-center justify-center">
-                    <MessageCircle className="w-5 h-5 text-cyan-500 mb-2" />
+        {/* Main Content Area */}
+        <main className="flex-1 overflow-hidden min-h-0">
+          <div className="container mx-auto px-4 py-6 h-full">
+            <div className="flex flex-col gap-6 h-full min-h-0">
+              {/* Patient Info Header - Heidi Style */}
+              <div className="flex items-start justify-between gap-4 pb-4 border-b border-slate-100">
+                {/* 모바일 메뉴 버튼 */}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="lg:hidden shrink-0 mr-2"
+                  onClick={() => setSidebarOpen(true)}
+                >
+                  <Menu className="w-5 h-5" />
+                </Button>
+
+                {/* 왼쪽: 환자 정보 */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center shrink-0">
+                      <User className="w-5 h-5 text-slate-400" />
+                    </div>
+                    <input
+                      type="text"
+                      value={patientName}
+                      onChange={(e) => setPatientName(e.target.value)}
+                      placeholder="환자 정보 입력"
+                      className="flex-1 text-2xl font-semibold border-0 outline-none placeholder:text-slate-300 bg-transparent"
+                      style={{ fontSize: '28px' }}
+                    />
                   </div>
-                  {(isRecording || isRemoteRecording) && (
-                    <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse mt-2" />
-                  )}
+                  <div className="ml-[52px]">
+                    <input
+                      type="text"
+                      value={patientMemo}
+                      onChange={(e) => setPatientMemo(e.target.value)}
+                      placeholder="메모 추가 (기저질환, 알러지, 복용약물 등)"
+                      className="w-full text-sm border-0 outline-none placeholder:text-slate-400 text-slate-500 bg-transparent"
+                    />
+                  </div>
+                  {/* 타임스탬프 */}
+                  {sessionStartTime && (
+                    <div className="ml-[52px] mt-2 flex items-center gap-4 text-xs text-slate-400">
+                      <span>
+                        {sessionStartTime.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' })} {sessionStartTime.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                      {sessionEndTime && (
+                        <>
+                          <span>•</span>
+                          <span>
+                            {Math.floor((sessionEndTime.getTime() - sessionStartTime.getTime()) / 60000)}분 {Math.floor(((sessionEndTime.getTime() - sessionStartTime.getTime()) % 60000) / 1000)}초
+                          </span>
+                        </>
+                      )}
                 </div>
-              ) : (
-                <TranscriptViewer
-                  finalTranscript={finalTranscript}
-                  isRecording={isRecording || isRemoteRecording}
-                  realtimeSegments={realtimeSegments}
-                  onCollapse={() => setIsTranscriptCollapsed(true)}
-                />
               )}
             </div>
 
-            {/* 중앙: AI 차트 (S/O 필드) */}
+            {/* 오른쪽: 녹음 컨트롤 */}
+            <div className="flex items-center gap-3 shrink-0">
+              {/* 초기화 버튼 */}
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handleReset}
+                disabled={isRecording || isRemoteRecording || isGeneratingChart}
+                className="h-8 w-8 shrink-0 text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+                title="초기화"
+              >
+                <RotateCcw className="w-4 h-4" />
+              </Button>
+
+              {/* 휴대폰 마이크 연결 버튼 */}
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setRemoteMicOpen(true)}
+                disabled={isRecording}
+                className={`h-8 w-8 shrink-0 transition-all ${
+                  isRemoteRecording 
+                    ? 'text-red-600 bg-red-50' 
+                    : isRemoteConnected 
+                      ? 'text-green-600 bg-green-50' 
+                      : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'
+                }`}
+                title="휴대폰 마이크 연결"
+              >
+                <Smartphone className="w-4 h-4" />
+              </Button>
+
+              {/* 녹음 버튼 */}
+              <VoiceRecorder
+                onTranscriptUpdate={handleTranscriptUpdate}
+                onRealtimeSegment={handleRealtimeSegment}
+                onRealtimeSegmentsUpdate={handleRealtimeSegmentsUpdate}
+                onFullUpdate={handleFullUpdate}
+                onRecordingStart={handleRecordingStart}
+                onProcessingStart={handleProcessingStart}
+                onPartialChartUpdate={(partial) => {
+                  setChartData(prevData => mergeChartData(prevData, partial));
+                }}
+                onApiStart={() => bumpPendingApi(1)}
+                onApiEnd={() => bumpPendingApi(-1)}
+                onRecordingComplete={handleRecordingComplete}
+                onRecordingProgress={handleRecordingProgress}
+                department={chartSettings.selectedDepartment}
+                isRemoteRecording={isRemoteRecording}
+                remoteRecordingTime={remoteRecordingTime}
+                isExternalGenerating={isGeneratingChart}
+                isExternalRecording={isTestRunning}
+                externalRecordingTime={testRecordingTime}
+                patientName={patientName}
+                patientMemo={patientMemo}
+              />
+            </div>
+          </div>
+
+          {/* Desktop: Single Column Layout (Chart Only) */}
+          <div className="hidden lg:flex flex-col gap-3 flex-1 min-h-0">
+            {/* 중앙: AI 차트 (S/O + DDx 통합) */}
             <div className="flex-1 min-w-0 min-h-0">
               <ChartingResult
                 chartData={chartData}
                 isRecording={isRecording || isRemoteRecording}
+                isTyping={isGeneratingChart}
                 layout="wide"
                 department={chartSettings.selectedDepartment}
                 activeFields={chartSettings.activeFields}
+                patientName={patientName}
+                patientMemo={patientMemo}
+                sessionStartTime={sessionStartTime}
+                freeText={freeText}
+                onFreeTextChange={setFreeText}
+                sessionId={activeSessionId}
               />
             </div>
+          </div>
 
-            {/* 우측: DDx 추천 패널 (고정) */}
-            <div className="w-[320px] flex-none flex flex-col h-full bg-gradient-to-br from-teal-50 to-cyan-50 rounded-2xl border-2 border-teal-200 shadow-sm overflow-hidden">
-              {/* DDx Header */}
-              <div className="flex-none px-4 py-3 border-b border-teal-200 bg-white/50">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-teal-500 to-cyan-500 flex items-center justify-center">
-                    <Target className="w-4 h-4 text-white" />
-                  </div>
-                  <div>
-                    <h3 className="font-bold text-sm text-teal-800">DDx 추천</h3>
-                    <p className="text-[10px] text-teal-600">
-                      {(isRecording || isRemoteRecording) ? '실시간 업데이트' : '감별진단'}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* DDx Content */}
-              <div className="flex-1 overflow-y-auto p-3 flex flex-col"
-                style={{ gap: chartData || isRecording || isRemoteRecording ? '0.75rem' : '0' }}>
-                
-                {/* Dx/r/o 수동 추가 - 녹음 끝나고 차트 있을 때만 */}
-                {!isRecording && !isRemoteRecording && chartData && (
-                  <div className="mb-1">
-                    {!showDiagnosisForm ? (
-                      <button
-                        onClick={() => setShowDiagnosisForm(true)}
-                        className="w-full py-2 px-3 rounded-lg border border-dashed border-slate-300 text-slate-500 text-xs hover:border-teal-400 hover:text-teal-600 hover:bg-teal-50/50 transition-all flex items-center justify-center gap-1.5"
-                      >
-                        <Plus className="w-3.5 h-3.5" /> 진단 추가
-                      </button>
-                    ) : (
-                      <div className="bg-white rounded-xl p-3 border border-teal-200 shadow-sm animate-in slide-in-from-top-2 duration-200">
-                        <div className="flex items-center justify-between mb-2">
-                          <div className="text-[10px] font-bold text-slate-600 flex items-center gap-1">
-                            <Plus className="w-3 h-3" /> 진단 추가
-                          </div>
-                          <button 
-                            onClick={() => {
-                              setShowDiagnosisForm(false);
-                              setNewDiagnosisInput('');
-                            }}
-                            className="text-slate-400 hover:text-slate-600 text-xs"
-                          >
-                            ✕
-                          </button>
-                        </div>
-                        <div className="flex gap-1.5 mb-2">
-                          <button
-                            onClick={() => setNewDiagnosisType('dx')}
-                            className={`flex-1 text-[10px] py-1.5 rounded-md border transition-all ${
-                              newDiagnosisType === 'dx' 
-                                ? 'bg-teal-500 text-white border-teal-500 font-medium' 
-                                : 'bg-slate-50 text-slate-500 border-slate-200 hover:border-teal-300'
-                            }`}
-                          >
-                            # Dx
-                          </button>
-                          <button
-                            onClick={() => setNewDiagnosisType('ro')}
-                            className={`flex-1 text-[10px] py-1.5 rounded-md border transition-all ${
-                              newDiagnosisType === 'ro' 
-                                ? 'bg-blue-500 text-white border-blue-500 font-medium' 
-                                : 'bg-slate-50 text-slate-500 border-slate-200 hover:border-blue-300'
-                            }`}
-                          >
-                            r/o
-                          </button>
-                        </div>
-                        <div className="flex gap-1.5">
-                          <Input
-                            value={newDiagnosisInput}
-                            onChange={(e) => setNewDiagnosisInput(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') handleAddDiagnosis();
-                              if (e.key === 'Escape') {
-                                setShowDiagnosisForm(false);
-                                setNewDiagnosisInput('');
-                              }
-                            }}
-                            placeholder="진단명 (예: Tension headache)"
-                            className="flex-1 h-7 text-xs"
-                            autoFocus
-                          />
-                          <Button
-                            onClick={() => {
-                              handleAddDiagnosis();
-                              setShowDiagnosisForm(false);
-                            }}
-                            disabled={!newDiagnosisInput.trim()}
-                            size="sm"
-                            className="h-7 px-2.5 bg-teal-500 hover:bg-teal-600"
-                          >
-                            추가
-                          </Button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* 확정 진단 (확정된 DDx) */}
-                {chartData?.assessment?.ddxList?.filter(d => d.isConfirmed).map((ddx) => (
-                  <div key={ddx.id} className="bg-teal-100 rounded-xl p-3 border border-teal-300">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="text-[10px] font-bold text-teal-600 mb-0.5 flex items-center gap-1">
-                          <Check className="w-3 h-3" /> 확정 진단
-                        </div>
-                        <div className="text-sm font-semibold text-teal-900"># {ddx.diagnosis}</div>
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleUnconfirmDdx(ddx.id)}
-                        className="h-6 text-[10px] text-teal-600 hover:text-teal-800 hover:bg-teal-200"
-                      >
-                        취소
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-
-                {/* 대화 기반 r/o (미확정) */}
-                {chartData?.assessment?.ddxList && chartData.assessment.ddxList.filter(d => !d.isRemoved && !d.isConfirmed && d.source === 'doctor').length > 0 && (
-                  <div className="space-y-2">
-                    <div className="text-[10px] font-bold text-blue-600 px-1 flex items-center gap-1">
-                      <MessageCircle className="w-3 h-3" /> 대화 기반 r/o
-                    </div>
-                    {chartData.assessment.ddxList
-                      .filter(d => !d.isRemoved && !d.isConfirmed && d.source === 'doctor')
-                      .map((ddx) => (
-                        <div 
-                          key={ddx.id} 
-                          className="bg-blue-50 rounded-lg p-2.5 border border-blue-200 shadow-sm"
-                        >
-                          <div className="flex items-center justify-between mb-1">
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm font-medium text-blue-800">r/o {ddx.diagnosis}</span>
-                              <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">
-                                💬 대화
-                              </span>
-                            </div>
-                          </div>
-                          {ddx.reason && (
-                            <p className="text-[10px] text-slate-500 mb-2">{ddx.reason}</p>
-                          )}
-                          <div className="flex gap-1.5">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleConfirmDdx(ddx.id)}
-                              className="h-6 text-[10px] flex-1 border-teal-300 text-teal-700 hover:bg-teal-50"
-                            >
-                              <Check className="w-3 h-3 mr-1" /> 확정
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleRemoveDdx(ddx.id)}
-                              className="h-6 text-[10px] flex-1 border-slate-300 text-slate-500 hover:bg-slate-50"
-                            >
-                              제외
-                            </Button>
-                          </div>
-                        </div>
-                      ))}
-                  </div>
-                )}
-
-                {/* AI DDx 추천 (미확정) */}
-                {chartData?.assessment?.ddxList && chartData.assessment.ddxList.filter(d => !d.isRemoved && !d.isConfirmed && d.source !== 'doctor').length > 0 && (
-                  <div className="space-y-2">
-                    <div className="text-[10px] font-bold text-amber-600 px-1 flex items-center gap-1">
-                      <AlertCircle className="w-3 h-3" /> AI DDx 추천
-                    </div>
-                    {chartData.assessment.ddxList
-                      .filter(d => !d.isRemoved && !d.isConfirmed && d.source !== 'doctor')
-                      .map((ddx, index) => (
-                        <div 
-                          key={ddx.id} 
-                          className={`bg-white rounded-lg p-2.5 border shadow-sm transition-all duration-300 ${
-                            newDdxIds.has(ddx.id) 
-                              ? 'border-amber-400 animate-[slideInRight_0.3s_ease-out]' 
-                              : 'border-amber-200'
-                          }`}
-                          style={{ animationDelay: newDdxIds.has(ddx.id) ? `${index * 100}ms` : '0ms' }}
-                        >
-                          <div className="flex items-center justify-between mb-1">
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm font-medium text-amber-800">r/o {ddx.diagnosis}</span>
-                              <span className={`text-[10px] px-1.5 py-0.5 rounded ${
-                                ddx.confidence === 'high' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
-                              }`}>
-                                {ddx.confidence === 'high' ? '높음' : '중간'}
-                              </span>
-                            </div>
-                          </div>
-                          {ddx.reason && (
-                            <p className="text-[10px] text-slate-500 mb-2">{ddx.reason}</p>
-                          )}
-                          <div className="flex gap-1.5">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleConfirmDdx(ddx.id)}
-                              className="h-6 text-[10px] flex-1 border-teal-300 text-teal-700 hover:bg-teal-50"
-                            >
-                              <Check className="w-3 h-3 mr-1" /> 확정
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleRemoveDdx(ddx.id)}
-                              className="h-6 text-[10px] flex-1 border-slate-300 text-slate-500 hover:bg-slate-50"
-                            >
-                              제외
-                            </Button>
-                          </div>
-                        </div>
-                      ))}
-                  </div>
-                )}
-
-                {/* 제외된 DDx (복구 가능) */}
-                {chartData?.assessment?.ddxList && chartData.assessment.ddxList.filter(d => d.isRemoved).length > 0 && (
-                  <div className="space-y-1.5">
-                    <div className="text-[10px] font-bold text-slate-400 px-1">제외됨</div>
-                    {chartData.assessment.ddxList
-                      .filter(d => d.isRemoved)
-                      .map((ddx) => (
-                        <div key={ddx.id} className="bg-slate-100 rounded-lg p-2 border border-slate-200 flex items-center justify-between">
-                          <span className="text-xs text-slate-400 line-through">{ddx.diagnosis}</span>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleRestoreDdx(ddx.id)}
-                            className="h-5 text-[10px] text-slate-500 hover:text-slate-700"
-                          >
-                            복구
-                          </Button>
-                        </div>
-                      ))}
-                  </div>
-                )}
-
-                {/* 녹음 중 - DDx 분석 중 애니메이션 */}
-                {(isRecording || isRemoteRecording) && (!chartData?.assessment?.ddxList || chartData.assessment.ddxList.filter(d => !d.isRemoved).length === 0) && (
-                  <div className="flex-1 flex flex-col items-center justify-center text-center">
-                    <div className="relative mb-3">
-                      <div className="w-12 h-12 rounded-full bg-gradient-to-br from-teal-100 to-cyan-100 flex items-center justify-center">
-                        <Stethoscope className="w-6 h-6 text-teal-500" />
-                      </div>
-                      <div className="absolute inset-0 rounded-full border-2 border-teal-400 border-t-transparent animate-spin" />
-                    </div>
-                    <p className="text-sm font-medium text-teal-700">대화 분석 중</p>
-                    <p className="text-xs text-slate-400 mt-1">DDx를 추천합니다...</p>
-                  </div>
-                )}
-
-                {/* 빈 상태 - 녹음 전 */}
-                {!chartData && !isRecording && !isRemoteRecording && (
-                  <div className="flex-1 flex flex-col items-center justify-center text-center">
-                    <Target className="w-10 h-10 text-teal-300 mb-2" />
-                    <p className="text-sm text-slate-500">녹음을 시작하면</p>
-                    <p className="text-sm text-slate-500">DDx가 추천됩니다</p>
-                  </div>
-                )}
-              </div>
+          {/* Mobile: Chart Only */}
+          <div className="lg:hidden flex flex-col flex-1 min-h-0 gap-3">
+            {/* Chart Content */}
+            <div className="flex-1 min-h-0">
+              <ChartingResult
+                chartData={chartData}
+                isRecording={isRecording || isRemoteRecording}
+                isTyping={isGeneratingChart}
+                layout="compact"
+                department={chartSettings.selectedDepartment}
+                activeFields={chartSettings.activeFields}
+                patientName={patientName}
+                patientMemo={patientMemo}
+                sessionStartTime={sessionStartTime}
+                freeText={freeText}
+                onFreeTextChange={setFreeText}
+                sessionId={activeSessionId}
+              />
             </div>
           </div>
 
-          {/* Mobile: Tab + Bottom A/P Panel */}
-          <div className="lg:hidden flex flex-col flex-1 min-h-0">
-            {/* Tab Switcher */}
-            <div className="flex gap-1.5 bg-white rounded-xl border border-slate-200 p-1.5 mb-4">
-              <button
-                onClick={() => setMobileTab('transcript')}
-                className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-sm font-medium transition-all ${
-                  mobileTab === 'transcript'
-                    ? 'bg-cyan-500 text-white shadow-sm'
-                    : 'text-slate-600 hover:bg-slate-50'
-                }`}
-              >
-                <MessageCircle className="w-4 h-4" />
-                대화
-                {(isRecording || isRemoteRecording) && mobileTab !== 'transcript' && (
-                  <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-                )}
-              </button>
-              <button
-                onClick={() => setMobileTab('chart')}
-                className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-sm font-medium transition-all ${
-                  mobileTab === 'chart'
-                    ? 'bg-teal-500 text-white shadow-sm'
-                    : 'text-slate-600 hover:bg-slate-50'
-                }`}
-              >
-                <FileText className="w-4 h-4" />
-                차트
-              </button>
-              <button
-                onClick={() => setMobileTab('ddx')}
-                className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-sm font-medium transition-all ${
-                  mobileTab === 'ddx'
-                    ? 'bg-amber-500 text-white shadow-sm'
-                    : 'text-slate-600 hover:bg-slate-50'
-                }`}
-              >
-                <Target className="w-4 h-4" />
-                DDx
-                {activeDdxCount > 0 && (
-                  <span className={`ml-1 text-[10px] px-1.5 py-0.5 rounded-full ${
-                    mobileTab === 'ddx' ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-700'
-                  }`}>
-                    {activeDdxCount}
-                  </span>
-                )}
-                {hasNewDdx && mobileTab !== 'ddx' && (
-                  <span className="ml-1 w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-                )}
-              </button>
-            </div>
-
-            {/* Tab Content */}
-            <div className="flex-1 min-h-0 transition-all duration-300">
-              <div className={`${mobileTab === 'transcript' ? 'block' : 'hidden'} h-full`}>
-                <TranscriptViewer
-                  finalTranscript={finalTranscript}
-                  isRecording={isRecording || isRemoteRecording}
-                  realtimeSegments={realtimeSegments}
-                />
-              </div>
-              <div className={`${mobileTab === 'chart' ? 'block' : 'hidden'} h-full`}>
-                <ChartingResult
-                  chartData={chartData}
-                  isRecording={isRecording || isRemoteRecording}
-                  layout="compact"
-                  department={chartSettings.selectedDepartment}
-                  activeFields={chartSettings.activeFields}
-                />
-              </div>
-              <div className={`${mobileTab === 'ddx' ? 'block' : 'hidden'} h-full`}>
-                <div className="h-full bg-gradient-to-br from-teal-50 to-cyan-50 rounded-2xl border-2 border-teal-200 shadow-sm overflow-hidden flex flex-col">
-                  {/* DDx Header */}
-                  <div className="flex-none px-4 py-3 border-b border-teal-200 bg-white/50">
-                    <div className="flex items-center gap-2">
-                      <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-teal-500 to-cyan-500 flex items-center justify-center">
-                        <Target className="w-4 h-4 text-white" />
-                      </div>
-                      <div>
-                        <h3 className="font-bold text-sm text-teal-800">DDx 추천</h3>
-                        <p className="text-[10px] text-teal-600">
-                          {(isRecording || isRemoteRecording) ? '실시간 업데이트' : '감별진단'}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* DDx Content */}
-                  <div className="flex-1 overflow-y-auto p-3 flex flex-col"
-                    style={{ gap: chartData || isRecording || isRemoteRecording ? '0.75rem' : '0' }}>
-                    
-                    {/* Dx/r/o 수동 추가 - 녹음 끝나고 차트 있을 때만 */}
-                    {!isRecording && !isRemoteRecording && chartData && (
-                      <div className="mb-1">
-                        {!showDiagnosisForm ? (
-                          <button
-                            onClick={() => setShowDiagnosisForm(true)}
-                            className="w-full py-2 px-3 rounded-lg border border-dashed border-slate-300 text-slate-500 text-xs hover:border-teal-400 hover:text-teal-600 hover:bg-teal-50/50 transition-all flex items-center justify-center gap-1.5"
-                          >
-                            <Plus className="w-3.5 h-3.5" /> 진단 추가
-                          </button>
-                        ) : (
-                          <div className="bg-white rounded-xl p-3 border border-teal-200 shadow-sm animate-in slide-in-from-top-2 duration-200">
-                            <div className="flex items-center justify-between mb-2">
-                              <div className="text-[10px] font-bold text-slate-600 flex items-center gap-1">
-                                <Plus className="w-3 h-3" /> 진단 추가
-                              </div>
-                              <button 
-                                onClick={() => {
-                                  setShowDiagnosisForm(false);
-                                  setNewDiagnosisInput('');
-                                }}
-                                className="text-slate-400 hover:text-slate-600 text-xs"
-                              >
-                                ✕
-                              </button>
-                            </div>
-                            <div className="flex gap-1.5 mb-2">
-                              <button
-                                onClick={() => setNewDiagnosisType('dx')}
-                                className={`flex-1 text-[10px] py-1.5 rounded-md border transition-all ${
-                                  newDiagnosisType === 'dx' 
-                                    ? 'bg-teal-500 text-white border-teal-500 font-medium' 
-                                    : 'bg-slate-50 text-slate-500 border-slate-200 hover:border-teal-300'
-                                }`}
-                              >
-                                # Dx
-                              </button>
-                              <button
-                                onClick={() => setNewDiagnosisType('ro')}
-                                className={`flex-1 text-[10px] py-1.5 rounded-md border transition-all ${
-                                  newDiagnosisType === 'ro' 
-                                    ? 'bg-blue-500 text-white border-blue-500 font-medium' 
-                                    : 'bg-slate-50 text-slate-500 border-slate-200 hover:border-blue-300'
-                                }`}
-                              >
-                                r/o
-                              </button>
-                            </div>
-                            <div className="flex gap-1.5">
-                              <Input
-                                value={newDiagnosisInput}
-                                onChange={(e) => setNewDiagnosisInput(e.target.value)}
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter') handleAddDiagnosis();
-                                  if (e.key === 'Escape') {
-                                    setShowDiagnosisForm(false);
-                                    setNewDiagnosisInput('');
-                                  }
-                                }}
-                                placeholder="진단명 (예: Tension headache)"
-                                className="flex-1 h-7 text-xs"
-                                autoFocus
-                              />
-                              <Button
-                                onClick={() => {
-                                  handleAddDiagnosis();
-                                  setShowDiagnosisForm(false);
-                                }}
-                                disabled={!newDiagnosisInput.trim()}
-                                size="sm"
-                                className="h-7 px-2.5 bg-teal-500 hover:bg-teal-600"
-                              >
-                                추가
-                              </Button>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {/* 확정 진단 (확정된 DDx) */}
-                    {chartData?.assessment?.ddxList?.filter(d => d.isConfirmed).map((ddx) => (
-                      <div key={ddx.id} className="bg-teal-100 rounded-xl p-3 border border-teal-300">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <div className="text-[10px] font-bold text-teal-600 mb-0.5 flex items-center gap-1">
-                              <Check className="w-3 h-3" /> 확정 진단
-                            </div>
-                            <div className="text-sm font-semibold text-teal-900"># {ddx.diagnosis}</div>
-                          </div>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleUnconfirmDdx(ddx.id)}
-                            className="h-6 text-[10px] text-teal-600 hover:text-teal-800 hover:bg-teal-200"
-                          >
-                            취소
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
-
-                    {/* 대화 기반 r/o (미확정) */}
-                    {chartData?.assessment?.ddxList && chartData.assessment.ddxList.filter(d => !d.isRemoved && !d.isConfirmed && d.source === 'doctor').length > 0 && (
-                      <div className="space-y-2">
-                        <div className="text-[10px] font-bold text-blue-600 px-1 flex items-center gap-1">
-                          <MessageCircle className="w-3 h-3" /> 대화 기반 r/o
-                        </div>
-                        {chartData.assessment.ddxList
-                          .filter(d => !d.isRemoved && !d.isConfirmed && d.source === 'doctor')
-                          .map((ddx) => (
-                            <div 
-                              key={ddx.id} 
-                              className="bg-blue-50 rounded-lg p-2.5 border border-blue-200 shadow-sm"
-                            >
-                              <div className="flex items-center justify-between mb-1">
-                                <div className="flex items-center gap-2">
-                                  <span className="text-sm font-medium text-blue-800">r/o {ddx.diagnosis}</span>
-                                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">
-                                    💬 대화
-                                  </span>
-                                </div>
-                              </div>
-                              {ddx.reason && (
-                                <p className="text-[10px] text-slate-500 mb-2">{ddx.reason}</p>
-                              )}
-                              <div className="flex gap-1.5">
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => handleConfirmDdx(ddx.id)}
-                                  className="h-6 text-[10px] flex-1 border-teal-300 text-teal-700 hover:bg-teal-50"
-                                >
-                                  <Check className="w-3 h-3 mr-1" /> 확정
-                                </Button>
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => handleRemoveDdx(ddx.id)}
-                                  className="h-6 text-[10px] flex-1 border-slate-300 text-slate-500 hover:bg-slate-50"
-                                >
-                                  제외
-                                </Button>
-                              </div>
-                            </div>
-                          ))}
-                      </div>
-                    )}
-
-                    {/* AI DDx 추천 (미확정) */}
-                    {chartData?.assessment?.ddxList && chartData.assessment.ddxList.filter(d => !d.isRemoved && !d.isConfirmed && d.source !== 'doctor').length > 0 && (
-                      <div className="space-y-2">
-                        <div className="text-[10px] font-bold text-amber-600 px-1 flex items-center gap-1">
-                          <AlertCircle className="w-3 h-3" /> AI DDx 추천
-                        </div>
-                        {chartData.assessment.ddxList
-                          .filter(d => !d.isRemoved && !d.isConfirmed && d.source !== 'doctor')
-                          .map((ddx, index) => (
-                            <div 
-                              key={ddx.id} 
-                              className={`bg-white rounded-lg p-2.5 border shadow-sm transition-all duration-300 ${
-                                newDdxIds.has(ddx.id) 
-                                  ? 'border-amber-400 animate-[slideInRight_0.3s_ease-out]' 
-                                  : 'border-amber-200'
-                              }`}
-                              style={{ animationDelay: newDdxIds.has(ddx.id) ? `${index * 100}ms` : '0ms' }}
-                            >
-                              <div className="flex items-center justify-between mb-1">
-                                <div className="flex items-center gap-2">
-                                  <span className="text-sm font-medium text-amber-800">r/o {ddx.diagnosis}</span>
-                                  <span className={`text-[10px] px-1.5 py-0.5 rounded ${
-                                    ddx.confidence === 'high' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
-                                  }`}>
-                                    {ddx.confidence === 'high' ? '높음' : '중간'}
-                                  </span>
-                                </div>
-                              </div>
-                              {ddx.reason && (
-                                <p className="text-[10px] text-slate-500 mb-2">{ddx.reason}</p>
-                              )}
-                              <div className="flex gap-1.5">
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => handleConfirmDdx(ddx.id)}
-                                  className="h-6 text-[10px] flex-1 border-teal-300 text-teal-700 hover:bg-teal-50"
-                                >
-                                  <Check className="w-3 h-3 mr-1" /> 확정
-                                </Button>
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => handleRemoveDdx(ddx.id)}
-                                  className="h-6 text-[10px] flex-1 border-slate-300 text-slate-500 hover:bg-slate-50"
-                                >
-                                  제외
-                                </Button>
-                              </div>
-                            </div>
-                          ))}
-                      </div>
-                    )}
-
-                    {/* 제외된 DDx (복구 가능) */}
-                    {chartData?.assessment?.ddxList && chartData.assessment.ddxList.filter(d => d.isRemoved).length > 0 && (
-                      <div className="space-y-1.5">
-                        <div className="text-[10px] font-bold text-slate-400 px-1">제외됨</div>
-                        {chartData.assessment.ddxList
-                          .filter(d => d.isRemoved)
-                          .map((ddx) => (
-                            <div key={ddx.id} className="bg-slate-100 rounded-lg p-2 border border-slate-200 flex items-center justify-between">
-                              <span className="text-xs text-slate-400 line-through">{ddx.diagnosis}</span>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleRestoreDdx(ddx.id)}
-                                className="h-5 text-[10px] text-slate-500 hover:text-slate-700"
-                              >
-                                복구
-                              </Button>
-                            </div>
-                          ))}
-                      </div>
-                    )}
-
-                    {/* 녹음 중 - DDx 분석 중 애니메이션 */}
-                    {(isRecording || isRemoteRecording) && (!chartData?.assessment?.ddxList || chartData.assessment.ddxList.filter(d => !d.isRemoved).length === 0) && (
-                      <div className="flex-1 flex flex-col items-center justify-center text-center">
-                        <div className="relative mb-3">
-                          <div className="w-12 h-12 rounded-full bg-gradient-to-br from-teal-100 to-cyan-100 flex items-center justify-center">
-                            <Stethoscope className="w-6 h-6 text-teal-500" />
-                          </div>
-                          <div className="absolute inset-0 rounded-full border-2 border-teal-400 border-t-transparent animate-spin" />
-                        </div>
-                        <p className="text-sm font-medium text-teal-700">대화 분석 중</p>
-                        <p className="text-xs text-slate-400 mt-1">DDx를 추천합니다...</p>
-                      </div>
-                    )}
-
-                    {/* 빈 상태 - 녹음 전 */}
-                    {!chartData && !isRecording && !isRemoteRecording && (
-                      <div className="flex-1 flex flex-col items-center justify-center text-center">
-                        <Target className="w-10 h-10 text-teal-300 mb-2" />
-                        <p className="text-sm text-slate-500">녹음을 시작하면</p>
-                        <p className="text-sm text-slate-500">DDx가 추천됩니다</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Mobile CTA */}
-            <div className="mt-3 flex-none">
-              <div className="bg-white/95 border border-slate-200 rounded-xl shadow-sm px-3 py-3 backdrop-blur">
-                <div className="flex items-center gap-2">
-                  <Mail className="w-4 h-4 text-teal-600" />
-                  <div className="text-xs font-semibold text-slate-700">정식 출시 알림 받기</div>
-                </div>
-                <form onSubmit={handleEmailInputSubmit} className="mt-2 flex gap-2">
-                  <Input
-                    type="email"
-                    placeholder="your@email.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="flex-1 h-9 text-sm"
+          {/* Feedback & Subscribe Modals (숨김 처리된 트리거 없는 모달들) */}
+          {/* Feedback Modal */}
+          <Dialog open={feedbackOpen} onOpenChange={(open) => {
+            setFeedbackOpen(open);
+            if (!open) setFeedbackStep('input');
+          }}>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <MessageSquare className="w-5 h-5 text-blue-600" />
+                  {feedbackStep === 'input' ? '피드백 보내기' : '추가 정보 (선택)'}
+                </DialogTitle>
+              </DialogHeader>
+              
+              {feedbackStep === 'input' ? (
+                <div className="space-y-4">
+                  <Textarea
+                    placeholder="개선사항이나 의견을 자유롭게 남겨주세요..."
+                    value={feedback}
+                    onChange={(e) => setFeedback(e.target.value)}
+                    className="min-h-[120px] resize-none"
                   />
-                  <Button type="submit" className="h-9 px-3 text-sm bg-teal-600 hover:bg-teal-700">
-                    구독
-                  </Button>
-                </form>
-              </div>
-            </div>
-          </div>
-
-          {/* Email Subscribe Section */}
-          <div className="hidden lg:block bg-white rounded-2xl border border-slate-200 shadow-sm px-6 py-5 lg:ml-auto lg:w-fit">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-5">
-              <div className="flex items-center gap-4">
-                <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-teal-500 to-teal-600 flex items-center justify-center shrink-0">
-                  <Mail className="w-5 h-5 text-white" />
-                </div>
-                <div>
-                  <h3 className="font-semibold text-slate-800">정식 출시 알림 받기</h3>
-                  <p className="text-sm text-slate-500 mt-0.5">새로운 기능과 업데이트 소식을 받아보세요</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                {/* Feedback Button & Modal */}
-                <Dialog open={feedbackOpen} onOpenChange={(open) => {
-                  setFeedbackOpen(open);
-                  if (!open) setFeedbackStep('input');
-                }}>
-                  <DialogTrigger asChild>
-                    <Button variant="outline" size="sm" className="text-slate-600">
-                      <MessageSquare className="w-4 h-4 mr-1.5" />
-                      피드백
+                  <div className="flex justify-end gap-2">
+                    <Button type="button" variant="outline" onClick={() => setFeedbackOpen(false)}>
+                      취소
                     </Button>
-                  </DialogTrigger>
-                  <DialogContent className="sm:max-w-md">
-                    <DialogHeader>
-                      <DialogTitle className="flex items-center gap-2">
-                        <MessageSquare className="w-5 h-5 text-teal-600" />
-                        {feedbackStep === 'input' ? '피드백 보내기' : '추가 정보 (선택)'}
-                      </DialogTitle>
-                    </DialogHeader>
+                    <Button 
+                      onClick={handleFeedbackNext}
+                      className="bg-blue-600 hover:bg-blue-700"
+                    >
+                      다음
+                      <ChevronRight className="w-4 h-4 ml-1" />
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <form onSubmit={handleFeedbackSubmit} className="space-y-4">
+                  <p className="text-sm text-slate-500">
+                    더 나은 서비스를 위해 간단한 정보를 입력해주세요. 건너뛰셔도 됩니다.
+                  </p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <Select value={feedbackAge} onValueChange={setFeedbackAge}>
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="연령대" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {AGE_OPTIONS.map(opt => (
+                          <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                     
-                    {feedbackStep === 'input' ? (
-                      <div className="space-y-4">
-                        <Textarea
-                          placeholder="개선사항이나 의견을 자유롭게 남겨주세요..."
-                          value={feedback}
-                          onChange={(e) => setFeedback(e.target.value)}
-                          className="min-h-[120px] resize-none"
-                        />
-                        <div className="flex justify-end gap-2">
-                          <Button type="button" variant="outline" onClick={() => setFeedbackOpen(false)}>
-                            취소
-                          </Button>
-                          <Button 
-                            onClick={handleFeedbackNext}
-                            className="bg-teal-600 hover:bg-teal-700"
-                          >
-                            다음
-                            <ChevronRight className="w-4 h-4 ml-1" />
-                          </Button>
-                        </div>
-                      </div>
-                    ) : (
-                      <form onSubmit={handleFeedbackSubmit} className="space-y-4">
-                        <p className="text-sm text-slate-500">
-                          더 나은 서비스를 위해 간단한 정보를 입력해주세요. 건너뛰셔도 됩니다.
-                        </p>
-                        <div className="grid grid-cols-2 gap-3">
-                          <Select value={feedbackAge} onValueChange={setFeedbackAge}>
-                            <SelectTrigger className="w-full">
-                              <SelectValue placeholder="연령대" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {AGE_OPTIONS.map(opt => (
-                                <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          
-                          <Select value={feedbackJob} onValueChange={setFeedbackJob}>
-                            <SelectTrigger className="w-full">
-                              <SelectValue placeholder="직업" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {JOB_OPTIONS.map(opt => (
-                                <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-            </div>
-                        
-                        <Select value={feedbackSpecialty} onValueChange={setFeedbackSpecialty}>
-                          <SelectTrigger className="w-full">
-                            <SelectValue placeholder="전공과" />
-                          </SelectTrigger>
-                          <SelectContent className="max-h-[300px]">
-                            {SPECIALTY_OPTIONS.map(group => (
-                              <SelectGroup key={group.group}>
-                                <SelectLabel>{group.group}</SelectLabel>
-                                {group.items.map(opt => (
-                                  <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                                ))}
-                              </SelectGroup>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        
-                        <Input
-                          type="email"
-                          placeholder="답변받을 이메일 (선택)"
-                          value={feedbackEmail}
-                          onChange={(e) => setFeedbackEmail(e.target.value)}
-                        />
-                        
-                        <div className="flex justify-between">
-                          <Button 
-                            type="button" 
-                            variant="ghost" 
-                            onClick={handleFeedbackSkip}
-                            disabled={isSendingFeedback}
-                            className="text-slate-500"
-                          >
-                            건너뛰기
-                          </Button>
-                          <Button 
-                            type="submit" 
-                            disabled={isSendingFeedback}
-                            className="bg-teal-600 hover:bg-teal-700"
-                          >
-                            {isSendingFeedback ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Send className="w-4 h-4 mr-2" />}
-                            보내기
-                          </Button>
-              </div>
-                      </form>
-                    )}
-                  </DialogContent>
-                </Dialog>
-
-                {/* Subscribe Form (inline) + Modal */}
-                <form onSubmit={handleEmailInputSubmit} className="flex gap-2">
+                    <Select value={feedbackJob} onValueChange={setFeedbackJob}>
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="직업" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {JOB_OPTIONS.map(opt => (
+                          <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  
+                  <Select value={feedbackSpecialty} onValueChange={setFeedbackSpecialty}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="전공과" />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-[300px]">
+                      {SPECIALTY_OPTIONS.map(group => (
+                        <SelectGroup key={group.group}>
+                          <SelectLabel>{group.group}</SelectLabel>
+                          {group.items.map(opt => (
+                            <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                          ))}
+                        </SelectGroup>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  
                   <Input
                     type="email"
-                    placeholder="your@email.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="w-48 sm:w-56"
+                    placeholder="답변받을 이메일 (선택)"
+                    value={feedbackEmail}
+                    onChange={(e) => setFeedbackEmail(e.target.value)}
                   />
+                  
+                  <div className="flex justify-between">
+                    <Button 
+                      type="button" 
+                      variant="ghost" 
+                      onClick={handleFeedbackSkip}
+                      disabled={isSendingFeedback}
+                      className="text-slate-500"
+                    >
+                      건너뛰기
+                    </Button>
+                    <Button 
+                      type="submit" 
+                      disabled={isSendingFeedback}
+                      className="bg-blue-600 hover:bg-blue-700"
+                    >
+                      {isSendingFeedback ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Send className="w-4 h-4 mr-2" />}
+                      보내기
+                    </Button>
+                  </div>
+                </form>
+              )}
+            </DialogContent>
+          </Dialog>
+
+          {/* Subscribe Info Modal */}
+          <Dialog open={subscribeOpen} onOpenChange={setSubscribeOpen}>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <Mail className="w-5 h-5 text-blue-600" />
+                  조금만 더 알려주세요!
+                </DialogTitle>
+              </DialogHeader>
+              <form onSubmit={handleEmailSubscribe} className="space-y-4">
+                <p className="text-sm text-slate-500">
+                  <span className="font-medium text-slate-700">{email}</span>로 알림을 보내드립니다.
+                  <br />더 나은 서비스를 위해 간단한 정보를 입력해주세요.
+                </p>
+                
+                <div className="grid grid-cols-2 gap-3">
+                  <Select value={userAge} onValueChange={setUserAge}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="연령대 *" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {AGE_OPTIONS.map(opt => (
+                        <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  
+                  <Select value={userJob} onValueChange={setUserJob}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="직업 *" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {JOB_OPTIONS.map(opt => (
+                        <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                <Select value={userSpecialty} onValueChange={setUserSpecialty}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="전공과 *" />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-[300px]">
+                    {SPECIALTY_OPTIONS.map(group => (
+                      <SelectGroup key={group.group}>
+                        <SelectLabel>{group.group}</SelectLabel>
+                        {group.items.map(opt => (
+                          <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                        ))}
+                      </SelectGroup>
+                    ))}
+                  </SelectContent>
+                </Select>
+                
+                <div className="flex justify-end gap-2">
+                  <Button type="button" variant="outline" onClick={() => setSubscribeOpen(false)}>
+                    취소
+                  </Button>
                   <Button 
                     type="submit" 
-                    className="bg-teal-600 hover:bg-teal-700 px-5"
+                    disabled={isSubscribing}
+                    className="bg-blue-600 hover:bg-blue-700"
                   >
-                    구독
+                    {isSubscribing ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Mail className="w-4 h-4 mr-2" />}
+                    완료
                   </Button>
-                </form>
-                
-                {/* Subscribe Info Modal */}
-                <Dialog open={subscribeOpen} onOpenChange={setSubscribeOpen}>
-                  <DialogContent className="sm:max-w-md">
-                    <DialogHeader>
-                      <DialogTitle className="flex items-center gap-2">
-                        <Mail className="w-5 h-5 text-teal-600" />
-                        조금만 더 알려주세요!
-                      </DialogTitle>
-                    </DialogHeader>
-                    <form onSubmit={handleEmailSubscribe} className="space-y-4">
-                      <p className="text-sm text-slate-500">
-                        <span className="font-medium text-slate-700">{email}</span>로 알림을 보내드립니다.
-                        <br />더 나은 서비스를 위해 간단한 정보를 입력해주세요.
-                      </p>
-                      
-                      <div className="grid grid-cols-2 gap-3">
-                        <Select value={userAge} onValueChange={setUserAge}>
-                          <SelectTrigger className="w-full">
-                            <SelectValue placeholder="연령대 *" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {AGE_OPTIONS.map(opt => (
-                              <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        
-                        <Select value={userJob} onValueChange={setUserJob}>
-                          <SelectTrigger className="w-full">
-                            <SelectValue placeholder="직업 *" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {JOB_OPTIONS.map(opt => (
-                              <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      
-                      <Select value={userSpecialty} onValueChange={setUserSpecialty}>
-                        <SelectTrigger className="w-full">
-                          <SelectValue placeholder="전공과 *" />
-                        </SelectTrigger>
-                        <SelectContent className="max-h-[300px]">
-                          {SPECIALTY_OPTIONS.map(group => (
-                            <SelectGroup key={group.group}>
-                              <SelectLabel>{group.group}</SelectLabel>
-                              {group.items.map(opt => (
-                                <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                              ))}
-                            </SelectGroup>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      
-                      <div className="flex justify-end gap-2">
-                        <Button type="button" variant="outline" onClick={() => setSubscribeOpen(false)}>
-                          취소
-                        </Button>
-                        <Button 
-                          type="submit" 
-                          disabled={isSubscribing}
-                          className="bg-teal-600 hover:bg-teal-700"
-                        >
-                          {isSubscribing ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Mail className="w-4 h-4 mr-2" />}
-                          완료
-                        </Button>
-                      </div>
-                    </form>
-                  </DialogContent>
-                </Dialog>
-              </div>
+                </div>
+              </form>
+            </DialogContent>
+          </Dialog>
             </div>
           </div>
-            </div>
-      </main>
+        </main>
+      </div>
 
       <Toaster position="top-center" richColors />
       
@@ -2424,12 +1869,10 @@ function MainApp() {
           setRecordingProgress(0);
           lastRequestedSegmentCountRef.current = 0;
           lastAutoUpdateTimeRef.current = 0;
-          setMobileTab('transcript');
         }}
         onRemoteRecordingStop={async () => {
           setIsRemoteRecording(false);
           setIsGeneratingChart(true);
-          setMobileTab('chart');
           
           // 수집된 세그먼트로 차트 생성
           const utterances = realtimeSegments.map(s => s.text);
@@ -2495,6 +1938,62 @@ function MainApp() {
           setIsGeneratingChart(false);
         }}
       />
+
+      {/* 첫 방문 환영 모달 */}
+      <Dialog open={showWelcomeModal} onOpenChange={setShowWelcomeModal}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-xl">
+              <Stethoscope className="w-6 h-6 text-blue-600" />
+              CheatChat에 오신 것을 환영합니다!
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <p className="text-slate-600 text-sm">
+              AI가 진료 대화를 듣고 자동으로 차트를 작성해드립니다.
+            </p>
+            
+            <div className="space-y-3">
+              <div className="flex items-start gap-3 p-3 bg-slate-50 rounded-lg">
+                <div className="w-7 h-7 rounded-full bg-blue-100 flex items-center justify-center shrink-0 mt-0.5">
+                  <span className="text-blue-600 font-semibold text-sm">1</span>
+                </div>
+                <div>
+                  <p className="font-medium text-slate-800 text-sm">녹음 시작</p>
+                  <p className="text-slate-500 text-xs">마이크 버튼을 눌러 진료를 시작하세요</p>
+                </div>
+              </div>
+              
+              <div className="flex items-start gap-3 p-3 bg-slate-50 rounded-lg">
+                <div className="w-7 h-7 rounded-full bg-blue-100 flex items-center justify-center shrink-0 mt-0.5">
+                  <span className="text-blue-600 font-semibold text-sm">2</span>
+                </div>
+                <div>
+                  <p className="font-medium text-slate-800 text-sm">자연스럽게 대화</p>
+                  <p className="text-slate-500 text-xs">환자와 평소처럼 대화하시면 됩니다</p>
+                </div>
+              </div>
+              
+              <div className="flex items-start gap-3 p-3 bg-slate-50 rounded-lg">
+                <div className="w-7 h-7 rounded-full bg-blue-100 flex items-center justify-center shrink-0 mt-0.5">
+                  <span className="text-blue-600 font-semibold text-sm">3</span>
+                </div>
+                <div>
+                  <p className="font-medium text-slate-800 text-sm">차트 자동 생성</p>
+                  <p className="text-slate-500 text-xs">녹음 중단 시 AI가 차트를 정리합니다</p>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <Button 
+            onClick={handleCloseWelcomeModal}
+            className="w-full bg-blue-600 hover:bg-blue-700"
+          >
+            시작하기
+          </Button>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

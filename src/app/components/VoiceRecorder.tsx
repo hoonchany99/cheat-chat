@@ -31,6 +31,12 @@ interface VoiceRecorderProps {
   isRemoteRecording?: boolean;
   remoteRecordingTime?: number;
   isExternalGenerating?: boolean;
+  // 데모/테스트용 외부 녹음 상태
+  isExternalRecording?: boolean;
+  externalRecordingTime?: number;
+  // 환자 정보
+  patientName?: string;
+  patientMemo?: string;
 }
 
 export function VoiceRecorder({
@@ -48,7 +54,11 @@ export function VoiceRecorder({
   department = 'internal',
   isRemoteRecording = false,
   remoteRecordingTime = 0,
-  isExternalGenerating = false
+  isExternalGenerating = false,
+  isExternalRecording = false,
+  externalRecordingTime = 0,
+  patientName = '',
+  patientMemo = ''
 }: VoiceRecorderProps) {
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
@@ -247,7 +257,8 @@ export function VoiceRecorder({
             onPartialChartUpdate?.(partial);
           },
           undefined,
-          true
+          true,
+          { name: patientName, memo: patientMemo }
         );
         onRecordingComplete(correctedTranscript, result);
       } catch (error) {
@@ -289,25 +300,30 @@ export function VoiceRecorder({
     return baseHeight + (Math.max(amplifiedLevel, minMovement) * maxAdditional * wave);
   };
 
-  // 통합된 녹음 상태 (로컬 또는 원격)
-  const isAnyRecording = isRecording || isRemoteRecording;
+  // 통합된 녹음 상태 (로컬, 원격, 또는 외부 데모)
+  const isAnyRecording = isRecording || isRemoteRecording || isExternalRecording;
   const isAnyGenerating = isTranscribing || isExternalGenerating;
-  const displayTime = isRemoteRecording ? remoteRecordingTime : recordingTime;
+  const displayTime = isExternalRecording ? externalRecordingTime : isRemoteRecording ? remoteRecordingTime : recordingTime;
 
   return (
     <div className="flex items-center gap-4">
       {/* Recording Button */}
       <div className="relative">
-        {!isAnyRecording ? (
+        {isAnyGenerating ? (
+          // 차트 생성 중일 때 점 3개 애니메이션
+          <div className="h-16 w-16 rounded-full bg-gradient-to-br from-slate-400 to-slate-500 text-white shadow-lg flex items-center justify-center gap-1">
+            <span className="w-2 h-2 bg-white rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+            <span className="w-2 h-2 bg-white rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+            <span className="w-2 h-2 bg-white rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+          </div>
+        ) : !isAnyRecording ? (
           <Button
             onClick={handleStartRecording}
-            disabled={isAnyGenerating || isConnecting || isRemoteRecording}
+            disabled={isConnecting || isRemoteRecording}
             className="h-16 w-16 rounded-full bg-gradient-to-br from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white shadow-xl shadow-red-500/30 relative overflow-hidden transition-all hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isConnecting ? (
               <Loader2 className="w-6 h-6 animate-spin" />
-            ) : isAnyGenerating ? (
-              <Mic className="w-6 h-6 opacity-50" />
             ) : (
               <Mic className="w-6 h-6" />
             )}
@@ -365,19 +381,7 @@ export function VoiceRecorder({
               </div>
             </div>
           </>
-        ) : isAnyGenerating ? (
-          <div className="flex items-center gap-3">
-            <Loader2 className="w-5 h-5 animate-spin text-teal-600" />
-            <div>
-              <div className="text-sm font-semibold text-teal-600">차트 생성 중...</div>
-              <div className="text-xs text-slate-500">잠시만 기다려주세요</div>
-            </div>
-          </div>
-        ) : (
-          <div className="text-sm font-medium text-slate-600">
-            마이크 버튼을 눌러 녹음 시작
-          </div>
-        )}
+        ) : null}
       </div>
     </div>
   );

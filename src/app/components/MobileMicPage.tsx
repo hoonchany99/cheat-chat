@@ -365,7 +365,7 @@ export function MobileMicPage({ sessionId }: MobileMicPageProps) {
       <header className="p-4 flex items-center justify-between">
         <div className="flex items-center gap-2 text-white">
           <Stethoscope className="w-6 h-6" />
-          <span className="font-semibold">Cheat Chat AI</span>
+          <span className="font-bold text-xl">Savvy</span>
         </div>
         <div className="flex items-center gap-2 text-teal-100">
           <Wifi className="w-4 h-4" />

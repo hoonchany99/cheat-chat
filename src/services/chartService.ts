@@ -1,8 +1,8 @@
 // 차트 설정 및 생성 서비스 (Korean hospital style)
 // - CC/PI: 한국어 (PI는 서술형)
-// - Assessment/DDx/Dx/Plan: 영어 중심 + 한국어 연결어만 허용
-// - Dx: diagnosisConfirmed만 사용 (DDx 확정 시 이동)
-// - 추론은 허용된 필드에서만 수행 + 근거/신뢰도 표시
+// - Past History: 소제목 형식 (PMH/Surgical Hx/Meds/Allergies)
+// - Assessment: # 확정Dx + r/o DDx 형식
+// - Plan: 영어 중심
 
 const OPENAI_API_KEY = import.meta.env.VITE_OPENAI_API_KEY || '';
 
@@ -31,12 +31,11 @@ export interface DdxItem {
 // 차트 필드 값 타입
 export interface ChartFieldValue {
   value: string | string[];
-  isConfirmed: boolean;
   source?: 'stated' | 'inferred' | 'user'; // user: 사용자가 직접 수정
   confidence?: 'low' | 'medium' | 'high';
   rationale?: string;
   evidence?: string[];
-  ddxList?: DdxItem[]; // Assessment 필드 전용
+  ddxList?: DdxItem[]; // Assessment 필드 전용 (isConfirmed는 DDx 아이템에만 있음)
 }
 
 export interface DepartmentPreset {
@@ -56,9 +55,9 @@ export interface ChartSettings {
 
 // ==================== 기본 프리셋 ====================
 // ✅ 한국 병원 외래 EMR에 가까운 구성
-// - Dx: diagnosisConfirmed만 사용 (DDx 확정 → Dx로 이동)
 // - PI(현병력)는 한국어 서술형
-// - Assessment/Plan: 영어 중심 + 한국어 연결어만 허용
+// - Past History: 소제목 형식 (PMH/Surgical Hx/Meds/Allergies)
+// - Assessment: # 확정Dx + r/o DDx 형식
 
 export const DEFAULT_FIELDS: ChartField[] = [
   // S - Korean
@@ -66,29 +65,19 @@ export const DEFAULT_FIELDS: ChartField[] = [
   { id: 'historyOfPresentIllness', name: '현병력', nameEn: 'PI', type: 'textarea', required: true, description: '"상환은" + "~함 체". 3-6문장. 예: 상환은 금일 의식 소실 발생함.' },
   { id: 'pertinentROS', name: '관련 증상', nameEn: 'ROS (+/-)', type: 'textarea', required: false, description: '영어 (+/-) 형식. N/V(-), fever(-), CP(-), LOC(+).' },
 
-  // Background - English/abbreviations with duration
-  { id: 'pastMedicalHistory', name: '과거력', nameEn: 'Past History', type: 'tags', required: false, description: '영어 약어 + duration. DM (since childhood), HTN (x3y).' },
-  { id: 'pastSurgicalHistory', name: '수술력', nameEn: 'Surgical History', type: 'tags', required: false, description: '영어. s/p appendectomy (2020).' },
-  { id: 'medications', name: '복용약', nameEn: 'Meds', type: 'tags', required: false, description: '영어. 용량 포함 시 추가.' },
-  { id: 'allergies', name: '알레르기', nameEn: 'Allergies', type: 'tags', required: false, description: '영어. 없으면 "None" (NKDA ❌).' },
+  // Background - Past History (소제목 포함)
+  { id: 'pastMedicalHistory', name: '과거력', nameEn: 'Past History', type: 'textarea', required: false, description: '소제목 포함: PMH: DM, HTN / Surgical Hx: s/p appendectomy / Meds: metformin / Allergies: None' },
   { id: 'socialHistory', name: '사회력', nameEn: 'Social History', type: 'textarea', required: false, description: '영어 (+/-). Smoking (-), Alcohol (-). 특이사항만 한국어.' },
   { id: 'familyHistory', name: '가족력', nameEn: 'Family History', type: 'textarea', required: false, description: '한국식. 부: DM, 모: 특이사항 없음.' },
 
   // O - English (+/-)
-  { id: 'vitalSigns', name: '활력징후', nameEn: 'VS', type: 'text', required: false, description: 'BP/HR/BT/RR/SpO2.' },
-  { id: 'physicalExam', name: '진찰소견', nameEn: 'PE', type: 'textarea', required: false, description: '영어. 안 했으면 "None". 했으면 전부 (+/-) 기록. 위치/범위 포함.' },
-  { id: 'labResults', name: '검사결과', nameEn: 'Labs', type: 'textarea', required: false, description: '영어. 언급된 결과만.' },
-  { id: 'imaging', name: '영상검사', nameEn: 'Imaging', type: 'textarea', required: false, description: '영어. 언급된 것만.' },
+  { id: 'physicalExam', name: '진찰소견', nameEn: 'PE', type: 'textarea', required: false, description: '영어. 진찰 안 했으면 비워둘 것. 했으면 전부 (+/-) 기록. 위치/범위 포함.' },
 
-  // A - Assessment (# 확정 + r/o DDx만)
-  { id: 'assessment', name: '평가', nameEn: 'Assessment', type: 'textarea', required: true, description: '# 확정Dx + r/o DDx만. Summary/설명 금지. AI는 # 금지.' },
-
-  // Dx - 확정 진단 (# 표시)
-  { id: 'diagnosisConfirmed', name: '확정 진단', nameEn: 'Dx (#)', type: 'tags', required: false, description: 'DDx 확정 시 # 붙여서 Assessment에 표시.' },
+  // A - Assessment (# 확정 + r/o DDx)
+  { id: 'assessment', name: '평가', nameEn: 'Assessment', type: 'textarea', required: true, description: '# 확정Dx (엔터) r/o DDx 형식. 예: # ACS (엔터) r/o NSTEMI (엔터) r/o Unstable angina' },
 
   // P - English orders
   { id: 'plan', name: '계획', nameEn: 'Plan', type: 'textarea', required: true, description: '영어 오더만. [Orders] + [AI Suggestions] (근거 필수, 0-2줄).' },
-  { id: 'followUp', name: '추적관찰', nameEn: 'F/U', type: 'textarea', required: false, description: '구체적 f/u만. 일반문구 금지. 없으면 비움.' },
 
   { id: 'notes', name: '기타', nameEn: 'Notes', type: 'textarea', required: false, description: '메모.' },
 ];
@@ -116,18 +105,12 @@ CORE PHILOSOPHY:
 | CC                | Korean (환자 표현 + onset)             |
 | PI                | Korean (~함 체: 호소함, 발생함, 있었음)  |
 | ROS (+/-)         | English (+/-): N/V(-), LOC(+), CP(-) |
-| PMH               | English abbrev + duration: DM (since childhood), HTN (x3y) |
-| Surgical Hx       | English: s/p appendectomy (2020)     |
-| Meds              | English with dose if mentioned        |
-| Allergies         | English: "None" (NOT NKDA)           |
+| Past History      | 소제목 포함 형식 (아래 참조)            |
 | SHx               | English (+/-): Smoking (-), Alcohol (-). 특이사항만 한국어 |
 | FHx               | Korean style: 부: DM, 모: 특이사항 없음 |
-| PE                | English (+/-): 안 했으면 "None", 했으면 전부 기록 |
-| Assessment (A)    | ENGLISH: # 확정Dx, r/o DDx           |
-| DDx / r/o         | ENGLISH 100%                         |
-| Dx                | ENGLISH 100%                         |
+| PE                | English (+/-): 안 했으면 비워둘 것, 했으면 전부 기록 |
+| Assessment        | # 확정Dx (줄바꿈) r/o DDx 형식         |
 | Plan (P)          | ENGLISH orders                       |
-| F/U               | English specific only or leave empty |
 
 - Do NOT translate diagnoses into Korean.
 - DDx, r/o, Dx terms must remain in English.
@@ -151,16 +134,27 @@ BAD PI:
 "환자는 오늘 아침에 의식을 잃었습니다." (wrong: "환자는" instead of "상환은")
 "김서현님은 어제부터 안 좋다고 하셨습니다." (wrong: using patient name)
 
-=== PMH RULES (CRITICAL) ===
-- Use abbreviations: DM, HTN, CAD, CKD, etc.
-- Include duration in parentheses if mentioned
-GOOD: "DM (since childhood)", "HTN (x3y)", "asthma (controlled)"
-BAD: "Diabetes mellitus", "Hypertension" (too long)
+=== PAST HISTORY RULES (CRITICAL) ===
+- Past History 필드에 소제목 형식으로 작성
+- 소제목: PMH, Surgical Hx, Meds, Allergies
+- 각 소제목은 콜론(:) 뒤에 내용 작성
+- 없으면 해당 소제목 생략 가능
 
-=== ALLERGIES RULE ===
-- Use "None" if no allergies (NOT "NKDA")
-GOOD: "None"
-BAD: "NKDA"
+FORMAT:
+PMH: DM (since childhood), HTN (x3y)
+Surgical Hx: s/p appendectomy (2020)
+Meds: metformin 500mg bid
+Allergies: None
+
+GOOD:
+"PMH: DM, HTN (x5y)
+Surgical Hx: s/p C-sec (2015)
+Meds: metformin, amlodipine
+Allergies: PCN"
+
+BAD:
+"DM, HTN" (소제목 없음)
+"Diabetes mellitus" (약어 미사용)
 
 === SHx RULES ===
 - 안 함/없음 → (-)
@@ -182,8 +176,8 @@ GOOD:
 "부: 유사 증상 있음"
 
 === PE RULES (CRITICAL) ===
-- If PE not performed: write "None"
-- If ANY PE findings are mentioned, PE must be filled (NEVER "None")
+- If PE not performed: leave EMPTY (do NOT write "None")
+- If ANY PE findings are mentioned, PE must be filled
 - If PE performed: document ALL findings with (+/-)
 - For positive findings: include location/extent/side
 GOOD:
@@ -288,25 +282,16 @@ GENERAL OP NOTE:
       { id: 'chiefComplaint', name: '주호소', nameEn: 'CC', type: 'textarea', required: true, description: '한국어. 환자 표현 + (onset: 시점).' },
       { id: 'historyOfPresentIllness', name: '현병력', nameEn: 'PI', type: 'textarea', required: true, description: '"상환은" + "~함 체". 3-6문장.' },
       { id: 'pertinentROS', name: '관련 증상', nameEn: 'ROS (+/-)', type: 'textarea', required: false, description: '영어 (+/-) 형식.' },
-      // Background
-      { id: 'pastMedicalHistory', name: '과거력', nameEn: 'Past History', type: 'tags', required: false, description: '영어 약어 + duration. DM (x10y), HTN (x3y).' },
-      { id: 'pastSurgicalHistory', name: '수술력', nameEn: 'Surgical History', type: 'tags', required: false, description: '영어. s/p appendectomy (2020).' },
-      { id: 'medications', name: '복용약', nameEn: 'Meds', type: 'tags', required: false, description: '영어. 용량 포함.' },
-      { id: 'allergies', name: '알레르기', nameEn: 'Allergies', type: 'tags', required: false, description: '영어. 없으면 "None".' },
+      // Background - Past History (소제목 포함)
+      { id: 'pastMedicalHistory', name: '과거력', nameEn: 'Past History', type: 'textarea', required: false, description: '소제목 포함: PMH: DM, HTN / Surgical Hx: s/p appendectomy / Meds: metformin / Allergies: None' },
       { id: 'socialHistory', name: '사회력', nameEn: 'Social History', type: 'textarea', required: false, description: '영어 (+/-). Smoking (-), Alcohol (-).' },
       { id: 'familyHistory', name: '가족력', nameEn: 'Family History', type: 'textarea', required: false, description: '한국식. 부: DM, 모: HTN.' },
       // O - Objective
-      { id: 'vitalSigns', name: '활력징후', nameEn: 'VS', type: 'text', required: false, description: 'BP/HR/BT/RR/SpO2.' },
-      { id: 'physicalExam', name: '진찰소견', nameEn: 'PE', type: 'textarea', required: false, description: '영어. 안 했으면 "None".' },
-      { id: 'labResults', name: '검사결과', nameEn: 'Labs', type: 'textarea', required: false, description: '영어. 언급된 결과만.' },
-      { id: 'imaging', name: '영상검사', nameEn: 'Imaging', type: 'textarea', required: false, description: '영어. 언급된 것만.' },
-      // A - Assessment (Problem List → Assessment → Dx 순서)
-      { id: 'problemList', name: '문제목록', nameEn: 'Problem List', type: 'tags', required: false, description: '만성질환 목록. 1) DM 2) HTN 형식.' },
-      { id: 'assessment', name: '평가', nameEn: 'Assessment', type: 'textarea', required: true, description: '# 확정Dx + r/o DDx만.' },
-      { id: 'diagnosisConfirmed', name: '확정 진단', nameEn: 'Dx (#)', type: 'tags', required: false, description: 'DDx 확정 시 # 표시.' },
+      { id: 'physicalExam', name: '진찰소견', nameEn: 'PE', type: 'textarea', required: false, description: '영어. 진찰 안 했으면 비워둘 것.' },
+      // A - Assessment (# 확정 + r/o DDx)
+      { id: 'assessment', name: '평가', nameEn: 'Assessment', type: 'textarea', required: true, description: '# 확정Dx (엔터) r/o DDx 형식.' },
       // P - Plan
       { id: 'plan', name: '계획', nameEn: 'Plan', type: 'textarea', required: true, description: '영어 오더.' },
-      { id: 'followUp', name: '추적관찰', nameEn: 'F/U', type: 'textarea', required: false, description: '구체적 f/u만. 없으면 비움.' },
       { id: 'notes', name: '기타', nameEn: 'Notes', type: 'textarea', required: false, description: '메모.' },
     ],
     promptContext: `
@@ -314,7 +299,6 @@ ${BASE_CHARTING_STYLE}
 
 INTERNAL MEDICINE EMPHASIS:
 - If chronic diseases are mentioned, reflect briefly (HTN/DM/thyroid etc).
-- If labs are mentioned, you may interpret minimally in Assessment (without creating new values).
 - Use cautious language: "r/o", "DDx", "c/w" as appropriate.
 `.trim(),
   },
@@ -494,7 +478,6 @@ function sanitizeChartData(
   if (!allowSocialHistory && hasSocialField) {
     chartData.socialHistory = {
       value: '',
-      isConfirmed: false,
       source: 'stated',
       confidence: 'low',
       rationale: '',
@@ -505,7 +488,6 @@ function sanitizeChartData(
   if (!allowFamilyHistory && hasFamilyField) {
     chartData.familyHistory = {
       value: '',
-      isConfirmed: false,
       source: 'stated',
       confidence: 'low',
       rationale: '',
@@ -572,7 +554,7 @@ export async function correctSTTErrors(segments: SpeakerSegment[]): Promise<Spea
             content: rawConversation
           }
         ],
-        max_tokens: fastMode ? 1500 : 3200,
+        max_tokens: 2000,
         temperature: 0.1,
       }),
     });
@@ -662,20 +644,19 @@ export async function generateChart(
     ? settings.activeFields
     : preset.fields;
 
-  // JSON 스키마 (value + 확실표시 + 추론 메타데이터 기본값 포함)
+  // JSON 스키마 (value + 추론 메타데이터 기본값 포함)
   const jsonSchema: Record<string, any> = {};
   allFields.forEach(field => {
     const isArray = field.type === 'tags' || field.type === 'list';
     const baseSchema = {
       value: isArray ? [] : '',
-      isConfirmed: false,
       source: 'stated',
       confidence: 'low',
       rationale: '',
       evidence: []
     };
     
-    // assessment 필드에는 ddxList 추가
+    // assessment 필드에는 ddxList 추가 (DDx의 isConfirmed는 유지)
     if (field.id === 'assessment') {
       jsonSchema[field.id] = {
         ...baseSchema,
@@ -717,7 +698,7 @@ ${preset.promptContext || ''}
 - Allergies: "None" if no allergies (NOT "NKDA")
 - SHx: English (+/-) - Smoking (-), Alcohol (-)
 - FHx: Korean style - 부: DM, 모: 특이사항 없음
-- PE: "None" if not performed, otherwise FULL (+/-) documentation
+- PE: Leave EMPTY if not performed, otherwise FULL (+/-) documentation
 - Assessment/DDx/Dx/Plan: MEDICAL ENGLISH (no Korean diagnoses)
 - Do NOT translate diagnoses into Korean.
 
@@ -754,20 +735,20 @@ FIELDS TO FILL:
 ${fieldDescriptions}
 
 RECORD vs AI INFERENCE:
-- 차트는 기본적으로 "기록"임. 대화에서 나온 내용은 모두 isConfirmed=true, source="stated"
-- AI 추론은 DDx 추천과 Plan 추천만 해당
+- 차트는 기본적으로 "기록"임. 대화에서 나온 내용 = source="stated"
+- AI 추론 = source="inferred"
 
 RULES:
 - CC, PI, ROS, PMH, Meds, Allergies, SHx, FHx, VS, PE, Labs, Imaging:
-  - 대화에서 언급된 내용 → isConfirmed=true, source="stated"
+  - 대화에서 언급된 내용 → source="stated"
   - 언급 안됨 → 비워둠 ("" or [])
 - Assessment: 
   - value = "# Dx" ONLY if doctor confirmed (otherwise EMPTY)
-  - ddxList = AI DDx 추천, isConfirmed=false, source="inferred"
+  - ddxList = AI DDx 추천 (isConfirmed는 DDx에만 적용)
 - Plan:
-  - [Orders] 의사가 언급한 오더 → isConfirmed=true, source="stated"
-  - [AI Suggestions] AI 추천 → isConfirmed=false, source="inferred"
-- F/U: 의사가 언급한 경우 → isConfirmed=true, source="stated"
+  - [Orders] 의사가 언급한 오더 → source="stated"
+  - [AI Suggestions] AI 추천 → source="inferred"
+- F/U: 의사가 언급한 경우 → source="stated"
 
 OUTPUT FORMAT (PURE JSON ONLY):
 ${JSON.stringify(jsonSchema, null, 2)}
@@ -819,10 +800,8 @@ FIELD-BY-FIELD RULES:
 - SHx/FHx: 대화에서 명시된 경우만 작성. 기본값/추정 금지.
 - VS: 측정된 모든 값 (BP, HR, BT, RR, SpO2)
 - PE: 
-  - 안 했으면 "None"
+  - 안 했으면 비워둘 것 (빈 문자열)
   - 했으면 실제 소견 기록! (예: "Neuro: no focal deficit")
-  - 진찰 소견이 하나라도 있으면 PE는 절대 "None"이 될 수 없음
-  - 진찰 소견이 하나라도 있으면 PE는 절대 "None"이 될 수 없음
 - Labs: 검사 결과 (결과 없으면 비워둠)
 - Imaging: 영상 결과/소견 (결과 없으면 비워둠)
 - Assessment:
@@ -848,7 +827,7 @@ ASSESSMENT FORMAT:
 ${conversation}`
           }
         ],
-        max_tokens: fastMode ? 1500 : 3200,
+        max_tokens: 2000,
         temperature: 0.2,
       }),
     });
@@ -886,12 +865,11 @@ ${conversation}`
         const rawValue = rawData[field.id];
         const isArrayField = field.type === 'tags' || field.type === 'list';
 
-        // 기본값: 기록이므로 isConfirmed=true
+        // 기본값
         const base: ChartFieldValue = {
           value: isArrayField ? [] : '',
-          isConfirmed: true, // 기본은 기록 (true)
           source: 'stated',
-          confidence: 'high', // 기록은 high
+          confidence: 'high',
           rationale: '',
           evidence: [],
         };
@@ -899,7 +877,6 @@ ${conversation}`
         if (rawValue && typeof rawValue === 'object' && 'value' in (rawValue as any)) {
           const fv = rawValue as {
             value: unknown;
-            isConfirmed?: boolean;
             source?: 'stated' | 'inferred';
             confidence?: 'low' | 'medium' | 'high';
             rationale?: string;
@@ -912,7 +889,7 @@ ${conversation}`
           const rationale = typeof fv.rationale === 'string' ? cleanStringValue(fv.rationale) : '';
           const confidence = normalizeConfidence(fv.confidence);
 
-          // DDx 리스트 파싱 (assessment 필드용)
+          // DDx 리스트 파싱 (assessment 필드용) - DDx의 isConfirmed는 유지
           let ddxList: DdxItem[] | undefined = undefined;
           if (field.id === 'assessment' && fv.ddxList && Array.isArray(fv.ddxList)) {
             // 1. 기본 파싱
@@ -948,7 +925,6 @@ ${conversation}`
             chartData[field.id] = {
               ...base,
               value: arr,
-              isConfirmed: fv.isConfirmed === true,
               source,
               confidence,
               rationale,
@@ -960,7 +936,6 @@ ${conversation}`
             chartData[field.id] = {
               ...base,
               value: str,
-              isConfirmed: fv.isConfirmed === true,
               source,
               confidence,
               rationale,
@@ -975,18 +950,6 @@ ${conversation}`
           } else {
             chartData[field.id] = { ...base, value: typeof rawValue === 'string' ? cleanStringValue(rawValue) : '' };
           }
-        }
-
-        // 안전장치: source에 따른 isConfirmed 설정
-        if (chartData[field.id].source === 'inferred') {
-          // AI 추론은 항상 isConfirmed=false
-          chartData[field.id].isConfirmed = false;
-        } else if (chartData[field.id].source === 'stated') {
-          // 대화 기록은 항상 isConfirmed=true (값이 있는 경우)
-          const val = chartData[field.id].value;
-          const hasValue = typeof val === 'string' ? val.trim().length > 0 : Array.isArray(val) ? val.length > 0 : false;
-          chartData[field.id].isConfirmed = hasValue;
-          chartData[field.id].confidence = 'high';
         }
 
         // 안전장치: evidence는 최대 2개
@@ -1011,18 +974,18 @@ ${conversation}`
         }
       }
 
-      const confirmedFields: string[] = [];
+      const statedFields: string[] = [];
       const inferredFields: string[] = [];
 
       Object.entries(chartData).forEach(([fieldId, fieldValue]) => {
         if (hasValue(fieldValue.value)) {
-          if (fieldValue.isConfirmed) confirmedFields.push(fieldId);
+          if (fieldValue.source === 'stated') statedFields.push(fieldId);
           if (fieldValue.source === 'inferred') inferredFields.push(fieldId);
         }
       });
 
       console.log(`✅ 차트 생성 완료!`);
-      console.log(`   ✓ 확실(isConfirmed=true) (${confirmedFields.length}개): ${confirmedFields.join(', ') || '없음'}`);
+      console.log(`   ✓ 기록(source=stated) (${statedFields.length}개): ${statedFields.join(', ') || '없음'}`);
       console.log(`   ⚠ AI추론(source=inferred) (${inferredFields.length}개): ${inferredFields.join(', ') || '없음'}`);
 
       return sanitizeChartData(chartData, conversation, allFields);
@@ -1069,7 +1032,8 @@ export async function generateChartFromTranscriptStreaming(
   department: string = 'internal',
   onPartialUpdate: (partialChart: GeneratedChart) => void,
   abortSignal?: AbortSignal,
-  fastMode: boolean = false
+  fastMode: boolean = false,
+  patientInfo?: { name?: string; memo?: string }
 ): Promise<GeneratedChart | null> {
   if (!OPENAI_API_KEY) {
     console.error('❌ OPENAI_API_KEY가 설정되지 않았습니다.');
@@ -1084,6 +1048,15 @@ export async function generateChartFromTranscriptStreaming(
 
   const useSegments = segments.length > 0 ? segments : [{ speaker: 'patient' as const, text: transcript }];
 
+  // 환자 정보 구성 (참고용 - 직접 기록 X)
+  let patientContext = '';
+  if (patientInfo?.name || patientInfo?.memo) {
+    const parts = [];
+    if (patientInfo.name) parts.push(`환자명: ${patientInfo.name}`);
+    if (patientInfo.memo) parts.push(`참고 메모 (직접 기록 금지, DDx/Plan 참고용): ${patientInfo.memo}`);
+    patientContext = `[사전 입력 정보 - 차트에 직접 기록하지 말고 DDx 추론 및 Plan 작성 시 참고만 할 것]\n${parts.join('\n')}\n\n`;
+  }
+
   // 대화 내용 구성
   const conversation = useSegments
     .filter(s => s.speaker !== 'pending')
@@ -1094,6 +1067,9 @@ export async function generateChartFromTranscriptStreaming(
     console.error('❌ 대화 내용이 없습니다.');
     return null;
   }
+
+  // 환자 정보 + 대화 내용 합치기
+  const fullConversation = patientContext + conversation;
 
   const preset = DEPARTMENT_PRESETS.find(p => p.id === settings.selectedDepartment) || DEPARTMENT_PRESETS[0];
   const allFields = settings.activeFields && settings.activeFields.length > 0
@@ -1106,7 +1082,6 @@ export async function generateChartFromTranscriptStreaming(
     const isArray = field.type === 'tags' || field.type === 'list';
     const baseSchema = {
       value: isArray ? [] : '',
-      isConfirmed: false,
       source: 'stated',
       confidence: 'low',
       rationale: '',
@@ -1152,7 +1127,7 @@ ${preset.promptContext || ''}
 - Allergies: "None" if no allergies (NOT "NKDA")
 - SHx: English (+/-) - Smoking (-), Alcohol (-)
 - FHx: Korean style - 부: DM, 모: 특이사항 없음
-- PE: "None" if not performed, otherwise FULL (+/-) documentation
+- PE: Leave EMPTY if not performed, otherwise FULL (+/-) documentation
 - Assessment/DDx/Dx/Plan: MEDICAL ENGLISH (no Korean diagnoses)
 - Do NOT translate diagnoses into Korean.
 
@@ -1172,12 +1147,18 @@ NO Summary, NO Provider Impression, NO explanations.
   - source: "doctor" = 의사가 "의심된다/것 같다"고 언급한 진단
   - source: "ai" = AI가 대화 분석해서 추천 (의사가 언급 안 한 것만)
 - Avoid vague terms (e.g., "cardiac problem", "brain issue").
+- ⚠️ 사전 입력된 참고 메모(기저질환, 알러지 등)가 있으면 DDx 추론 시 반드시 고려할 것!
+  - 예: 메모에 "DM"이 있으면 당뇨 관련 합병증도 DDx로 고려
+  - 단, 메모 내용을 PMH/Allergies에 직접 기록하지 말 것 (대화에서 언급된 것만 기록)
 
 === HARD PLAN RULES ===
 - Orders in ENGLISH.
 - AI suggestions: Include reason in parentheses. Max 1-2 lines.
 - Example: "Blood glucose check (LOC + DM history)"
 - No explanatory sentences.
+- ⚠️ 사전 입력된 참고 메모(알러지, 복용약물 등)가 있으면 Plan 작성 시 고려할 것!
+  - 예: 메모에 "Aspirin 복용 중"이 있으면 약물 상호작용 고려
+  - 예: 메모에 "PCN allergy"가 있으면 해당 계열 항생제 회피
 ⚠️ Plan에 F/U 내용 절대 포함 금지! (f/u 1wk, 외래 예약 등 → F/U 필드로!)
 
 === HARD F/U RULE ===
@@ -1192,23 +1173,23 @@ FIELDS TO FILL:
 ${fieldDescriptions}
 
 RECORD vs AI INFERENCE:
-- 차트는 기본적으로 "기록"임. 대화에서 나온 내용은 모두 isConfirmed=true, source="stated"
-- AI 추론은 DDx 추천과 Plan 추천만 해당
+- 차트는 기본적으로 "기록"임. 대화에서 나온 내용 = source="stated"
+- AI 추론 = source="inferred"
 
 RULES:
 - CC, PI, ROS, PMH, Meds, Allergies, SHx, FHx, VS, PE, Labs, Imaging:
-  - 대화에서 언급된 내용 → isConfirmed=true, source="stated"
+  - 대화에서 언급된 내용 → source="stated"
   - 언급 안됨 → 비워둠 ("" or [])
 - Assessment:
   - assessment.value = "# Dx" (의사가 확정한 경우만: "~입니다", "~이에요")
-  - assessment.ddxList = 두 종류:
+  - assessment.ddxList = 두 종류 (isConfirmed는 DDx에만 적용):
     1. source: "doctor" = 의사가 언급한 r/o ("의심된다", "것 같다")
     2. source: "ai" = AI가 대화 분석해서 추천하는 DDx
   ⚠️ AI 추천은 의사가 언급하지 않은 가능한 진단만!
 - Plan:
-  - [Orders] 의사가 언급한 오더 → isConfirmed=true, source="stated"
-  - [AI Suggestions] AI 추천 → isConfirmed=false, source="inferred"
-- F/U: 의사가 언급한 경우 → isConfirmed=true, source="stated"
+  - [Orders] 의사가 언급한 오더 → source="stated"
+  - [AI Suggestions] AI 추천 → source="inferred"
+- F/U: 의사가 언급한 경우 → source="stated"
 
 OUTPUT FORMAT (PURE JSON ONLY):
 ${JSON.stringify(jsonSchema, null, 2)}
@@ -1243,7 +1224,7 @@ FIELD-BY-FIELD RULES:
 - FHx: 한국식 (부: DM, HTN / 모: 특이사항 없음)
 - VS: 측정된 모든 값 (BP, HR, BT, RR, SpO2)
 - PE: 
-  - 안 했으면 "None"
+  - 안 했으면 비워둘 것 (빈 문자열)
   - 했으면 실제 소견 기록! (예: "Neuro: no focal deficit")
 - Labs: 검사 결과 (결과 없으면 비워둠)
 - Imaging: 영상 결과/소견 (결과 없으면 비워둠)
@@ -1257,7 +1238,7 @@ FIELD-BY-FIELD RULES:
 - F/U: 구체적 f/u만 (예: "f/u 1wk") - Plan과 완전 분리!
 
 [진료 대화]
-${conversation}`;
+${fullConversation}`;
 
   try {
     console.log('🚀 Streaming 차트 생성 시작...');
@@ -1457,7 +1438,6 @@ function parseRawChartData(rawData: Record<string, unknown>, fields: ChartField[
 
     const base: ChartFieldValue = {
       value: isArrayField ? [] : '',
-      isConfirmed: true,
       source: 'stated',
       confidence: 'high',
       rationale: '',
@@ -1471,7 +1451,7 @@ function parseRawChartData(rawData: Record<string, unknown>, fields: ChartField[
       const rationale = typeof fv.rationale === 'string' ? cleanStringValue(fv.rationale) : '';
       const confidence = normalizeConfidence(fv.confidence);
 
-      // DDx 리스트 파싱 (assessment 필드용) - 기존 함수와 동일
+      // DDx 리스트 파싱 (assessment 필드용) - DDx의 isConfirmed는 유지
       let ddxList: DdxItem[] | undefined = undefined;
       if (field.id === 'assessment' && fv.ddxList && Array.isArray(fv.ddxList)) {
         // 1. 기본 파싱
@@ -1512,7 +1492,6 @@ function parseRawChartData(rawData: Record<string, unknown>, fields: ChartField[
         chartData[field.id] = {
           ...base,
           value: arr,
-          isConfirmed: fv.isConfirmed === true,
           source,
           confidence,
           rationale,
@@ -1524,7 +1503,6 @@ function parseRawChartData(rawData: Record<string, unknown>, fields: ChartField[
         chartData[field.id] = {
           ...base,
           value: str,
-          isConfirmed: fv.isConfirmed === true,
           source,
           confidence,
           rationale,
