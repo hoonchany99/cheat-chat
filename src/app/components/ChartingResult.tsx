@@ -1,20 +1,12 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Button } from '@/app/components/ui/button';
-import { Input } from '@/app/components/ui/input';
 import { Textarea } from '@/app/components/ui/textarea';
-import { Badge } from '@/app/components/ui/badge';
 import { toast } from 'sonner';
 import { 
   FileText, 
   Copy, 
-  Check, 
-  CheckCircle2, 
-  AlertCircle,
-  Sparkles,
-  ChevronDown,
-  ChevronUp,
-  MessageCircle,
-  Edit3
+  Check,
+  Sparkles
 } from 'lucide-react';
 import { ChartField, DdxItem, ChartFieldValue, DEFAULT_FIELDS, DEPARTMENT_PRESETS } from '@/services/chartService';
 
@@ -82,30 +74,6 @@ const chartAnimationStyles = `
   }
 `;
 
-// Field placeholders (description + example)
-const FIELD_PLACEHOLDERS: Record<string, string> = {
-  chiefComplaint: "Patient's main complaint. e.g., LOC since this morning",
-  historyOfPresentIllness: "Narrative of present illness. e.g., Pt developed LOC this AM after BM.",
-  pertinentROS: "Relevant symptoms. e.g., N/V(-), LOC(+), fever(-)",
-  pastMedicalHistory: "Past medical history. e.g., DM (since childhood), HTN (x3y)",
-  pastSurgicalHistory: "Surgical history. e.g., s/p appendectomy (2020)",
-  medications: "Current medications. e.g., metformin 500mg bid",
-  allergies: "Drug allergies. e.g., None, PCN",
-  socialHistory: "Social history. e.g., Smoking (-), Alcohol (-)",
-  familyHistory: "Family history. e.g., Father: DM, Mother: HTN",
-  vitalSigns: "Vital signs. e.g., BP 120/80, HR 72, BT 36.5",
-  physicalExam: "Physical exam findings. e.g., Mental status: drowsy",
-  labResults: "Lab results. e.g., WBC 12.0, Hgb 14.2",
-  imaging: "Imaging findings. e.g., CXR - no infiltrate",
-  plan: "Treatment plan and orders. e.g., Blood glucose, Brain CT",
-  followUp: "Follow-up plan. e.g., f/u 1wk",
-  notes: "Additional notes",
-  // Internal medicine
-  problemList: "Problem list. e.g., 1) DM 2) HTN",
-  // Dermatology
-  lesionDescription: "Lesion morphology. e.g., erythematous papules on trunk",
-};
-
 // Assessment 필드 ID (DDx 패널에서만 처리, 차트에서는 제외)
 // Plan과 F/U는 AI 차트에서 표시
 const AP_FIELDS = ['assessment', 'diagnosisConfirmed'];
@@ -142,7 +110,6 @@ export function ChartingResult({
 }: ChartingResultProps) {
   const [editableData, setEditableData] = useState<ChartData>({});
   const [isCopied, setIsCopied] = useState(false);
-  const [expandedFields, setExpandedFields] = useState<Set<string>>(new Set());
   const fieldRefs = useRef<Record<string, HTMLDivElement | null>>({});
   
   // Diff 기반 타이핑 애니메이션 상태
@@ -313,8 +280,6 @@ export function ChartingResult({
   useEffect(() => {
     if (chartData) return;
     setEditableData({});
-    setExpandedFields(new Set());
-    setExpandedDDx(new Set());
     setCurrentTypingField(null);
     setDisplayedValue('');
     previousValuesRef.current = {};
@@ -439,114 +404,6 @@ export function ChartingResult({
     };
   }, []);
 
-  const handleFieldChange = useCallback((fieldId: string, value: string | string[]) => {
-    setEditableData(prev => ({
-      ...prev,
-      [fieldId]: {
-        ...prev[fieldId],
-        value,
-        isConfirmed: true,
-        source: 'user' as any, // 사용자가 수정함
-      }
-    }));
-  }, []);
-
-  // DDx 핸들러들
-  const handleConfirmDDx = useCallback((ddxId: string) => {
-    setEditableData(prev => {
-      const assessment = prev.assessment;
-      if (!assessment?.ddxList) return prev;
-      
-      const updatedDdxList = assessment.ddxList.map(item =>
-        item.id === ddxId ? { ...item, isConfirmed: true } : item
-      );
-      
-      const confirmedDdx = updatedDdxList.find(item => item.id === ddxId);
-      const currentConfirmed = prev.diagnosisConfirmed?.value || [];
-      const confirmedArray = Array.isArray(currentConfirmed) ? currentConfirmed : [currentConfirmed].filter(Boolean);
-      
-      return {
-        ...prev,
-        assessment: { ...assessment, ddxList: updatedDdxList },
-        diagnosisConfirmed: {
-          value: confirmedDdx ? [...confirmedArray, confirmedDdx.diagnosis] : confirmedArray,
-          isConfirmed: true,
-          source: 'stated' as const,
-        }
-      };
-    });
-    toast.success('진단이 확정되었습니다');
-  }, []);
-
-  const handleRemoveDDx = useCallback((ddxId: string) => {
-    setEditableData(prev => {
-      const assessment = prev.assessment;
-      if (!assessment?.ddxList) return prev;
-      const updatedDdxList = assessment.ddxList.map(item =>
-        item.id === ddxId ? { ...item, isRemoved: true } : item
-      );
-      return { ...prev, assessment: { ...assessment, ddxList: updatedDdxList } };
-    });
-    toast.info('DDx가 제외되었습니다');
-  }, []);
-
-  const handleRestoreDDx = useCallback((ddxId: string) => {
-    setEditableData(prev => {
-      const assessment = prev.assessment;
-      if (!assessment?.ddxList) return prev;
-      const updatedDdxList = assessment.ddxList.map(item =>
-        item.id === ddxId ? { ...item, isRemoved: false } : item
-      );
-      return { ...prev, assessment: { ...assessment, ddxList: updatedDdxList } };
-    });
-    toast.success('DDx가 복구되었습니다');
-  }, []);
-
-  const handleUnconfirmDDx = useCallback((ddxId: string) => {
-    setEditableData(prev => {
-      const assessment = prev.assessment;
-      if (!assessment?.ddxList) return prev;
-      
-      const targetDdx = assessment.ddxList.find(item => item.id === ddxId);
-      if (!targetDdx) return prev;
-      
-      const updatedDdxList = assessment.ddxList.map(item =>
-        item.id === ddxId ? { ...item, isConfirmed: false } : item
-      );
-      
-      const currentConfirmed = prev.diagnosisConfirmed?.value || [];
-      const confirmedArray = Array.isArray(currentConfirmed) ? currentConfirmed : [currentConfirmed].filter(Boolean);
-      const filteredConfirmed = confirmedArray.filter(dx => dx !== targetDdx.diagnosis);
-      
-      return {
-        ...prev,
-        assessment: { ...assessment, ddxList: updatedDdxList },
-        diagnosisConfirmed: { ...prev.diagnosisConfirmed, value: filteredConfirmed, isConfirmed: filteredConfirmed.length > 0 }
-      };
-    });
-    toast.info('확정이 취소되었습니다');
-  }, []);
-
-  const [expandedDDx, setExpandedDDx] = useState<Set<string>>(new Set());
-  
-  const toggleDDxDetails = useCallback((ddxId: string) => {
-    setExpandedDDx(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(ddxId)) newSet.delete(ddxId);
-      else newSet.add(ddxId);
-      return newSet;
-    });
-  }, []);
-
-  const toggleFieldDetails = useCallback((fieldId: string) => {
-    setExpandedFields(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(fieldId)) newSet.delete(fieldId);
-      else newSet.add(fieldId);
-      return newSet;
-    });
-  }, []);
-
   // 복사 핸들러
   const handleCopyChart = useCallback(() => {
     const allFields = [...chartFields, ...apFields];
@@ -595,212 +452,63 @@ export function ChartingResult({
     setTimeout(() => setIsCopied(false), 2000);
   }, [editableData, chartFields, apFields, chartData]);
 
-  // DDx 리스트 렌더링
-  const renderDDxList = (ddxList: DdxItem[]) => {
-    const qualifiedItems = ddxList.filter(item => item.confidence === 'high' || item.confidence === 'medium');
-    const sortedItems = [...qualifiedItems].sort((a, b) => {
-      const order = { high: 0, medium: 1, low: 2 };
-      return order[a.confidence] - order[b.confidence];
-    }).slice(0, 5);
-    
-    const visibleItems = sortedItems.filter(item => !item.isRemoved);
-    const removedItems = sortedItems.filter(item => item.isRemoved);
-    
-    if (visibleItems.length === 0 && removedItems.length === 0) {
-      return <div className="text-xs text-slate-400 italic mt-2">DDx가 없습니다.</div>;
-    }
-
-    return (
-      <div className="space-y-1.5 mt-2">
-        {visibleItems.map((item) => {
-          const isExpanded = expandedDDx.has(item.id);
-          return (
-            <div key={item.id} className={`rounded-lg p-2 text-xs ${item.isConfirmed ? 'bg-teal-50 border border-teal-200' : 'bg-amber-50 border border-amber-200'}`}>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5">
-                  {item.isConfirmed ? <CheckCircle2 className="w-3 h-3 text-teal-600" /> : <AlertCircle className="w-3 h-3 text-amber-600" />}
-                  <span className={`font-medium ${item.isConfirmed ? 'text-teal-800' : 'text-amber-800'}`}>r/o {item.diagnosis}</span>
-                  <span className={`px-1 py-0.5 rounded text-[10px] ${item.confidence === 'high' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
-                    {item.confidence === 'high' ? '높음' : '중간'}
-                  </span>
-                </div>
-                <div className="flex items-center gap-1">
-                  {!item.isConfirmed ? (
-                    <>
-                      <Button variant="outline" size="sm" onClick={() => handleConfirmDDx(item.id)} className="h-5 text-[10px] px-1.5 border-teal-300 text-teal-700 bg-white">확정</Button>
-                      <Button variant="outline" size="sm" onClick={() => handleRemoveDDx(item.id)} className="h-5 text-[10px] px-1.5 border-slate-300 text-slate-500 bg-white">제외</Button>
-                    </>
-                  ) : (
-                    <Button variant="outline" size="sm" onClick={() => handleUnconfirmDDx(item.id)} className="h-5 text-[10px] px-1.5 border-slate-300 text-slate-500 bg-white">취소</Button>
-                  )}
-                </div>
-              </div>
-              {item.reason && (
-                <button onClick={() => toggleDDxDetails(item.id)} className="text-[10px] text-slate-500 mt-1 flex items-center gap-0.5 hover:text-slate-700">
-                  {isExpanded ? <ChevronUp className="w-2.5 h-2.5" /> : <ChevronDown className="w-2.5 h-2.5" />}
-                  {isExpanded ? '닫기' : '근거'}
-                </button>
-              )}
-              {isExpanded && item.reason && (
-                <div className="mt-1 p-1.5 bg-white/60 rounded text-[10px] text-slate-600">{item.reason}</div>
-              )}
-            </div>
-          );
-        })}
-        {removedItems.length > 0 && (
-          <div className="pt-1.5 border-t border-dashed border-slate-200">
-            {removedItems.map((item) => (
-              <div key={item.id} className="flex items-center justify-between p-1.5 text-[10px] opacity-50 hover:opacity-100">
-                <span className="text-slate-500 line-through">r/o {item.diagnosis}</span>
-                <Button variant="ghost" size="sm" onClick={() => handleRestoreDDx(item.id)} className="h-4 text-[10px] px-1 text-slate-500">복구</Button>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  // 필드 렌더링
-  const renderField = (field: ChartField, compact: boolean = false) => {
-    const fieldValue = editableData[field.id];
-    const value = fieldValue?.value ?? '';
-    const isConfirmed = fieldValue?.isConfirmed ?? false;
-    const source = fieldValue?.source ?? 'stated';
-    const isInferred = source === 'inferred';
-    const rationale = fieldValue?.rationale;
-    const evidence = fieldValue?.evidence || [];
-    const isExpanded = expandedFields.has(field.id);
-    
-    // 현재 이 필드가 타이핑 중인지 확인
-    const isTyping = currentTypingField === field.id;
-
-    const isArray = field.type === 'tags' || field.type === 'list';
-    
-    // 타이핑 중이면 displayedValue 사용, 아니면 실제 값 사용
-    const stringValue = isTyping ? displayedValue : safeStringValue(value);
-    
-    const hasContent = isArray 
-      ? (Array.isArray(value) ? value.length > 0 : stringValue.length > 0)
-      : stringValue.trim().length > 0;
-    const hasDetails = isInferred && (rationale || evidence.length > 0);
-
-    // 타이핑 중이면 특별한 스타일 적용
-    const bgClass = isTyping
-      ? 'bg-teal-50/70 border-2 border-teal-400 field-typing'
-      : !hasContent
-        ? 'bg-slate-50/50 border border-dashed border-slate-200'
-        : isInferred
-          ? 'bg-amber-50/50 border border-amber-200'
-          : 'bg-teal-50/50 border border-teal-200';
-
-    return (
-      <div 
-        key={field.id}
-        ref={(el) => { fieldRefs.current[field.id] = el; }}
-        className={`rounded-lg ${compact ? 'p-2' : 'p-3'} transition-all duration-300 ${bgClass}`}
-      >
-        <div className="flex items-center justify-between mb-1.5">
-          <label className={`${compact ? 'text-xs' : 'text-sm'} font-semibold flex items-center gap-1.5`}>
-            <span className="text-slate-800">
-              {field.nameEn && field.nameEn !== field.name ? `${field.nameEn} (${field.name})` : field.name}
-            </span>
-            {field.required && <span className="text-red-500">*</span>}
-            {isTyping && (
-              <span className="text-[10px] text-teal-600 animate-pulse ml-1">작성 중...</span>
-            )}
-          </label>
-
-          <div className="flex items-center gap-1.5">
-            {hasContent && !isTyping && (
-              <span className={`text-[10px] flex items-center gap-0.5 px-1.5 py-0.5 rounded-full ${
-                source === 'user' ? 'bg-blue-100 text-blue-700' : isInferred ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600'
-              }`}>
-                {source === 'user' ? <><Edit3 className="w-2.5 h-2.5" />사용자 작성</> : isInferred ? <><Sparkles className="w-2.5 h-2.5" />AI 추천</> : <><MessageCircle className="w-2.5 h-2.5" />대화 기반</>}
-              </span>
-            )}
-          </div>
-        </div>
-
-        {hasContent && hasDetails && !isTyping && (
-          <button onClick={() => toggleFieldDetails(field.id)} className="text-[10px] text-amber-600 mb-1.5 flex items-center gap-0.5 hover:text-amber-700">
-            <Sparkles className="w-2.5 h-2.5" />
-            {isExpanded ? '닫기' : '근거'}
-          </button>
-        )}
-
-        {hasContent && hasDetails && isExpanded && !isTyping && (
-          <div className="chart-details-animate mb-2 p-2 bg-white/60 rounded text-[10px] space-y-1">
-            {rationale && <div><span className="text-slate-500">근거:</span> <span className="text-slate-700">{rationale}</span></div>}
-            {evidence.length > 0 && <div><span className="text-slate-500">인용:</span> {evidence.map((e, i) => <span key={i} className="text-slate-600 italic"> "{e}"</span>)}</div>}
-          </div>
-        )}
-
-        {isArray ? (
-          (() => {
-            const arrayValue = isTyping ? displayedValue : safeStringValue(value);
-            const parsedTags = arrayValue.split(',').map(s => s.trim()).filter(s => s);
-            return (
-              <>
-                {parsedTags.length > 0 && !isTyping && (
-                  <div className="flex flex-wrap gap-1 mb-1.5">
-                    {parsedTags.map((item, index) => (
-                      <Badge key={index} variant="secondary" className={`text-[10px] ${isConfirmed || !isInferred ? "bg-teal-100 text-teal-700" : "bg-amber-100 text-amber-700"}`}>{item}</Badge>
-                    ))}
-                  </div>
-                )}
-                {isTyping ? (
-                  <div className={`${compact ? 'min-h-[40px] text-xs' : 'min-h-[50px] text-sm'} p-2 bg-white border border-teal-300 rounded-md whitespace-pre-wrap`}>
-                    <span>{displayedValue}</span>
-                    <span className="typing-cursor"></span>
-                  </div>
-                ) : (
-                  <Textarea 
-                    value={arrayValue} 
-                    onChange={(e) => handleFieldChange(field.id, e.target.value)}
-                    className={`${compact ? 'min-h-[40px] text-xs' : 'min-h-[50px] text-sm'} bg-white border-slate-200 whitespace-pre-wrap`}
-                    placeholder={FIELD_PLACEHOLDERS[field.id] || ""} 
-                  />
-                )}
-              </>
-            );
-          })()
-        ) : field.type === 'text' ? (
-          isTyping ? (
-            <div className={`p-2 bg-white border border-teal-300 rounded-md ${compact ? 'text-xs h-7' : 'text-sm'}`}>
-              <span>{displayedValue}</span>
-              <span className="typing-cursor"></span>
-            </div>
-          ) : (
-            <Input 
-              value={stringValue} 
-              onChange={(e) => handleFieldChange(field.id, e.target.value)}
-              placeholder={FIELD_PLACEHOLDERS[field.id] || ""}
-              className={`bg-white border-slate-200 ${compact ? 'text-xs h-7' : 'text-sm'}`}
-            />
-          )
-        ) : (
-          isTyping ? (
-            <div className={`${compact ? 'min-h-[40px] text-xs' : 'min-h-[60px] text-sm'} p-2 bg-white border border-teal-300 rounded-md whitespace-pre-wrap`}>
-              <span>{displayedValue}</span>
-              <span className="typing-cursor"></span>
-            </div>
-          ) : (
-            <Textarea 
-              value={stringValue} 
-              onChange={(e) => handleFieldChange(field.id, e.target.value)}
-              className={`${compact ? 'min-h-[40px] text-xs' : 'min-h-[60px] text-sm'} bg-white border-slate-200 whitespace-pre-wrap`}
-              placeholder={FIELD_PLACEHOLDERS[field.id] || ""}
-            />
-          )
-        )}
-
-        {field.id === 'assessment' && fieldValue?.ddxList && fieldValue.ddxList.length > 0 && renderDDxList(fieldValue.ddxList)}
-      </div>
-    );
-  };
-
   const hasAnyData = Object.keys(editableData).length > 0;
+
+  // 통합 차트 텍스트 생성 (DDx 제외)
+  const unifiedChartText = useMemo(() => {
+    // DDx/Assessment 제외한 필드만
+    const fieldsToShow = chartFields.filter(f => f.id !== 'assessment' && f.id !== 'diagnosisConfirmed');
+    
+    return fieldsToShow.map(field => {
+      const fieldValue = editableData[field.id];
+      if (!fieldValue) return null;
+      
+      // 타이핑 중인 필드는 displayedValue 사용
+      const isTyping = currentTypingField === field.id;
+      const rawValue = isTyping ? displayedValue : fieldValue.value;
+      const displayValueStr = Array.isArray(rawValue) ? rawValue.join(', ') : safeStringValue(rawValue);
+      
+      if (!displayValueStr.trim()) return null;
+      
+      const fieldLabel = field.nameEn && field.nameEn !== field.name 
+        ? `${field.nameEn} (${field.name})` 
+        : field.name;
+      
+      return `[${fieldLabel}]\n${displayValueStr}`;
+    }).filter(Boolean).join('\n\n');
+  }, [chartFields, editableData, currentTypingField, displayedValue, safeStringValue]);
+
+  // 통합 텍스트 변경 핸들러
+  const handleUnifiedTextChange = useCallback((newText: string) => {
+    // 텍스트를 파싱해서 각 필드에 매핑
+    const sections = newText.split(/\n\n+/);
+    const updates: ChartData = { ...editableData };
+    
+    sections.forEach(section => {
+      const match = section.match(/^\[([^\]]+)\]\n?([\s\S]*)/);
+      if (!match) return;
+      
+      const [, label, content] = match;
+      // 라벨로 필드 찾기
+      const field = chartFields.find(f => {
+        const fieldLabel = f.nameEn && f.nameEn !== f.name 
+          ? `${f.nameEn} (${f.name})` 
+          : f.name;
+        return fieldLabel === label;
+      });
+      
+      if (field && updates[field.id]) {
+        updates[field.id] = {
+          ...updates[field.id],
+          value: content.trim(),
+          source: 'user' as const,
+          isConfirmed: true
+        };
+      }
+    });
+    
+    setEditableData(updates);
+  }, [editableData, chartFields]);
 
   // Wide 레이아웃 (데스크톱 3열용 - AI 차트만, A/P는 별도 패널)
   if (layout === 'wide') {
@@ -830,10 +538,34 @@ export function ChartingResult({
             </div>
           </div>
           
-          {/* Content - 스크롤 가능 */}
+          {/* Content - 통합 텍스트 뷰 */}
           <div className="flex-1 overflow-y-auto">
-            <div className="p-3 space-y-2">
-              {chartFields.map(field => renderField(field, false))}
+            <div className="p-3 space-y-3">
+              {/* 통합 차트 텍스트 영역 */}
+              <div className="relative">
+                {currentTypingField && (
+                  <div className="absolute top-2 right-2 z-10">
+                    <span className="text-[10px] text-teal-600 bg-teal-50 px-2 py-0.5 rounded-full animate-pulse flex items-center gap-1">
+                      <Sparkles className="w-2.5 h-2.5" />
+                      AI 작성 중...
+                    </span>
+                  </div>
+                )}
+                <Textarea
+                  value={unifiedChartText}
+                  onChange={(e) => handleUnifiedTextChange(e.target.value)}
+                  className={`min-h-[400px] text-sm bg-white border-slate-200 font-mono whitespace-pre-wrap leading-relaxed resize-none ${
+                    currentTypingField ? 'border-teal-300 ring-2 ring-teal-100' : ''
+                  }`}
+                  placeholder={`[Chief Complaint (C/C)]\n환자의 주호소\n\n[History of Present Illness (HPI)]\n현병력\n\n[Vital Signs (V/S)]\nBP, HR, BT...`}
+                  readOnly={!!currentTypingField}
+                />
+                {currentTypingField && (
+                  <div className="absolute bottom-2 right-2">
+                    <span className="typing-cursor text-teal-500"></span>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -869,9 +601,34 @@ export function ChartingResult({
           </div>
         </div>
         
+        {/* Content - 통합 텍스트 뷰 */}
         <div className="flex-1 overflow-y-auto">
-          <div className="p-3 space-y-2">
-            {chartFields.map(field => renderField(field, false))}
+          <div className="p-3 space-y-3">
+            {/* 통합 차트 텍스트 영역 */}
+            <div className="relative">
+              {currentTypingField && (
+                <div className="absolute top-2 right-2 z-10">
+                  <span className="text-[10px] text-teal-600 bg-teal-50 px-2 py-0.5 rounded-full animate-pulse flex items-center gap-1">
+                    <Sparkles className="w-2.5 h-2.5" />
+                    AI 작성 중...
+                  </span>
+                </div>
+              )}
+              <Textarea
+                value={unifiedChartText}
+                onChange={(e) => handleUnifiedTextChange(e.target.value)}
+                className={`min-h-[300px] text-sm bg-white border-slate-200 font-mono whitespace-pre-wrap leading-relaxed resize-none ${
+                  currentTypingField ? 'border-teal-300 ring-2 ring-teal-100' : ''
+                }`}
+                placeholder={`[Chief Complaint (C/C)]\n환자의 주호소\n\n[History of Present Illness (HPI)]\n현병력\n\n[Vital Signs (V/S)]\nBP, HR, BT...`}
+                readOnly={!!currentTypingField}
+              />
+              {currentTypingField && (
+                <div className="absolute bottom-2 right-2">
+                  <span className="typing-cursor text-teal-500"></span>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
