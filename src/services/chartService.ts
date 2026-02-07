@@ -741,7 +741,8 @@ RECORD vs AI INFERENCE:
 RULES:
 - CC, PI, ROS, PMH, Meds, Allergies, SHx, FHx, VS, PE, Labs, Imaging:
   - 대화에서 언급된 내용 → source="stated"
-  - 언급 안됨 → 비워둠 ("" or [])
+  - "없다/없어요" 답변 → "None" 기록 (예: PMH: None, Meds: None, Allergies: None)
+  - 아예 질문/언급 안됨 → 비워둠 ("" or [])
 - Assessment: 
   - value = "# Dx" ONLY if doctor confirmed (otherwise EMPTY)
   - ddxList = AI DDx 추천 (isConfirmed는 DDx에만 적용)
@@ -788,9 +789,9 @@ FIELD-BY-FIELD RULES:
   ⚠️ 언급되지 않은 증상 추가 금지 (SOB, chest pain 등 임의 추가 금지)
   예: N/V(-), HA(+), dizziness(+)
   ⚠️ "Nausea (-), Vomiting (-)" 금지 → "N/V(-)" 사용
-- PMH: 약어 + duration (DM (10y), HTN (3y))
-- Meds: 모든 약물 + 용량 + 용법
-- Allergies: "None" (NKDA 금지)
+- PMH: 있으면 약어 + duration (DM (10y), HTN (3y)), 없다고 답변하면 "None"
+- Meds: 있으면 모든 약물 + 용량 + 용법, 없다고 답변하면 "None"
+- Allergies: 있으면 기록, 없다고 답변하면 "None" (NKDA 금지)
 - SHx: 
   - 안 함 → (-)
   - 함 → (+)
@@ -1179,7 +1180,8 @@ RECORD vs AI INFERENCE:
 RULES:
 - CC, PI, ROS, PMH, Meds, Allergies, SHx, FHx, VS, PE, Labs, Imaging:
   - 대화에서 언급된 내용 → source="stated"
-  - 언급 안됨 → 비워둠 ("" or [])
+  - "없다/없어요" 답변 → "None" 기록 (예: PMH: None, Meds: None, Allergies: None)
+  - 아예 질문/언급 안됨 → 비워둠 ("" or [])
 - Assessment:
   - assessment.value = "# Dx" (의사가 확정한 경우만: "~입니다", "~이에요")
   - assessment.ddxList = 두 종류 (isConfirmed는 DDx에만 적용):
@@ -1214,9 +1216,9 @@ FIELD-BY-FIELD RULES:
 - ROS: 대화에서 언급된 증상만! 의학 약어 사용
   ⚠️ 언급되지 않은 증상 추가 금지 (SOB, chest pain 등 임의 추가 금지)
   예: N/V(-), HA(+), dizziness(+)
-- PMH: 약어 + duration (DM (10y), HTN (3y))
-- Meds: 모든 약물 + 용량 + 용법
-- Allergies: "None" (NKDA 금지)
+- PMH: 있으면 약어 + duration (DM (10y), HTN (3y)), 없다고 답변하면 "None"
+- Meds: 있으면 모든 약물 + 용량 + 용법, 없다고 답변하면 "None"
+- Allergies: 있으면 기록, 없다고 답변하면 "None" (NKDA 금지)
 - SHx: 
   - 안 함 → (-)
   - 함 → (+)
@@ -1242,6 +1244,7 @@ ${fullConversation}`;
 
   try {
     console.log('🚀 Streaming 차트 생성 시작...');
+    console.log('📝 대화 내용 (segments:', useSegments.length, '개):', conversation.substring(0, 500) + (conversation.length > 500 ? '...' : ''));
     
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -1347,6 +1350,7 @@ ${fullConversation}`;
 
     // 최종 파싱
     console.log('📝 Streaming 완료, 최종 파싱...');
+    console.log('📄 GPT 전체 응답:', fullContent.substring(0, 2000) + (fullContent.length > 2000 ? '...(truncated)' : ''));
     const finalChart = parseFullChartJson(fullContent, allFields, conversation);
     
     if (finalChart) {

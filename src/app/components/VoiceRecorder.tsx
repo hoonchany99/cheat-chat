@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { Button } from '@/app/components/ui/button';
-import { Mic, Square, Loader2 } from 'lucide-react';
+import { Square, Loader2 } from 'lucide-react';
 import { useDeepgram } from '@/services/deepgramService';
 import { generateChartFromTranscriptStreaming, correctSTTErrors, ChartData } from '@/services/chartService';
 import { toast } from 'sonner';
@@ -40,6 +40,10 @@ interface VoiceRecorderProps {
   patientMemo?: string;
   // 선택된 마이크 장치 ID
   selectedDeviceId?: string;
+  // 녹음 버튼 비활성화
+  disabled?: boolean;
+  // 비활성화 이유 (툴팁)
+  disabledReason?: string;
 }
 
 export function VoiceRecorder({
@@ -63,7 +67,9 @@ export function VoiceRecorder({
   externalRecordingTime = 0,
   patientName = '',
   patientMemo = '',
-  selectedDeviceId
+  selectedDeviceId,
+  disabled = false,
+  disabledReason
 }: VoiceRecorderProps) {
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
@@ -255,19 +261,20 @@ export function VoiceRecorder({
       ) : !isAnyRecording ? (
         <Button
           onClick={handleStartRecording}
-          disabled={isConnecting || isRemoteRecording}
+          disabled={isConnecting || isRemoteRecording || disabled}
           className="h-12 w-12 rounded-full bg-gradient-to-br from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white shadow-lg shadow-red-500/25 relative overflow-hidden transition-all hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+          title={disabled && disabledReason ? disabledReason : '녹음 시작'}
         >
           {isConnecting ? (
             <Loader2 className="w-5 h-5 animate-spin" />
           ) : (
-            <Mic className="w-5 h-5" />
+            <div className="w-3 h-3 bg-white rounded-full" />
           )}
         </Button>
-      ) : isRemoteRecording ? (
-        // 모바일 녹음 중일 때는 버튼 비활성화 (모바일에서만 정지 가능)
-        <div className="h-12 w-12 rounded-full bg-gradient-to-br from-red-500 to-red-600 text-white shadow-lg shadow-red-500/25 flex items-center justify-center">
-          <Mic className="w-5 h-5" />
+      ) : isRemoteRecording || isExternalRecording ? (
+        // 모바일 녹음 중 또는 데모 중일 때는 버튼 비활성화
+        <div className="h-12 w-12 rounded-full bg-gradient-to-br from-red-500 to-red-600 text-white shadow-lg shadow-red-500/25 flex items-center justify-center opacity-50 cursor-not-allowed">
+          <div className="w-3 h-3 bg-white rounded-full" />
         </div>
       ) : (
         <Button
@@ -278,8 +285,8 @@ export function VoiceRecorder({
         </Button>
       )}
 
-      {/* Pulse animation when recording */}
-      {isAnyRecording && (
+      {/* Pulse animation when recording (데모 중에는 숨김) */}
+      {isAnyRecording && !isExternalRecording && (
         <>
           <span className="absolute inset-0 rounded-full bg-red-500/30 animate-ping pointer-events-none" />
           <span className="absolute -inset-0.5 rounded-full bg-red-500/20 animate-pulse pointer-events-none" />

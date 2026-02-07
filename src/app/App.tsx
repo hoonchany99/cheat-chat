@@ -13,7 +13,7 @@ import { Button } from '@/app/components/ui/button';
 import { Input } from '@/app/components/ui/input';
 import { Toaster } from '@/app/components/ui/sonner';
 import { toast } from 'sonner';
-import { RotateCcw, Stethoscope, Mail, Loader2, MessageSquare, Send, ChevronRight, Smartphone, Play, Square, User, Bell, Menu, X, Mic } from 'lucide-react';
+import { Stethoscope, Mail, Loader2, MessageSquare, Send, ChevronRight, Smartphone, Play, Square, User, Bell, Menu, X, Mic, Trash2 } from 'lucide-react';
 import { Textarea } from '@/app/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/app/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel } from '@/app/components/ui/select';
@@ -293,36 +293,64 @@ function MainApp() {
   const pendingUpdateRef = useRef(false); // 대기 중인 업데이트가 있는지
   const generationIdRef = useRef(0); // 최신 요청 ID 추적 (오래된 요청 결과 무시용)
 
-  // 마이크 장치 목록 가져오기
-  useEffect(() => {
-    const getAudioDevices = async () => {
-      try {
-        // 권한 요청을 위해 임시로 스트림 가져오기
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        stream.getTracks().forEach(track => track.stop());
-        
-        // 장치 목록 가져오기
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        const audioInputs = devices.filter(device => device.kind === 'audioinput');
-        setAudioDevices(audioInputs);
-        
-        // 기본 장치 선택
-        if (audioInputs.length > 0 && !selectedMicId) {
+  // 마이크 권한 상태
+  const [hasMicPermission, setHasMicPermission] = useState(false);
+
+  // 마이크 장치 목록 가져오기 (권한이 이미 있을 때만)
+  const refreshAudioDevices = useCallback(async () => {
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const audioInputs = devices.filter(device => device.kind === 'audioinput' && device.deviceId);
+      setAudioDevices(audioInputs);
+      
+      // 라벨이 있으면 권한이 부여된 것
+      if (audioInputs.length > 0 && audioInputs[0].label) {
+        setHasMicPermission(true);
+        if (!selectedMicId) {
           setSelectedMicId(audioInputs[0].deviceId);
         }
-      } catch (error) {
-        console.log('마이크 권한이 필요합니다:', error);
       }
-    };
-    
-    getAudioDevices();
+    } catch (error) {
+      console.log('장치 목록을 가져올 수 없습니다:', error);
+    }
+  }, [selectedMicId]);
+
+  // 마이크 권한 요청
+  const requestMicPermission = useCallback(async () => {
+    try {
+      console.log('마이크 권한 요청 시작...');
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // 권한을 얻은 후 스트림 정지
+      stream.getTracks().forEach(track => track.stop());
+      setHasMicPermission(true);
+      toast.success('마이크 권한이 허용되었습니다');
+      await refreshAudioDevices();
+    } catch (error: unknown) {
+      console.error('마이크 권한 요청 실패:', error);
+      if (error instanceof Error) {
+        if (error.name === 'NotAllowedError') {
+          toast.error('마이크 권한이 거부되었습니다. 브라우저 설정에서 허용해주세요.');
+        } else if (error.name === 'NotFoundError') {
+          toast.error('마이크를 찾을 수 없습니다. 마이크가 연결되어 있는지 확인해주세요.');
+        } else {
+          toast.error(`마이크 오류: ${error.message}`);
+        }
+      } else {
+        toast.error('마이크 권한을 얻을 수 없습니다.');
+      }
+    }
+  }, [refreshAudioDevices]);
+
+  useEffect(() => {
+    // 초기 로드 시 권한 없이 장치 목록만 시도 (라벨 없이 표시될 수 있음)
+    refreshAudioDevices();
     
     // 장치 변경 감지
-    navigator.mediaDevices.addEventListener('devicechange', getAudioDevices);
+    navigator.mediaDevices.addEventListener('devicechange', refreshAudioDevices);
     return () => {
-      navigator.mediaDevices.removeEventListener('devicechange', getAudioDevices);
+      navigator.mediaDevices.removeEventListener('devicechange', refreshAudioDevices);
     };
-  }, [selectedMicId]);
+  }, [refreshAudioDevices]);
 
   // DDx 리스트 안정적 병합 (스트리밍 중 깜빡임 방지)
   const mergeDdxLists = useCallback((
@@ -585,10 +613,30 @@ function MainApp() {
       ],
     ];
 
+    // 각 시나리오에 맞는 환자 정보
+    const patientInfos = [
+      // 시나리오 1: 급성 관상동맥 증후군 - 63세 남성
+      { name: '박영호 (63/M)', memo: 'HTN 10y, DM 5y, Hyperlipidemia / Amlodipine 5mg, Metformin 500mg bid, Atorvastatin 10mg' },
+      // 시나리오 2: 급성 충수염 - 28세 여성
+      { name: '이수진 (28/F)', memo: 'N/S' },
+      // 시나리오 3: 지역사회획득 폐렴 - 72세 여성
+      { name: '김옥순 (72/F)', memo: 'COPD 5y, HTN, Osteoporosis / Spiriva, Amlodipine 5mg, Calcium / PCN allergy (urticaria)' },
+    ];
+
+    // 랜덤 시나리오 선택
+    const scenarioIndex = Math.floor(Math.random() * testScenarios.length);
+    const scenario = testScenarios[scenarioIndex];
+    const patientInfo = patientInfos[scenarioIndex];
+
     // 초기화
     setChartData(null);
     setFinalTranscript('');
     setRealtimeSegments([]);
+    setFreeText('');
+    setPatientName('');
+    setPatientMemo('');
+    setSessionStartTime(new Date());
+    
     setIsTestRunning(true);
     isTestRunningRef.current = true;
     setIsRecording(true);
@@ -596,9 +644,37 @@ function MainApp() {
     lastAutoUpdateTimeRef.current = 0;
     toast.info('🧪 실시간 시뮬레이션 시작');
 
+    // 타이핑 애니메이션 (느리게 - 80ms per char)
+    const typeText = (text: string, setter: (val: string) => void, charDelay: number = 80): Promise<void> => {
+      return new Promise((resolve) => {
+        let currentIndex = 0;
+        const typeNextChar = () => {
+          if (!isTestRunningRef.current) {
+            resolve();
+            return;
+          }
+          if (currentIndex <= text.length) {
+            setter(text.slice(0, currentIndex));
+            currentIndex++;
+            setTimeout(typeNextChar, charDelay);
+          } else {
+            resolve();
+          }
+        };
+        typeNextChar();
+      });
+    };
+
+    // 타이핑 애니메이션 시작 (대화와 동시에 진행)
+    (async () => {
+      await typeText(patientInfo.name, setPatientName, 80);
+      if (isTestRunningRef.current) {
+        await typeText(patientInfo.memo, setPatientMemo, 60);
+      }
+    })();
+
     // AbortController 참조
     let currentAbortController: AbortController | null = null;
-    const scenario = testScenarios[Math.floor(Math.random() * testScenarios.length)];
 
     // Streaming 차트 생성 함수
     const generateChartFromCurrentSegments = async (segments: Segment[], fastMode: boolean) => {
@@ -985,6 +1061,9 @@ function MainApp() {
     setSessionStartTime(now);
     setSessionEndTime(null);
     
+    // 권한이 부여되었으므로 장치 목록 새로고침
+    refreshAudioDevices();
+    
     // 세션이 없으면 자동 생성
     if (!activeSessionId) {
       const newSessionId = `session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -1000,7 +1079,7 @@ function MainApp() {
       setSessions(prev => [newSession, ...prev]);
       setActiveSessionId(newSession.id);
     }
-  }, [activeSessionId, patientName, patientMemo]);
+  }, [activeSessionId, patientName, patientMemo, refreshAudioDevices]);
 
   const handleProcessingStart = useCallback(() => {
     setIsRecording(false);
@@ -1019,10 +1098,11 @@ function MainApp() {
     setSessionEndTime(new Date());
     
     if (result) {
-      setChartData(result);
+      // 기존 차트와 병합 (녹음 중 생성된 CC, PI, ROS 유지)
+      setChartData(prev => mergeChartData(prev, result));
     }
     setIsGeneratingChart(false);
-  }, []);
+  }, [mergeChartData]);
 
   const handleRecordingProgress = useCallback((progress: number) => {
     setRecordingProgress(progress);
@@ -1034,6 +1114,11 @@ function MainApp() {
     setChartData(null);
     setIsGeneratingChart(false);
     setRecordingProgress(0);
+    setPatientName('');
+    setPatientMemo('');
+    setFreeText('');
+    setSessionStartTime(null);
+    setSessionEndTime(null);
     lastRequestedSegmentCountRef.current = 0;
     lastAutoUpdateTimeRef.current = 0;
     lastFastCorrectionKeyRef.current = '';
@@ -1433,65 +1518,28 @@ function MainApp() {
               departmentName={selectedDepartmentName}
             />
             
-            {/* 🧪 데모 버튼 */}
+            {/* 데모 버튼 - Primary CTA */}
             <Button
-              variant="ghost"
-              size="icon"
               onClick={handleTestSimulation}
               disabled={isRecording && !isTestRunning || isRemoteRecording || isGeneratingChart}
-              className={`h-8 w-8 shrink-0 transition-all ${
+              className={`h-8 px-3 text-sm font-medium transition-all ${
                 isTestRunning 
-                  ? 'text-orange-600 bg-orange-50' 
-                  : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'
+                  ? 'bg-orange-500 hover:bg-orange-600 text-white' 
+                  : 'bg-blue-600 hover:bg-blue-700 text-white'
               }`}
-              title="데모"
             >
-              {isTestRunning ? <Square className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+              {isTestRunning ? (
+                <>
+                  <Square className="w-3.5 h-3.5 mr-1.5" />
+                  데모 중지
+                </>
+              ) : (
+                <>
+                  <Play className="w-3.5 h-3.5 mr-1.5" />
+                  데모로 체험하기
+                </>
+              )}
             </Button>
-            
-            {/* 피드백 버튼 */}
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              className="h-8 w-8 text-slate-500 hover:text-slate-700"
-              onClick={() => setFeedbackOpen(true)}
-            >
-              <MessageSquare className="w-4 h-4" />
-            </Button>
-            
-            {/* 알림 구독 버튼 */}
-            <Dialog>
-              <DialogTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:text-slate-700">
-                  <Bell className="w-4 h-4" />
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="sm:max-w-md">
-                <DialogHeader>
-                  <DialogTitle className="flex items-center gap-2">
-                    <Mail className="w-5 h-5 text-blue-600" />
-                    정식 출시 알림 받기
-                  </DialogTitle>
-                </DialogHeader>
-                <div className="space-y-4">
-                  <p className="text-sm text-slate-500">
-                    새로운 기능과 업데이트 소식을 이메일로 받아보세요.
-                  </p>
-                  <form onSubmit={handleEmailInputSubmit} className="flex gap-2">
-                    <Input
-                      type="email"
-                      placeholder="your@email.com"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      className="flex-1"
-                    />
-                    <Button type="submit" className="bg-blue-600 hover:bg-blue-700">
-                      구독
-                    </Button>
-                  </form>
-                </div>
-              </DialogContent>
-            </Dialog>
           </div>
         </div>
       </header>
@@ -1560,14 +1608,27 @@ function MainApp() {
                     <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center shrink-0">
                       <User className="w-5 h-5 text-slate-400" />
                     </div>
-                    <input
-                      type="text"
-                      value={patientName}
-                      onChange={(e) => setPatientName(e.target.value)}
-                      placeholder="환자 정보 입력"
-                      className="flex-1 text-2xl font-semibold border-0 outline-none placeholder:text-slate-300 bg-transparent"
-                      style={{ fontSize: '28px' }}
-                    />
+                    <div className="flex items-center gap-1">
+                      <input
+                        type="text"
+                        value={patientName}
+                        onChange={(e) => setPatientName(e.target.value)}
+                        placeholder="환자 정보 입력"
+                        className="text-2xl font-semibold border-0 outline-none placeholder:text-slate-300 bg-transparent w-[180px]"
+                        style={{ fontSize: '28px' }}
+                      />
+                      {/* 초기화 버튼 (휴지통) */}
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={handleReset}
+                        disabled={isRecording || isRemoteRecording || isGeneratingChart}
+                        className="h-8 w-8 shrink-0 text-slate-300 hover:text-red-500 hover:bg-red-50 transition-colors"
+                        title="초기화"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
                   </div>
                   <div className="ml-[52px]">
                     <input
@@ -1598,21 +1659,28 @@ function MainApp() {
 
             {/* 오른쪽: 녹음 컨트롤 */}
             <div className="flex items-center gap-3 shrink-0">
-              {/* 초기화 버튼 */}
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={handleReset}
-                disabled={isRecording || isRemoteRecording || isGeneratingChart}
-                className="h-8 w-8 shrink-0 text-slate-400 hover:text-slate-600 hover:bg-slate-100"
-                title="초기화"
-              >
-                <RotateCcw className="w-4 h-4" />
-              </Button>
-
               {/* 마이크 선택 */}
-              {audioDevices.length > 1 && (
-                <Select value={selectedMicId} onValueChange={setSelectedMicId} disabled={isRecording || isRemoteRecording}>
+              {!hasMicPermission ? (
+                // 권한 없음: 마이크 버튼 클릭 시 권한 요청 (펄스 효과로 주의 유도)
+                <div className="relative">
+                  {/* 펄스 효과 (버튼 뒤에 위치, 데모 중에는 숨김) */}
+                  {!isTestRunning && (
+                    <span className="absolute inset-0 rounded-md bg-blue-400/30 animate-ping pointer-events-none z-0" />
+                  )}
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={requestMicPermission}
+                    disabled={isRecording || isRemoteRecording || isTestRunning}
+                    className="h-8 w-8 shrink-0 text-blue-500 hover:text-blue-600 hover:bg-blue-50 relative z-10"
+                    title="마이크 권한 허용 (녹음하려면 먼저 클릭)"
+                  >
+                    <Mic className="w-4 h-4" />
+                  </Button>
+                </div>
+              ) : audioDevices.length > 1 ? (
+                // 권한 있음 + 여러 장치: 드롭다운
+                <Select value={selectedMicId} onValueChange={setSelectedMicId} disabled={isRecording || isRemoteRecording || isTestRunning}>
                   <SelectTrigger className="h-8 w-[140px] text-xs border-slate-200">
                     <Mic className="w-3 h-3 mr-1 shrink-0" />
                     <SelectValue placeholder="마이크 선택" />
@@ -1625,21 +1693,21 @@ function MainApp() {
                     ))}
                   </SelectContent>
                 </Select>
-              )}
+              ) : null}
 
               {/* 휴대폰 마이크 연결 버튼 */}
               <Button
                 variant="ghost"
                 size="icon"
                 onClick={() => setRemoteMicOpen(true)}
-                disabled={isRecording}
+                disabled={isRecording || isTestRunning}
                 className={`h-8 w-8 shrink-0 transition-all ${
                   isRemoteRecording 
                     ? 'text-red-600 bg-red-50' 
                     : isRemoteConnected 
                       ? 'text-blue-600 bg-blue-50' 
                       : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'
-                }`}
+                } disabled:opacity-50`}
                 title="휴대폰 마이크 연결"
               >
                 <Smartphone className="w-4 h-4" />
@@ -1670,6 +1738,8 @@ function MainApp() {
                 patientName={patientName}
                 patientMemo={patientMemo}
                 selectedDeviceId={selectedMicId}
+                disabled={!hasMicPermission || isTestRunning}
+                disabledReason={isTestRunning ? "데모 실행 중입니다" : "먼저 마이크 권한을 허용해주세요"}
               />
             </div>
           </div>
