@@ -19,7 +19,6 @@ import {
   Square,
   User,
   Activity,
-  CheckCircle2,
   Loader2,
   Send,
   Mail
@@ -109,60 +108,99 @@ interface DemoConversation {
   speaker: 'doctor' | 'patient';
   text: string;
   delay: number;
+  chartText?: string; // 이 대화까지 진행됐을 때 표시할 차트 텍스트
 }
 
-interface ChartFieldData {
-  value: string;
-}
-
-// 데모 대화 스크립트
+// 데모 대화 스크립트 - 대화 진행에 따라 차트가 점진적으로 생성
 const DEMO_CONVERSATION: DemoConversation[] = [
-  { speaker: 'doctor', text: '안녕하세요, 오늘은 어떻게 오셨어요?', delay: 0 },
-  { speaker: 'patient', text: '3일 전부터 두통이 있어서요.', delay: 1200 },
-  { speaker: 'doctor', text: '어떤 느낌의 두통인가요?', delay: 2400 },
-  { speaker: 'patient', text: '머리 전체가 조이는 느낌이에요. 오후에 심해져요.', delay: 3800 },
-  { speaker: 'doctor', text: '어지러움이나 메스꺼움은요?', delay: 5200 },
-  { speaker: 'patient', text: '살짝 메스꺼운 느낌은 있는데 어지럽진 않아요.', delay: 6600 },
+  { 
+    speaker: 'doctor', 
+    text: '안녕하세요, 오늘은 어떻게 오셨어요?', 
+    delay: 0,
+    chartText: ''
+  },
+  { 
+    speaker: 'patient', 
+    text: '3일 전부터 두통이 있어서요.', 
+    delay: 1200,
+    chartText: `[CC]
+두통 3일`
+  },
+  { 
+    speaker: 'doctor', 
+    text: '어떤 종류의 두통인가요? 욱신거리나요, 조이는 느낌인가요?', 
+    delay: 2600,
+    chartText: `[CC]
+두통 3일`
+  },
+  { 
+    speaker: 'patient', 
+    text: '머리 전체가 조이는 느낌이에요. 오후에 심해져요.', 
+    delay: 4200,
+    chartText: `[CC]
+두통 3일
+
+[PI]
+3d onset, global squeezing type
+p.m. aggravation`
+  },
+  { 
+    speaker: 'doctor', 
+    text: '어지러움이나 메스꺼움은 없으셨어요?', 
+    delay: 6000,
+    chartText: `[CC]
+두통 3일
+
+[PI]
+3d onset, global squeezing type
+p.m. aggravation`
+  },
+  { 
+    speaker: 'patient', 
+    text: '어지러움은 없는데, 가끔 약간 메스꺼운 느낌이 있어요.', 
+    delay: 7600,
+    chartText: `[CC]
+두통 3일
+
+[PI]
+3d onset, global squeezing type
+p.m. aggravation, mild N(+), Dz(-)`
+  },
+  { 
+    speaker: 'doctor', 
+    text: '최근에 스트레스를 많이 받으셨거나, 수면이 부족하셨나요?', 
+    delay: 9400,
+    chartText: `[CC]
+두통 3일
+
+[PI]
+3d onset, global squeezing type
+p.m. aggravation, mild N(+), Dz(-)`
+  },
+  { 
+    speaker: 'patient', 
+    text: '네, 요즘 프로젝트 마감이라 야근을 많이 했어요.', 
+    delay: 11200,
+    chartText: `[CC]
+두통 3일
+
+[PI]
+3d onset, global squeezing type
+p.m. aggravation, mild N(+), Dz(-)
+work stress, sleep deprivation
+
+[Assessment]
+# TTH (Tension-Type Headache)
+r/o stress-induced
+
+[Plan]
+1. Tylenol 500mg prn
+2. Sleep hygiene education
+3. f/u 1wk`
+  },
 ];
 
-// 진료과별 차트 데이터
-const DEMO_CHARTS: Record<string, { 
-  fields: { id: string; label: string }[]; 
-  data: Record<string, ChartFieldData> 
-}> = {
-  general: {
-    fields: [
-      { id: 'cc', label: 'C.C.' },
-      { id: 'pi', label: 'P.I.' },
-      { id: 'ros', label: 'R.O.S.' },
-      { id: 'assessment', label: 'A' },
-      { id: 'plan', label: 'P' },
-    ],
-    data: {
-      cc: { value: '두통 3일' },
-      pi: { value: '3d onset, squeezing type, p.m. aggravation, N(+)/V(-)' },
-      ros: { value: 'Dz(-), visual Sx(-)' },
-      assessment: { value: 'TTH, r/o migraine' },
-      plan: { value: '1. Tylenol 500mg prn\n2. f/u 1wk' },
-    },
-  },
-  internal: {
-    fields: [
-      { id: 'cc', label: 'C.C.' },
-      { id: 'pi', label: 'P.I.' },
-      { id: 'assessment', label: 'A' },
-      { id: 'plan', label: 'P' },
-    ],
-    data: {
-      cc: { value: '두통 3일' },
-      pi: { value: '3d h/o diffuse HA, afternoon aggravation, N(+)/V(-)' },
-      assessment: { value: 'TTH (Tension-type HA)' },
-      plan: { value: '1. AAP 500mg prn\n2. f/u 1wk' },
-    },
-  },
-};
-
-type DemoPhase = 'idle' | 'recording' | 'generating' | 'confirming';
+type DemoPhase = 'idle' | 'recording' | 'complete';
 
 // 스크롤 애니메이션 훅
 function useScrollAnimation() {
@@ -363,12 +401,11 @@ export function LandingPage({ onStart }: LandingPageProps) {
   // ============ 데모 자동 재생 상태 ============
   const [isRecording, setIsRecording] = useState(false);
   const [currentConversation, setCurrentConversation] = useState<DemoConversation[]>([]);
-  const [showChart, setShowChart] = useState(false);
-  const [chartProgress, setChartProgress] = useState(0);
-  const [chartData, setChartData] = useState<Record<string, ChartFieldData>>({});
+  const [chartText, setChartText] = useState('');
   const [demoPhase, setDemoPhase] = useState<DemoPhase>('idle');
   const [copied, setCopied] = useState(false);
   const demoScrollRef = useRef<HTMLDivElement>(null);
+  const chartScrollRef = useRef<HTMLDivElement>(null);
   const timeoutRefs = useRef<ReturnType<typeof setTimeout>[]>([]);
   const intervalRefs = useRef<ReturnType<typeof setInterval>[]>([]);
 
@@ -401,34 +438,9 @@ export function LandingPage({ onStart }: LandingPageProps) {
     clearAllTimers();
     setIsRecording(false);
     setCurrentConversation([]);
-    setShowChart(false);
-    setChartProgress(0);
-    setChartData({});
+    setChartText('');
     setCopied(false);
     setDemoPhase('idle');
-  };
-
-  // 차트 생성 애니메이션
-  const startChartGeneration = (deptId: string, onComplete: () => void) => {
-    const chartConfig = DEMO_CHARTS[deptId] || DEMO_CHARTS.general;
-    setChartData({ ...chartConfig.data });
-    setShowChart(true);
-    
-    let progress = 0;
-    const interval = addInterval(() => {
-      progress += 15;
-      setChartProgress(Math.min(progress, 100));
-      if (progress >= 100) {
-        clearInterval(interval);
-        onComplete();
-      }
-    }, 120);
-  };
-
-  // 차트 확정 애니메이션 (UI 전환용)
-  const startConfirmAnimation = (_deptId: string, onComplete: () => void) => {
-    // 간단한 딜레이 후 완료
-    addTimeout(onComplete, 800);
   };
 
   // 자동 데모 시작
@@ -440,9 +452,28 @@ export function LandingPage({ onStart }: LandingPageProps) {
         setDemoPhase('recording');
         setIsRecording(true);
         
+        // 대화와 차트 텍스트를 순차적으로 업데이트
         DEMO_CONVERSATION.forEach((conv) => {
           addTimeout(() => {
             setCurrentConversation(prev => [...prev, conv]);
+            
+            // 차트 텍스트 업데이트 (약간의 딜레이 후)
+            if (conv.chartText !== undefined) {
+              addTimeout(() => {
+                setChartText(conv.chartText || '');
+                // 차트 스크롤
+                setTimeout(() => {
+                  if (chartScrollRef.current) {
+                    chartScrollRef.current.scrollTo({
+                      top: chartScrollRef.current.scrollHeight,
+                      behavior: 'smooth'
+                    });
+                  }
+                }, 100);
+              }, 400);
+            }
+            
+            // 대화 스크롤
             setTimeout(() => {
               if (demoScrollRef.current) {
                 demoScrollRef.current.scrollTo({
@@ -457,21 +488,18 @@ export function LandingPage({ onStart }: LandingPageProps) {
         const lastDelay = DEMO_CONVERSATION[DEMO_CONVERSATION.length - 1].delay;
         addTimeout(() => {
           setIsRecording(false);
-          setDemoPhase('generating');
+          setDemoPhase('complete');
           
-          startChartGeneration('internal', () => {
-            setDemoPhase('confirming');
-            
-            startConfirmAnimation('internal', () => {
-              setCopied(true);
-              addTimeout(() => {
-                setCopied(false);
-                // 대기 후 반복
-                addTimeout(() => startDemo(), 2500);
-              }, 1500);
-            });
-          });
-        }, lastDelay + 1500);
+          // 복사 애니메이션
+          addTimeout(() => {
+            setCopied(true);
+            addTimeout(() => {
+              setCopied(false);
+              // 대기 후 반복
+              addTimeout(() => startDemo(), 3000);
+            }, 1500);
+          }, 1000);
+        }, lastDelay + 2000);
       }, 1000);
     };
 
@@ -644,21 +672,21 @@ export function LandingPage({ onStart }: LandingPageProps) {
         <div className="container mx-auto max-w-4xl text-center relative">
           <div className="animate-fade-in-up inline-flex items-center gap-2 px-4 py-2 rounded-full bg-blue-50 border border-blue-100 text-blue-700 text-sm font-medium mb-8">
             <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
-            AI 기반 의료 차팅 솔루션
+            의료진을 위한 AI 차팅 어시스턴트
           </div>
 
           <h1 className="animate-fade-in-up delay-200 text-4xl md:text-5xl lg:text-6xl font-bold text-slate-900 mb-6 leading-tight">
-            진료 대화를
+            진료에만 집중하세요
             <br />
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-slate-600">
-              AI가 자동으로 차팅
+              차트는 AI가 작성합니다
             </span>
           </h1>
           
           <p className="animate-fade-in-up delay-400 text-lg text-slate-600 mb-10 max-w-2xl mx-auto leading-relaxed">
-            녹음 버튼 하나로 의사-환자 대화를 텍스트로 변환하고,
+            녹음 한 번이면 끝. 진료 대화가 <span className="font-medium text-slate-700">EMR-ready 차트</span>로 변환됩니다.
             <br className="hidden md:block" />
-            <span className="font-medium text-slate-700">EMR에 바로 붙여넣을 수 있는 차트</span>를 생성합니다.
+            하루 30분, 차트 작성에서 해방되세요.
           </p>
 
           <div className="animate-fade-in-up delay-500 flex flex-col sm:flex-row items-center justify-center gap-4 mb-6">
@@ -711,21 +739,19 @@ export function LandingPage({ onStart }: LandingPageProps) {
                   </div>
                   <div>
                     <div className="font-semibold text-slate-800 text-sm">
-                      {demoPhase === 'recording' && '녹음 중...'}
-                      {demoPhase === 'generating' && '차트 생성 중...'}
-                      {demoPhase === 'confirming' && '내용 확인 중...'}
+                      {demoPhase === 'recording' && '기록중입니다'}
+                      {demoPhase === 'complete' && '차트 완성'}
                       {demoPhase === 'idle' && '대기 중...'}
                     </div>
                     <div className="text-xs text-slate-500">
-                      {demoPhase === 'recording' && '실시간 대화 변환'}
-                      {demoPhase === 'generating' && 'AI 자동 차팅'}
-                      {demoPhase === 'confirming' && 'AI 추측 확정'}
-                      {demoPhase === 'idle' && '데모 시작 대기'}
+                      {demoPhase === 'recording' && '대화를 듣고 실시간으로 차트를 생성합니다'}
+                      {demoPhase === 'complete' && 'EMR에 복사할 준비가 되었습니다'}
+                      {demoPhase === 'idle' && '데모가 곧 시작됩니다'}
                     </div>
                   </div>
                 </div>
                 
-                {/* 진료과 표시 */}
+                {/* 내과 표시 */}
                 <div className="flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-medium bg-slate-100 border-slate-200 text-slate-600">
                   내과
                 </div>
@@ -797,7 +823,7 @@ export function LandingPage({ onStart }: LandingPageProps) {
                       </div>
                       <span className="text-sm font-semibold text-slate-700">AI 생성 차트</span>
                     </div>
-                    {showChart && chartProgress >= 100 && (
+                    {chartText && demoPhase === 'complete' && (
                       <div className={`h-6 px-2 rounded text-[10px] font-medium flex items-center gap-1 transition-all ${
                         copied ? 'bg-blue-600 text-white' : 'bg-white border border-slate-200 text-slate-600'
                       }`}>
@@ -806,43 +832,20 @@ export function LandingPage({ onStart }: LandingPageProps) {
                     )}
                   </div>
                   
-                  <div className="flex-1 bg-white rounded-xl border border-blue-100 p-3 max-h-[220px] overflow-y-scroll hide-scrollbar pointer-events-none">
-                    {!showChart ? (
+                  <div 
+                    ref={chartScrollRef}
+                    className={`flex-1 bg-white rounded-xl border p-3 max-h-[260px] overflow-y-scroll hide-scrollbar pointer-events-none transition-colors ${
+                      isRecording ? 'border-blue-300' : 'border-blue-100'
+                    }`}
+                  >
+                    {!chartText ? (
                       <div className="h-full flex items-center justify-center text-slate-400 text-xs">
-                        녹음 종료 후 AI가 차트를 생성합니다
+                        대화를 시작하면 AI가 실시간으로 차트를 생성합니다
                       </div>
                     ) : (
-                      <div className="space-y-2">
-                        {(() => {
-                          const chartConfig = DEMO_CHARTS.internal;
-                          const { fields } = chartConfig;
-                          const progressPerField = 100 / fields.length;
-                          
-                          return fields.map((field, index) => {
-                            if (chartProgress < (index + 1) * progressPerField) return null;
-                            
-                            const fieldData = chartData[field.id];
-                            const value = fieldData?.value || '-';
-                            
-                            return (
-                              <div 
-                                key={field.id} 
-                                className="p-2 rounded-lg border transition-all bg-blue-50/50 border-blue-200"
-                              >
-                                <div className="flex items-center gap-1.5 mb-0.5">
-                                  <CheckCircle2 className="w-3 h-3 text-blue-600" />
-                                  <span className="text-[10px] font-bold uppercase text-blue-700">
-                                    {field.label}
-                                  </span>
-                                </div>
-                                <p className="text-[11px] text-slate-700 whitespace-pre-line pl-4">
-                                  {value}
-                                </p>
-                              </div>
-                            );
-                          });
-                        })()}
-                      </div>
+                      <pre className="text-xs text-slate-700 whitespace-pre-wrap font-mono leading-relaxed">
+                        {chartText}
+                      </pre>
                     )}
                   </div>
                 </div>
@@ -856,10 +859,10 @@ export function LandingPage({ onStart }: LandingPageProps) {
       <section ref={howItWorksSection.ref} className="py-24 px-4 bg-white">
         <div className="container mx-auto max-w-5xl">
           <h2 className={`text-2xl md:text-3xl font-bold text-center text-slate-900 mb-4 scroll-hidden ${howItWorksSection.isVisible ? 'scroll-visible' : ''}`}>
-            사용 방법
+            3단계로 끝나는 차트 작성
           </h2>
           <p className={`text-slate-500 text-center mb-16 scroll-hidden stagger-1 ${howItWorksSection.isVisible ? 'scroll-visible' : ''}`}>
-            3단계로 간편하게 차트를 생성하세요
+            복잡한 설정 없이, 녹음만 하면 됩니다
           </p>
 
           <div className="grid md:grid-cols-3 gap-8">
@@ -913,9 +916,9 @@ export function LandingPage({ onStart }: LandingPageProps) {
                   <Clock className="w-6 h-6 text-white" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-slate-900 mb-1">진료 시간 단축</h3>
+                  <h3 className="font-bold text-slate-900 mb-1">하루 30분 절약</h3>
                   <p className="text-sm text-slate-500 leading-relaxed">
-                    차트 작성 시간을 줄이고 환자 소통에 집중하세요.
+                    차트 작성에 쓰던 시간을 환자에게 집중하세요
                   </p>
                 </div>
               </CardContent>
@@ -927,9 +930,9 @@ export function LandingPage({ onStart }: LandingPageProps) {
                   <Zap className="w-6 h-6 text-white" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-slate-900 mb-1">정확한 기록</h3>
+                  <h3 className="font-bold text-slate-900 mb-1">누락 없는 기록</h3>
                   <p className="text-sm text-slate-500 leading-relaxed">
-                    대화 내용을 누락 없이 차트에 반영합니다.
+                    대화 내용이 그대로 차트에 반영됩니다
                   </p>
                 </div>
               </CardContent>
@@ -970,10 +973,10 @@ export function LandingPage({ onStart }: LandingPageProps) {
       <section ref={ctaSection.ref} className="py-24 px-4 bg-gradient-to-br from-blue-600 to-slate-600 overflow-hidden">
         <div className="container mx-auto max-w-2xl text-center">
           <h2 className={`text-2xl md:text-3xl font-bold text-white mb-4 scroll-hidden ${ctaSection.isVisible ? 'scroll-visible' : ''}`}>
-            지금 바로 체험해보세요
+            차트 작성, 더 이상 고민하지 마세요
           </h2>
           <p className={`text-blue-100 mb-10 scroll-hidden stagger-1 ${ctaSection.isVisible ? 'scroll-visible' : ''}`}>
-            로그인 없이 무료로 사용할 수 있습니다.
+            회원가입 없이 바로 체험할 수 있습니다
           </p>
 
           <Button

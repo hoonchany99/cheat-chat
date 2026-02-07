@@ -37,7 +37,29 @@ const chartAnimationStyles = `
   .status-dot:nth-child(1) { animation-delay: 0s; }
   .status-dot:nth-child(2) { animation-delay: 0.2s; }
   .status-dot:nth-child(3) { animation-delay: 0.4s; }
+  
+  @keyframes waveBar {
+    0%, 100% { height: 6px; }
+    50% { height: 14px; }
+  }
+  
+  .wave-bar {
+    animation: waveBar 0.6s ease-in-out infinite;
+  }
+  
+  .wave-bar:nth-child(1) { animation-delay: 0ms; }
+  .wave-bar:nth-child(2) { animation-delay: 100ms; }
+  .wave-bar:nth-child(3) { animation-delay: 200ms; }
+  .wave-bar:nth-child(4) { animation-delay: 300ms; }
+  .wave-bar:nth-child(5) { animation-delay: 400ms; }
 `;
+
+// 시간 포맷팅 함수
+const formatTime = (seconds: number): string => {
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+};
 
 // Assessment, Plan, Notes는 별도로 순서 제어하므로 제외
 const AP_FIELDS = ['assessment', 'plan', 'notes'];
@@ -69,6 +91,12 @@ interface ChartingResultProps {
   onFreeTextChange?: (text: string) => void;
   /** 세션 ID (세션 전환 감지용) */
   sessionId?: string | null;
+  /** 녹음 경과 시간 (초 단위) */
+  recordingTime?: number;
+  /** 원격 녹음 여부 (모바일에서 녹음 중인지) */
+  isRemoteRecording?: boolean;
+  /** 데모 중 현재 대화 (speaker + text) */
+  currentDemoSegment?: { speaker: 'doctor' | 'patient' | 'pending'; text: string } | null;
 }
 
 export function ChartingResult({
@@ -83,7 +111,10 @@ export function ChartingResult({
   sessionStartTime = null,
   freeText: externalFreeText = '',
   onFreeTextChange,
-  sessionId = null
+  sessionId = null,
+  recordingTime = 0,
+  isRemoteRecording = false,
+  currentDemoSegment = null
 }: ChartingResultProps) {
   const [isCopied, setIsCopied] = useState(false);
   
@@ -325,8 +356,29 @@ export function ChartingResult({
                   ) : '진료 기록'}
                 </h3>
               </div>
-              <div className="flex items-center gap-2">
-                {hasAnyData && (
+              <div className="flex items-center gap-3">
+                {/* 녹음 중일 때 웨이브폼 + 타이머 */}
+                {isRecording && (
+                  <div className="flex items-center gap-2">
+                    {/* 미니 웨이브폼 */}
+                    <div className="flex items-center gap-0.5 h-4">
+                      {[...Array(5)].map((_, i) => (
+                        <div
+                          key={i}
+                          className="w-0.5 bg-red-400 rounded-full wave-bar"
+                        />
+                      ))}
+                    </div>
+                    {/* 타이머 */}
+                    <span className="text-xs font-medium text-red-500 tabular-nums">
+                      {formatTime(recordingTime)}
+                    </span>
+                    {isRemoteRecording && (
+                      <span className="text-xs text-slate-400">휴대폰</span>
+                    )}
+                  </div>
+                )}
+                {hasAnyData && !isActive && (
                   <Button variant="outline" size="sm" onClick={handleCopyChart} className="h-7 text-xs border-slate-300 text-slate-600 hover:bg-slate-100">
                     {isCopied ? <><Check className="w-3 h-3 mr-1" />복사됨</> : <><Copy className="w-3 h-3 mr-1" />복사</>}
                   </Button>
@@ -356,6 +408,19 @@ export function ChartingResult({
               } ${!freeText && !isActive ? 'bg-transparent' : ''}`}
               placeholder=""
             />
+            {/* 데모 중 현재 대화 표시 (투명 카드) */}
+            {currentDemoSegment && (
+              <div className="absolute bottom-4 right-4 max-w-[280px] bg-white/80 backdrop-blur-sm border border-slate-200/60 rounded-lg px-3 py-2 shadow-sm animate-in fade-in slide-in-from-bottom-2 duration-300">
+                <div className="flex items-start gap-2">
+                  <span className="text-base shrink-0">
+                    {currentDemoSegment.speaker === 'doctor' ? '🩺' : currentDemoSegment.speaker === 'patient' ? '👤' : '💬'}
+                  </span>
+                  <p className="text-xs text-slate-600 leading-relaxed">
+                    {currentDemoSegment.text}
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </>
@@ -387,8 +452,29 @@ export function ChartingResult({
                 ) : '진료 기록'}
               </h3>
             </div>
-            <div className="flex items-center gap-2">
-              {hasAnyData && (
+            <div className="flex items-center gap-3">
+              {/* 녹음 중일 때 웨이브폼 + 타이머 */}
+              {isRecording && (
+                <div className="flex items-center gap-2">
+                  {/* 미니 웨이브폼 */}
+                  <div className="flex items-center gap-0.5 h-4">
+                    {[...Array(5)].map((_, i) => (
+                      <div
+                        key={i}
+                        className="w-0.5 bg-red-400 rounded-full wave-bar"
+                      />
+                    ))}
+                  </div>
+                  {/* 타이머 */}
+                  <span className="text-xs font-medium text-red-500 tabular-nums">
+                    {formatTime(recordingTime)}
+                  </span>
+                  {isRemoteRecording && (
+                    <span className="text-xs text-slate-400">휴대폰</span>
+                  )}
+                </div>
+              )}
+              {hasAnyData && !isActive && (
                 <Button variant="outline" size="sm" onClick={handleCopyChart} className="h-7 text-xs border-slate-300 text-slate-600 hover:bg-slate-100">
                   {isCopied ? <><Check className="w-3 h-3 mr-1" />복사됨</> : <><Copy className="w-3 h-3 mr-1" />복사</>}
                 </Button>
@@ -418,6 +504,19 @@ export function ChartingResult({
             } ${!freeText && !isActive ? 'bg-transparent' : ''}`}
             placeholder=""
           />
+          {/* 데모 중 현재 대화 표시 (투명 카드) */}
+          {currentDemoSegment && (
+            <div className="absolute bottom-4 right-4 max-w-[240px] bg-white/80 backdrop-blur-sm border border-slate-200/60 rounded-lg px-3 py-2 shadow-sm animate-in fade-in slide-in-from-bottom-2 duration-300">
+              <div className="flex items-start gap-2">
+                <span className="text-base shrink-0">
+                  {currentDemoSegment.speaker === 'doctor' ? '🩺' : currentDemoSegment.speaker === 'patient' ? '👤' : '💬'}
+                </span>
+                <p className="text-xs text-slate-600 leading-relaxed">
+                  {currentDemoSegment.text}
+                </p>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </>

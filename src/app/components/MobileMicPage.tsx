@@ -279,10 +279,10 @@ export function MobileMicPage({ sessionId }: MobileMicPageProps) {
   // 연결 중 화면
   if (isConnecting) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-teal-600 to-teal-700 flex items-center justify-center p-4">
+      <div className="min-h-screen bg-gradient-to-br from-blue-600 to-blue-700 flex items-center justify-center p-4">
         <Card className="w-full max-w-sm">
           <CardContent className="pt-8 pb-8 text-center">
-            <Loader2 className="w-12 h-12 animate-spin text-teal-600 mx-auto mb-4" />
+            <Loader2 className="w-12 h-12 animate-spin text-blue-600 mx-auto mb-4" />
             <h2 className="text-lg font-semibold text-slate-800 mb-2">연결 중...</h2>
             <p className="text-sm text-slate-500">세션 코드: <span className="font-mono font-bold">{sessionId}</span></p>
           </CardContent>
@@ -294,12 +294,12 @@ export function MobileMicPage({ sessionId }: MobileMicPageProps) {
   // 녹음 완료 화면
   if (isCompleted) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-teal-600 to-teal-700 flex items-center justify-center p-4">
+      <div className="min-h-screen bg-gradient-to-br from-blue-600 to-blue-700 flex items-center justify-center p-4">
         <Toaster position="top-center" richColors />
         <Card className="w-full max-w-sm">
           <CardContent className="pt-8 pb-8 text-center">
-            <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-4">
-              <CheckCircle2 className="w-8 h-8 text-green-600" />
+            <div className="w-16 h-16 rounded-full bg-blue-100 flex items-center justify-center mx-auto mb-4">
+              <CheckCircle2 className="w-8 h-8 text-blue-600" />
             </div>
             <h2 className="text-lg font-semibold text-slate-800 mb-2">녹음 완료!</h2>
             <p className="text-sm text-slate-500 mb-1">녹음된 내용이 데스크톱으로 전송되었습니다.</p>
@@ -343,7 +343,7 @@ export function MobileMicPage({ sessionId }: MobileMicPageProps) {
             <div className="space-y-3">
               <Button 
                 onClick={() => window.location.reload()}
-                className="w-full bg-teal-600 hover:bg-teal-700"
+                className="w-full bg-blue-600 hover:bg-blue-700"
               >
                 다시 연결 시도
               </Button>
@@ -358,7 +358,7 @@ export function MobileMicPage({ sessionId }: MobileMicPageProps) {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-teal-600 to-teal-700 flex flex-col">
+    <div className="min-h-screen bg-gradient-to-br from-blue-600 to-blue-700 flex flex-col">
       <Toaster position="top-center" richColors />
       
       {/* Header */}
@@ -367,7 +367,7 @@ export function MobileMicPage({ sessionId }: MobileMicPageProps) {
           <Stethoscope className="w-6 h-6" />
           <span className="font-bold text-xl">Savvy</span>
         </div>
-        <div className="flex items-center gap-2 text-teal-100">
+        <div className="flex items-center gap-2 text-blue-100">
           <Wifi className="w-4 h-4" />
           <span className="text-sm">연결됨</span>
         </div>
@@ -378,7 +378,7 @@ export function MobileMicPage({ sessionId }: MobileMicPageProps) {
         <Card className="w-full max-w-sm shadow-2xl">
           <CardContent className="pt-8 pb-8">
             {/* Connection Status */}
-            <div className="flex items-center justify-center gap-2 mb-6 text-teal-600">
+            <div className="flex items-center justify-center gap-2 mb-6 text-blue-600">
               <CheckCircle2 className="w-5 h-5" />
               <span className="text-sm font-medium">데스크톱과 연결됨</span>
             </div>
@@ -449,14 +449,14 @@ export function MobileMicPage({ sessionId }: MobileMicPageProps) {
         </Card>
 
         {/* Session Info */}
-        <div className="mt-6 text-center text-teal-100">
+        <div className="mt-6 text-center text-blue-100">
           <p className="text-sm opacity-80">세션 코드</p>
           <p className="font-mono font-bold text-lg tracking-wider">{sessionId}</p>
         </div>
       </main>
 
       {/* Footer */}
-      <footer className="p-4 text-center text-teal-200 text-xs">
+      <footer className="p-4 text-center text-blue-200 text-xs">
         녹음된 내용은 실시간으로 데스크톱에 전송됩니다
       </footer>
     </div>

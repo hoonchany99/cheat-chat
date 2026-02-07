@@ -189,7 +189,7 @@ export function RemoteMicModal({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Smartphone className="w-5 h-5 text-teal-600" />
+            <Smartphone className="w-5 h-5 text-blue-600" />
             휴대폰 마이크 연결
           </DialogTitle>
         </DialogHeader>
@@ -198,7 +198,7 @@ export function RemoteMicModal({
           {/* Connection Status */}
           <div className={`flex items-center justify-center gap-2 py-2 px-4 rounded-lg ${
             isConnected 
-              ? 'bg-green-50 text-green-700' 
+              ? 'bg-blue-50 text-blue-700' 
               : 'bg-slate-50 text-slate-600'
           }`}>
             {isConnected ? (
@@ -240,8 +240,8 @@ export function RemoteMicModal({
           {/* Connected State */}
           {isConnected && !isRemoteRecording && (
             <div className="text-center py-6">
-              <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-4">
-                <Mic className="w-8 h-8 text-green-600" />
+              <div className="w-16 h-16 rounded-full bg-blue-100 flex items-center justify-center mx-auto mb-4">
+                <Mic className="w-8 h-8 text-blue-600" />
               </div>
               <p className="text-slate-600">
                 휴대폰에서 <span className="font-semibold text-red-500">마이크 버튼</span>을 눌러
@@ -282,7 +282,7 @@ export function RemoteMicModal({
           {!isConnected && (
             <div className="text-xs text-slate-500 space-y-1">
               <p>📱 휴대폰 카메라 앱으로 QR 코드를 스캔하거나</p>
-              <p>🌐 브라우저에서 <span className="font-mono text-teal-600">{window.location.host}?mic={sessionId}</span> 접속</p>
+              <p>🌐 브라우저에서 <span className="font-mono text-blue-600">{window.location.host}?mic={sessionId}</span> 접속</p>
             </div>
           )}
 
@@ -317,7 +317,7 @@ export function RemoteMicModal({
                 </Button>
                 <Button 
                   onClick={handleCloseKeepConnection}
-                  className="flex-1 bg-teal-600 hover:bg-teal-700"
+                  className="flex-1 bg-blue-600 hover:bg-blue-700"
                 >
                   연결 유지하며 닫기
                 </Button>

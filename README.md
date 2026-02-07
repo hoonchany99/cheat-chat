@@ -1,13 +1,17 @@
-# 🩺 Savvy - AI 기반 의료 차팅 솔루션
+# 🩺 Savvy - AI 의료 차팅 어시스턴트
 
-진료 대화를 **실시간으로 텍스트로 변환**하고, **AI가 자동으로 의무 기록 차트**를 생성하는 웹 서비스입니다.
+> **진료에만 집중하세요. 차트는 AI가 작성합니다.**
 
-## 📋 주요 기능
+녹음 한 번이면 끝. 진료 대화가 EMR-ready 차트로 변환됩니다. 하루 30분, 차트 작성에서 해방되세요.
 
-- **실시간 음성 인식** - Deepgram 스트리밍 STT로 대화를 즉시 텍스트로 변환
-- **AI 화자 분류** - GPT-4o가 의사/환자 발화를 자동 구분
-- **자동 차트 생성** - 진료과별 맞춤 차트 템플릿으로 의무 기록 자동 생성
-- **확실/추측 구분** - 대화에서 직접 언급된 내용과 AI 추측을 명확히 분리
+## ✨ 주요 기능
+
+- 🎙️ **실시간 음성 인식** - Deepgram 스트리밍 STT로 대화를 즉시 텍스트로 변환
+- 👥 **AI 화자 분류** - GPT-4o가 의사/환자 발화를 자동 구분
+- 📋 **자동 차트 생성** - 진료과별 맞춤 차트 템플릿 (CC, PI, ROS, Assessment, Plan 등)
+- 📂 **환자 세션 관리** - 최대 5명까지 동시 차트 작성 가능
+- ✏️ **자유로운 편집** - AI 생성 후 직접 수정 및 보완 가능
+- 🎯 **온보딩 UX** - 첫 방문 시 사용법 안내 및 데모 체험
 
 ---
 
@@ -19,15 +23,15 @@
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
 │   ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐       │
-│   │  VoiceRecorder  │───▶│TranscriptViewer │    │ ChartingResult  │       │
-│   │   (녹음 UI)     │    │ (대화 표시)     │    │  (차트 표시)    │       │
+│   │  VoiceRecorder  │───▶│ PatientSidebar  │    │ ChartingResult  │       │
+│   │   (녹음 UI)     │    │ (세션 관리)     │    │  (차트 표시)    │       │
 │   └────────┬────────┘    └────────▲────────┘    └────────▲────────┘       │
 │            │                      │                      │                 │
-│            │ 오디오 청크          │ 실시간 세그먼트       │ 생성된 차트     │
+│            │ 오디오 청크          │ 세션 전환            │ 생성된 차트     │
 │            ▼                      │                      │                 │
 │   ┌────────────────────────────────────────────────────────────────┐      │
 │   │                         App.tsx                                 │      │
-│   │                      (상태 관리)                                │      │
+│   │                    (상태 관리 + 세션 관리)                      │      │
 │   └────────┬─────────────────────────────────────────────┬─────────┘      │
 │            │                                             │                 │
 └────────────┼─────────────────────────────────────────────┼─────────────────┘
@@ -40,7 +44,7 @@
 │  │ Transcriber          │  │              │  │                      │  │
 │  │ - WebSocket 연결     │  │              │  │  - 진료과별 프리셋   │  │
 │  │ - 발화 수집          │  │              │  │  - GPT 프롬프트      │  │
-│  │ - 배치 화자 분류     │  │              │  │  - 확실/추측 구분    │  │
+│  │ - 배치 화자 분류     │  │              │  │  - Assessment/DDx    │  │
 │  └──────────┬───────────┘  │              │  └──────────┬───────────┘  │
 └─────────────┼──────────────┘              └─────────────┼──────────────┘
               │                                           │
@@ -62,6 +66,25 @@
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
+
+---
+
+## 📋 차트 필드 구조
+
+### 기본 차트 필드
+
+| 필드 | 설명 |
+|------|------|
+| **CC** | Chief Complaint - 주호소 |
+| **PI** | Present Illness - 현병력 |
+| **ROS (+/-)** | Review of Systems - 관련 증상 |
+| **Past History** | 과거력 (Surgical History, Medications, Allergies 포함) |
+| **Social History** | 사회력 |
+| **Family History** | 가족력 |
+| **PE** | Physical Examination - 진찰소견 (소견 있을 때만 표시) |
+| **Assessment** | 평가 - #Dx (확정진단), r/o (감별진단) 포함 |
+| **Plan** | 치료 계획 |
+| **Notes** | 기타 메모 |
 
 ---
 
@@ -101,47 +124,22 @@
     ▼ 인덱스 기반 병합
     │
     └──▶ classifiedSegments[] 업데이트
-         (이전 세그먼트 유지 + 새 분류 추가)
 ```
 
-### 3️⃣ 녹음 종료 → 최종 화자 분류
+### 3️⃣ 차트 자동 생성 (GPT-4o)
 
 ```
 녹음 종료
     │
-    ▼ WebSocket 닫기
-    │
-    ▼ 전체 utterances[] → GPT-4o
-    │
-    ▼ 정확한 화자 분류 (분리 포함)
-    │    예: "감사합니다 원장님 불편하시면 오세요"
-    │    → [P: "감사합니다 원장님"] + [D: "불편하시면 오세요"]
-    │
-    └──▶ 최종 SpeakerSegment[] 반환
-```
-
-### 4️⃣ 차트 자동 생성 (GPT-4o)
-
-```
-최종 세그먼트
-    │
     ▼ 대화 텍스트 포맷팅
-    │    "의사: 어디가 아프세요?"
-    │    "환자: 머리가 아파요"
     │
     ▼ 진료과별 프리셋 적용
-    │    (일반/내과/피부과/정형외과/정신과/소아과/치과)
     │
-    ▼ GPT-4o API 호출
+    ▼ GPT-4o Streaming API
     │
-    ▼ JSON 차트 생성
-    │    {
-    │      "chiefComplaint": { "value": "머리가 아파요", "isConfirmed": true },
-    │      "assessment": { "value": "Tension headache", "isConfirmed": false }
-    │    }
+    ▼ 실시간 차트 업데이트
     │
-    └──▶ GeneratedChart 반환
-         (확실: 대화에서 언급됨 / 추측: AI 판단)
+    └──▶ Assessment에 DDx 통합 (#Dx, r/o)
 ```
 
 ---
@@ -149,16 +147,17 @@
 ## 📁 프로젝트 구조
 
 ```
-cheat-chat/
+savvy/
 ├── src/
 │   ├── app/
-│   │   ├── App.tsx                    # 메인 앱 컴포넌트 (상태 관리)
+│   │   ├── App.tsx                    # 메인 앱 (상태 + 세션 관리)
 │   │   └── components/
-│   │       ├── LandingPage.tsx        # 랜딩 페이지 (서비스 소개)
+│   │       ├── LandingPage.tsx        # 랜딩 페이지
+│   │       ├── DemoPage.tsx           # 데모 체험 페이지
 │   │       ├── VoiceRecorder.tsx      # 녹음 UI + MediaRecorder
-│   │       ├── TranscriptViewer.tsx   # 실시간/최종 대화 표시
-│   │       ├── ChartingResult.tsx     # 생성된 차트 표시/편집
-│   │       ├── ChartSettingsModal.tsx # 진료과/필드 설정 모달
+│   │       ├── ChartingResult.tsx     # 차트 표시/편집
+│   │       ├── PatientSidebar.tsx     # 환자 세션 사이드바
+│   │       ├── ChartSettingsModal.tsx # 진료과/필드 설정
 │   │       └── ui/                    # shadcn/ui 컴포넌트
 │   │
 │   ├── services/
@@ -166,60 +165,13 @@ cheat-chat/
 │   │   └── chartService.ts            # 진료과 프리셋 + GPT 차트 생성
 │   │
 │   └── styles/
-│       ├── index.css                  # 글로벌 스타일
-│       └── tailwind.css               # Tailwind 설정
+│       └── index.css                  # 글로벌 스타일 + Tailwind
 │
 ├── index.html
 ├── vite.config.ts
 ├── package.json
-└── .env                               # API 키 (VITE_DEEPGRAM_API_KEY, VITE_OPENAI_API_KEY)
+└── .env                               # API 키
 ```
-
----
-
-## 🧩 핵심 컴포넌트
-
-### `deepgramService.ts` - 실시간 음성 인식 + 화자 분류
-
-```typescript
-class DeepgramRealtimeTranscriber {
-  // 상태
-  utterances: string[]              // 전체 발화 배열
-  classifiedSegments: SpeakerSegment[]  // 분류된 세그먼트
-  
-  // 메서드
-  connect()                         // Deepgram WebSocket 연결
-  addChunk(blob)                    // 오디오 청크 전송
-  handleNewUtterance(text)          // 새 발화 → 배치 분류 예약
-  classifyRecentUtterances()        // GPT-4o 화자 분류 (최근 5개)
-  flush()                           // 녹음 종료 → 최종 분류
-}
-```
-
-**화자 분류 알고리즘**:
-- 윈도우 방식: 최근 5개 발화만 GPT에 전송
-- 인덱스 기반 병합: `slice(0, startIdx) + newSegments`
-- 앞부분 세그먼트 유지 보장
-
-### `chartService.ts` - AI 차트 생성
-
-```typescript
-// 진료과별 프리셋
-DEPARTMENT_PRESETS = [
-  { id: 'general', name: '일반', fields: [...], promptContext: '...' },
-  { id: 'internal', name: '내과', ... },
-  { id: 'dermatology', name: '피부과', ... },
-  // ...
-]
-
-// 차트 생성
-generateChart(segments, settings): GeneratedChart
-  // → { fieldId: { value: string, isConfirmed: boolean } }
-```
-
-**확실/추측 구분 기준**:
-- `isConfirmed: true` - 대화에서 직접 언급됨 (환자가 말한 증상 등)
-- `isConfirmed: false` - AI 추측/추천 (진단, 치료계획 등)
 
 ---
 
@@ -262,7 +214,19 @@ npm run build
 | **Styling** | Tailwind CSS 4, Radix UI (shadcn/ui) |
 | **음성 인식** | Deepgram Nova-2 (WebSocket 스트리밍) |
 | **AI** | OpenAI GPT-4o (화자 분류 + 차트 생성) |
-| **상태 관리** | React useState/useRef |
+| **상태 관리** | React useState/useRef/useCallback |
+
+---
+
+## 🎯 사용 시나리오
+
+1. **페이지 진입** - 첫 방문 시 환영 모달로 사용법 안내
+2. **데모 체험** - ▶ 버튼으로 샘플 진료 대화 시뮬레이션
+3. **녹음 시작** - 마이크 버튼 클릭
+4. **대화 진행** - 의사-환자 대화가 실시간으로 텍스트로 변환
+5. **차트 자동 생성** - AI가 진료과별 차트 템플릿에 맞춰 작성
+6. **편집 및 복사** - 필요시 수정 후 EMR에 붙여넣기
+7. **다음 환자** - 사이드바에서 새 환자 추가 (최대 5명)
 
 ---
 
@@ -271,24 +235,12 @@ npm run build
 | 기능 | 모델 | 호출 시점 |
 |------|------|-----------|
 | 실시간 화자 분류 | GPT-4o | 발화 추가 후 2초 디바운스 |
-| 최종 화자 분류 | GPT-4o | 녹음 종료 시 1회 |
-| 차트 생성 | GPT-4o | 화자 분류 완료 후 1회 |
-
----
-
-## 🎯 사용 시나리오
-
-1. **녹음 시작** - 마이크 버튼 클릭
-2. **대화 진행** - 의사-환자 대화가 실시간으로 텍스트로 변환
-3. **화자 자동 분류** - AI가 의사/환자 발화를 자동 구분 (실시간)
-4. **녹음 종료** - 정지 버튼 클릭
-5. **차트 자동 생성** - AI가 진료과별 차트 템플릿에 맞춰 작성
-6. **확인 및 수정** - 확실한 정보 확인, AI 추측 검토 후 확정
-7. **복사** - 확정된 내용만 또는 전체 복사
+| 차트 생성 | GPT-4o (Streaming) | 녹음 중 + 종료 시 |
 
 ---
 
 ## 📝 라이선스
 
 MIT License
-  
+
+© 2026 Utopify Technologies

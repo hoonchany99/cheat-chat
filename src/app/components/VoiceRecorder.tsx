@@ -26,6 +26,7 @@ interface VoiceRecorderProps {
   onApiStart?: () => void;
   onApiEnd?: () => void;
   onRecordingProgress?: (progress: number) => void;
+  onRecordingTimeChange?: (time: number) => void;
   department?: string;
   // 모바일 마이크 연동을 위한 외부 상태
   isRemoteRecording?: boolean;
@@ -37,6 +38,8 @@ interface VoiceRecorderProps {
   // 환자 정보
   patientName?: string;
   patientMemo?: string;
+  // 선택된 마이크 장치 ID
+  selectedDeviceId?: string;
 }
 
 export function VoiceRecorder({
@@ -51,6 +54,7 @@ export function VoiceRecorder({
   onApiStart,
   onApiEnd,
   onRecordingProgress,
+  onRecordingTimeChange,
   department = 'internal',
   isRemoteRecording = false,
   remoteRecordingTime = 0,
@@ -58,19 +62,15 @@ export function VoiceRecorder({
   isExternalRecording = false,
   externalRecordingTime = 0,
   patientName = '',
-  patientMemo = ''
+  patientMemo = '',
+  selectedDeviceId
 }: VoiceRecorderProps) {
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
-  const [audioLevel, setAudioLevel] = useState(0);
-  const [waveformTick, setWaveformTick] = useState(0);
   const timerRef = useRef<number | null>(null);
   const lastFastCorrectionKeyRef = useRef('');
   const lastFastCorrectedSegmentsRef = useRef<Segment[] | null>(null);
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const analyserRef = useRef<AnalyserNode | null>(null);
-  const animationFrameRef = useRef<number | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const segmentsRef = useRef<Segment[]>([]);
   const fullTranscriptRef = useRef<string>('');
@@ -104,53 +104,6 @@ export function VoiceRecorder({
     }
   }, [deepgramError]);
 
-  // 파형 애니메이션을 위한 주기적 업데이트 (로컬 또는 원격 녹음 시)
-  useEffect(() => {
-    if (!isRecording && !isRemoteRecording) return;
-    
-    const interval = setInterval(() => {
-      setWaveformTick(prev => prev + 1);
-    }, 50); // 20fps로 파형 업데이트
-    
-    return () => clearInterval(interval);
-  }, [isRecording, isRemoteRecording]);
-
-  const startAudioAnalysis = useCallback((stream: MediaStream) => {
-    try {
-      audioContextRef.current = new AudioContext();
-      analyserRef.current = audioContextRef.current.createAnalyser();
-      const source = audioContextRef.current.createMediaStreamSource(stream);
-      source.connect(analyserRef.current);
-      analyserRef.current.fftSize = 256;
-      
-      const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
-
-      const updateLevel = () => {
-        if (analyserRef.current) {
-          analyserRef.current.getByteFrequencyData(dataArray);
-          const average = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
-          setAudioLevel(average / 255);
-        }
-        animationFrameRef.current = requestAnimationFrame(updateLevel);
-      };
-
-      updateLevel();
-    } catch (error) {
-      console.error('Audio analysis error:', error);
-    }
-  }, []);
-
-  const stopAudioAnalysis = useCallback(() => {
-    if (animationFrameRef.current) {
-      cancelAnimationFrame(animationFrameRef.current);
-      animationFrameRef.current = null;
-    }
-    if (audioContextRef.current) {
-      audioContextRef.current.close();
-      audioContextRef.current = null;
-    }
-    setAudioLevel(0);
-  }, []);
 
   const handleStartRecording = useCallback(async () => {
     try {
@@ -159,14 +112,21 @@ export function VoiceRecorder({
       onTranscriptUpdate('');
       onRealtimeSegmentsUpdate([]);
 
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // 선택된 장치 ID가 있으면 해당 장치 사용, 없으면 기본 장치 사용
+      const audioConstraints: MediaStreamConstraints['audio'] = selectedDeviceId 
+        ? { deviceId: { exact: selectedDeviceId } }
+        : true;
+      
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
       mediaStreamRef.current = stream;
 
       await connect(stream);
 
-      startAudioAnalysis(stream);
       setIsRecording(true);
       setRecordingTime(0);
+      if (onRecordingTimeChange) {
+        onRecordingTimeChange(0);
+      }
       onRecordingStart();
 
       timerRef.current = window.setInterval(() => {
@@ -176,6 +136,9 @@ export function VoiceRecorder({
             const progress = Math.min((newTime / 300) * 100, 100);
             onRecordingProgress(progress);
           }
+          if (onRecordingTimeChange) {
+            onRecordingTimeChange(newTime);
+          }
           return newTime;
         });
       }, 1000);
@@ -184,7 +147,7 @@ export function VoiceRecorder({
       console.error('Error starting recording:', error);
       toast.error('마이크 권한을 허용해주세요');
     }
-  }, [connect, startAudioAnalysis, onRecordingStart, onRecordingProgress, onTranscriptUpdate, onRealtimeSegmentsUpdate]);
+  }, [connect, onRecordingStart, onRecordingProgress, onRecordingTimeChange, onTranscriptUpdate, onRealtimeSegmentsUpdate, selectedDeviceId]);
 
   const handleStopRecording = useCallback(async () => {
       setIsRecording(false);
@@ -196,8 +159,6 @@ export function VoiceRecorder({
       timerRef.current = null;
     }
 
-    stopAudioAnalysis();
-    
     // Stop media stream first
     if (mediaStreamRef.current) {
       mediaStreamRef.current.getTracks().forEach(track => track.stop());
@@ -276,113 +237,54 @@ export function VoiceRecorder({
     }
 
     setIsTranscribing(false);
-  }, [stopAudioAnalysis, disconnect, onProcessingStart, onRecordingComplete, department]);
-
-  const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
-
-  // Waveform bars
-  const bars = 7;
-  const getBarHeight = (index: number) => {
-    const baseHeight = 6;
-    const maxAdditional = 28;
-    // waveformTick을 사용하여 애니메이션 동기화
-    const time = waveformTick * 50; // 50ms interval
-    const phase1 = (time / 150 + index * 0.8) % (Math.PI * 2);
-    const phase2 = (time / 100 + index * 1.2) % (Math.PI * 2);
-    const wave = (Math.sin(phase1) * 0.4 + Math.sin(phase2) * 0.3 + 0.5);
-    // audioLevel을 증폭 + 기본 움직임 추가 (모바일일 경우 기본 움직임만)
-    const amplifiedLevel = isRemoteRecording ? 0.5 : Math.min(audioLevel * 2.5, 1);
-    const minMovement = 0.3; // 소리가 작아도 최소 움직임
-    return baseHeight + (Math.max(amplifiedLevel, minMovement) * maxAdditional * wave);
-  };
+  }, [disconnect, onProcessingStart, onRecordingComplete, department]);
 
   // 통합된 녹음 상태 (로컬, 원격, 또는 외부 데모)
   const isAnyRecording = isRecording || isRemoteRecording || isExternalRecording;
   const isAnyGenerating = isTranscribing || isExternalGenerating;
-  const displayTime = isExternalRecording ? externalRecordingTime : isRemoteRecording ? remoteRecordingTime : recordingTime;
 
   return (
-    <div className="flex items-center gap-4">
-      {/* Recording Button */}
-      <div className="relative">
-        {isAnyGenerating ? (
-          // 차트 생성 중일 때 점 3개 애니메이션
-          <div className="h-16 w-16 rounded-full bg-gradient-to-br from-slate-400 to-slate-500 text-white shadow-lg flex items-center justify-center gap-1">
-            <span className="w-2 h-2 bg-white rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-            <span className="w-2 h-2 bg-white rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-            <span className="w-2 h-2 bg-white rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-          </div>
-        ) : !isAnyRecording ? (
-          <Button
-            onClick={handleStartRecording}
-            disabled={isConnecting || isRemoteRecording}
-            className="h-16 w-16 rounded-full bg-gradient-to-br from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white shadow-xl shadow-red-500/30 relative overflow-hidden transition-all hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isConnecting ? (
-              <Loader2 className="w-6 h-6 animate-spin" />
-            ) : (
-              <Mic className="w-6 h-6" />
-            )}
-            {isConnecting && (
-              <span className="absolute inset-0 flex items-center justify-center text-xs font-medium bg-red-700/90">
-                연결중
-              </span>
-            )}
-          </Button>
-        ) : isRemoteRecording ? (
-          // 모바일 녹음 중일 때는 버튼 비활성화 (모바일에서만 정지 가능)
-          <div className="h-16 w-16 rounded-full bg-gradient-to-br from-red-500 to-red-600 text-white shadow-xl shadow-red-500/30 flex items-center justify-center">
-            <Mic className="w-6 h-6" />
-          </div>
-        ) : (
-          <Button
-            onClick={handleStopRecording}
-            className="h-16 w-16 rounded-full bg-gradient-to-br from-slate-700 to-slate-800 hover:from-slate-800 hover:to-slate-900 text-white shadow-xl shadow-slate-700/30 transition-all hover:scale-105 active:scale-95"
-          >
-            <Square className="w-5 h-5 fill-current" />
-          </Button>
-        )}
+    <div className="relative">
+      {isAnyGenerating ? (
+        // 차트 생성 중일 때 점 3개 애니메이션
+        <div className="h-12 w-12 rounded-full bg-gradient-to-br from-slate-400 to-slate-500 text-white shadow-lg flex items-center justify-center gap-0.5">
+          <span className="w-1.5 h-1.5 bg-white rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+          <span className="w-1.5 h-1.5 bg-white rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+          <span className="w-1.5 h-1.5 bg-white rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+        </div>
+      ) : !isAnyRecording ? (
+        <Button
+          onClick={handleStartRecording}
+          disabled={isConnecting || isRemoteRecording}
+          className="h-12 w-12 rounded-full bg-gradient-to-br from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white shadow-lg shadow-red-500/25 relative overflow-hidden transition-all hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {isConnecting ? (
+            <Loader2 className="w-5 h-5 animate-spin" />
+          ) : (
+            <Mic className="w-5 h-5" />
+          )}
+        </Button>
+      ) : isRemoteRecording ? (
+        // 모바일 녹음 중일 때는 버튼 비활성화 (모바일에서만 정지 가능)
+        <div className="h-12 w-12 rounded-full bg-gradient-to-br from-red-500 to-red-600 text-white shadow-lg shadow-red-500/25 flex items-center justify-center">
+          <Mic className="w-5 h-5" />
+        </div>
+      ) : (
+        <Button
+          onClick={handleStopRecording}
+          className="h-12 w-12 rounded-full bg-gradient-to-br from-slate-700 to-slate-800 hover:from-slate-800 hover:to-slate-900 text-white shadow-lg shadow-slate-700/25 transition-all hover:scale-105 active:scale-95"
+        >
+          <Square className="w-4 h-4 fill-current" />
+        </Button>
+      )}
 
-        {/* Pulse animation when recording */}
-        {isAnyRecording && (
-          <>
-            <span className="absolute inset-0 rounded-full bg-red-500/30 animate-ping pointer-events-none" />
-            <span className="absolute -inset-1 rounded-full bg-red-500/20 animate-pulse pointer-events-none" />
-          </>
-        )}
-      </div>
-
-      {/* Recording Status */}
-      <div className="flex items-center gap-4">
-        {isAnyRecording ? (
-          <>
-            {/* Waveform */}
-            <div className="flex items-center gap-1 h-10">
-              {Array.from({ length: bars }).map((_, i) => (
-                <div
-                  key={i}
-                  className="w-1.5 bg-gradient-to-t from-red-500 to-red-400 rounded-full transition-all duration-75"
-                  style={{ height: `${getBarHeight(i)}px` }}
-                />
-              ))}
-            </div>
-            {/* Timer & Status */}
-            <div className="flex flex-col">
-              <div className="text-lg font-bold text-slate-900 tabular-nums">
-                {formatTime(displayTime)}
-              </div>
-              <div className="text-xs text-red-500 font-medium flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
-                {isRemoteRecording ? '휴대폰 녹음 중' : '녹음 중'}
-              </div>
-            </div>
-          </>
-        ) : null}
-      </div>
+      {/* Pulse animation when recording */}
+      {isAnyRecording && (
+        <>
+          <span className="absolute inset-0 rounded-full bg-red-500/30 animate-ping pointer-events-none" />
+          <span className="absolute -inset-0.5 rounded-full bg-red-500/20 animate-pulse pointer-events-none" />
+        </>
+      )}
     </div>
   );
 }

@@ -13,7 +13,7 @@ import { Button } from '@/app/components/ui/button';
 import { Input } from '@/app/components/ui/input';
 import { Toaster } from '@/app/components/ui/sonner';
 import { toast } from 'sonner';
-import { RotateCcw, Stethoscope, Mail, Loader2, MessageSquare, Send, ChevronRight, Smartphone, Play, Square, User, Bell, Menu, X } from 'lucide-react';
+import { RotateCcw, Stethoscope, Mail, Loader2, MessageSquare, Send, ChevronRight, Smartphone, Play, Square, User, Bell, Menu, X, Mic } from 'lucide-react';
 import { Textarea } from '@/app/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/app/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel } from '@/app/components/ui/select';
@@ -252,6 +252,9 @@ function MainApp() {
   const [remoteMicOpen, setRemoteMicOpen] = useState(false);
   const [isRemoteConnected, setIsRemoteConnected] = useState(false);
   const [remoteRecordingTime, setRemoteRecordingTime] = useState(0);
+  const [localRecordingTime, setLocalRecordingTime] = useState(0);
+  const [audioDevices, setAudioDevices] = useState<MediaDeviceInfo[]>([]);
+  const [selectedMicId, setSelectedMicId] = useState<string>('');
   const [isAutoUpdating, setIsAutoUpdating] = useState(false);
   const [lastAutoUpdateSegmentCount, setLastAutoUpdateSegmentCount] = useState(0);
   const lastRequestedSegmentCountRef = useRef(0);
@@ -289,6 +292,37 @@ function MainApp() {
   const isGeneratingRef = useRef(false); // API 요청 중인지 추적
   const pendingUpdateRef = useRef(false); // 대기 중인 업데이트가 있는지
   const generationIdRef = useRef(0); // 최신 요청 ID 추적 (오래된 요청 결과 무시용)
+
+  // 마이크 장치 목록 가져오기
+  useEffect(() => {
+    const getAudioDevices = async () => {
+      try {
+        // 권한 요청을 위해 임시로 스트림 가져오기
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream.getTracks().forEach(track => track.stop());
+        
+        // 장치 목록 가져오기
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const audioInputs = devices.filter(device => device.kind === 'audioinput');
+        setAudioDevices(audioInputs);
+        
+        // 기본 장치 선택
+        if (audioInputs.length > 0 && !selectedMicId) {
+          setSelectedMicId(audioInputs[0].deviceId);
+        }
+      } catch (error) {
+        console.log('마이크 권한이 필요합니다:', error);
+      }
+    };
+    
+    getAudioDevices();
+    
+    // 장치 변경 감지
+    navigator.mediaDevices.addEventListener('devicechange', getAudioDevices);
+    return () => {
+      navigator.mediaDevices.removeEventListener('devicechange', getAudioDevices);
+    };
+  }, [selectedMicId]);
 
   // DDx 리스트 안정적 병합 (스트리밍 중 깜빡임 방지)
   const mergeDdxLists = useCallback((
@@ -1576,6 +1610,23 @@ function MainApp() {
                 <RotateCcw className="w-4 h-4" />
               </Button>
 
+              {/* 마이크 선택 */}
+              {audioDevices.length > 1 && (
+                <Select value={selectedMicId} onValueChange={setSelectedMicId} disabled={isRecording || isRemoteRecording}>
+                  <SelectTrigger className="h-8 w-[140px] text-xs border-slate-200">
+                    <Mic className="w-3 h-3 mr-1 shrink-0" />
+                    <SelectValue placeholder="마이크 선택" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {audioDevices.map((device) => (
+                      <SelectItem key={device.deviceId} value={device.deviceId} className="text-xs">
+                        {device.label || `마이크 ${audioDevices.indexOf(device) + 1}`}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+
               {/* 휴대폰 마이크 연결 버튼 */}
               <Button
                 variant="ghost"
@@ -1586,7 +1637,7 @@ function MainApp() {
                   isRemoteRecording 
                     ? 'text-red-600 bg-red-50' 
                     : isRemoteConnected 
-                      ? 'text-green-600 bg-green-50' 
+                      ? 'text-blue-600 bg-blue-50' 
                       : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'
                 }`}
                 title="휴대폰 마이크 연결"
@@ -1609,6 +1660,7 @@ function MainApp() {
                 onApiEnd={() => bumpPendingApi(-1)}
                 onRecordingComplete={handleRecordingComplete}
                 onRecordingProgress={handleRecordingProgress}
+                onRecordingTimeChange={setLocalRecordingTime}
                 department={chartSettings.selectedDepartment}
                 isRemoteRecording={isRemoteRecording}
                 remoteRecordingTime={remoteRecordingTime}
@@ -1617,6 +1669,7 @@ function MainApp() {
                 externalRecordingTime={testRecordingTime}
                 patientName={patientName}
                 patientMemo={patientMemo}
+                selectedDeviceId={selectedMicId}
               />
             </div>
           </div>
@@ -1638,6 +1691,9 @@ function MainApp() {
                 freeText={freeText}
                 onFreeTextChange={setFreeText}
                 sessionId={activeSessionId}
+                recordingTime={isRemoteRecording ? remoteRecordingTime : isTestRunning ? testRecordingTime : localRecordingTime}
+                isRemoteRecording={isRemoteRecording}
+                currentDemoSegment={isTestRunning && realtimeSegments.length > 0 ? realtimeSegments[realtimeSegments.length - 1] : null}
               />
             </div>
           </div>
@@ -1659,6 +1715,9 @@ function MainApp() {
                 freeText={freeText}
                 onFreeTextChange={setFreeText}
                 sessionId={activeSessionId}
+                recordingTime={isRemoteRecording ? remoteRecordingTime : isTestRunning ? testRecordingTime : localRecordingTime}
+                isRemoteRecording={isRemoteRecording}
+                currentDemoSegment={isTestRunning && realtimeSegments.length > 0 ? realtimeSegments[realtimeSegments.length - 1] : null}
               />
             </div>
           </div>
@@ -1945,7 +2004,7 @@ function MainApp() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-xl">
               <Stethoscope className="w-6 h-6 text-blue-600" />
-              CheatChat에 오신 것을 환영합니다!
+              Savvy에 오신 것을 환영합니다!
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-4">
@@ -1983,6 +2042,12 @@ function MainApp() {
                   <p className="text-slate-500 text-xs">녹음 중단 시 AI가 차트를 정리합니다</p>
                 </div>
               </div>
+            </div>
+            
+            <div className="flex items-center gap-2 p-3 bg-orange-50 rounded-lg border border-orange-100">
+              <p className="text-orange-700 text-xs">
+                <span className="font-medium">TIP:</span> 상단의 <Play className="w-3 h-3 inline mx-0.5" /> 버튼을 눌러 데모를 체험해보세요!
+              </p>
             </div>
           </div>
           
