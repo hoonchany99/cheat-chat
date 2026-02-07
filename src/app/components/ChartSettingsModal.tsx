@@ -139,10 +139,16 @@ interface ChartSettingsModalProps {
   settings: ChartSettings;
   onSettingsChange: (settings: ChartSettings) => void;
   departmentName?: string;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
-export function ChartSettingsModal({ settings, onSettingsChange, departmentName }: ChartSettingsModalProps) {
-  const [open, setOpen] = useState(false);
+export function ChartSettingsModal({ settings, onSettingsChange, departmentName, open: controlledOpen, onOpenChange }: ChartSettingsModalProps) {
+  const [internalOpen, setInternalOpen] = useState(false);
+  
+  // 외부에서 제어 가능하도록 (controlled/uncontrolled 패턴)
+  const open = controlledOpen !== undefined ? controlledOpen : internalOpen;
+  const setOpen = onOpenChange || setInternalOpen;
   const [localSettings, setLocalSettings] = useState<ChartSettings>(settings);
   const [newFieldName, setNewFieldName] = useState('');
   const [newFieldType, setNewFieldType] = useState<ChartField['type']>('textarea');
@@ -245,16 +251,22 @@ export function ChartSettingsModal({ settings, onSettingsChange, departmentName 
 
   const selectedPreset = DEPARTMENT_PRESETS.find(p => p.id === localSettings.selectedDepartment);
 
+  // 외부에서 제어하는 경우 (controlled) 트리거 버튼 없이 렌더링
+  const isControlled = controlledOpen !== undefined;
+
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <button className="flex items-center gap-1.5 pl-3 pr-2 py-1.5 rounded-full bg-slate-100 hover:bg-slate-200 transition-all group border border-transparent hover:border-slate-300">
-          {departmentName && (
-            <span className="text-xs font-medium text-slate-600">{departmentName}</span>
-          )}
-          <ChevronDown className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-600 transition-colors" />
-        </button>
-      </DialogTrigger>
+      {/* 내부 제어 모드일 때만 트리거 버튼 렌더링 */}
+      {!isControlled && (
+        <DialogTrigger asChild>
+          <button className="flex items-center gap-1.5 pl-3 pr-2 py-1.5 rounded-full bg-slate-100 hover:bg-slate-200 transition-all group border border-transparent hover:border-slate-300">
+            {departmentName && (
+              <span className="text-xs font-medium text-slate-600">{departmentName}</span>
+            )}
+            <ChevronDown className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-600 transition-colors" />
+          </button>
+        </DialogTrigger>
+      )}
       <DialogContent className="max-w-2xl max-h-[80vh] sm:max-h-[85vh] flex flex-col overflow-hidden">
         <DialogHeader className="flex-shrink-0">
           <DialogTitle className="flex items-center gap-2">

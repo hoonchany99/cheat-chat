@@ -13,7 +13,14 @@ import { Button } from '@/app/components/ui/button';
 import { Input } from '@/app/components/ui/input';
 import { Toaster } from '@/app/components/ui/sonner';
 import { toast } from 'sonner';
-import { Stethoscope, Mail, Loader2, MessageSquare, Send, ChevronRight, Smartphone, Play, Square, User, Bell, Menu, X, Mic, Trash2 } from 'lucide-react';
+import { Stethoscope, Loader2, MessageSquare, Send, ChevronRight, Smartphone, Play, Square, User, Bell, Menu, X, Mic, Trash2, Settings } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/app/components/ui/dropdown-menu';
 import { Textarea } from '@/app/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/app/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel } from '@/app/components/ui/select';
@@ -249,6 +256,9 @@ function MainApp() {
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [feedbackStep, setFeedbackStep] = useState<'input' | 'info'>('input');
   const [subscribeOpen, setSubscribeOpen] = useState(false);
+  const [subscribeStep, setSubscribeStep] = useState<'info' | 'email'>('info');
+  const [chartSettingsOpen, setChartSettingsOpen] = useState(false);
+  const [showFeedbackBanner, setShowFeedbackBanner] = useState(false);
   const [remoteMicOpen, setRemoteMicOpen] = useState(false);
   const [isRemoteConnected, setIsRemoteConnected] = useState(false);
   const [remoteRecordingTime, setRemoteRecordingTime] = useState(0);
@@ -523,7 +533,6 @@ function MainApp() {
       // 데모 중지 시 타임스탬프 설정
       setSessionEndTime(new Date());
       handleReset();
-      toast.info('데모 중지됨');
       return;
     }
 
@@ -642,7 +651,6 @@ function MainApp() {
     setIsRecording(true);
     lastRequestedSegmentCountRef.current = 0;
     lastAutoUpdateTimeRef.current = 0;
-    toast.info('🧪 실시간 시뮬레이션 시작');
 
     // 타이핑 애니메이션 (느리게 - 80ms per char)
     const typeText = (text: string, setter: (val: string) => void, charDelay: number = 80): Promise<void> => {
@@ -791,7 +799,8 @@ function MainApp() {
         isTestRunningRef.current = false;
         // 데모 완료 시 타임스탬프 설정
         setSessionEndTime(new Date());
-        toast.success('🧪 시뮬레이션 완료!');
+        // 차트 생성 완료 후 피드백 배너 표시
+        setShowFeedbackBanner(true);
         return;
       }
 
@@ -1100,6 +1109,8 @@ function MainApp() {
     if (result) {
       // 기존 차트와 병합 (녹음 중 생성된 CC, PI, ROS 유지)
       setChartData(prev => mergeChartData(prev, result));
+      // 차트 생성 완료 후 피드백 배너 표시
+      setShowFeedbackBanner(true);
     }
     setIsGeneratingChart(false);
   }, [mergeChartData]);
@@ -1500,7 +1511,7 @@ function MainApp() {
       <style>{ddxAnimationStyles}</style>
       {/* Header */}
       <header className="sticky top-0 z-50 border-b bg-white/95 backdrop-blur-sm">
-        <div className="container mx-auto px-4 h-14 flex items-center justify-between">
+        <div className="w-full px-4 h-14 flex items-center justify-between">
           <button
             onClick={() => handlePageTransition('landing')}
             className="flex items-center gap-2.5 hover:opacity-80 transition-opacity"
@@ -1512,12 +1523,6 @@ function MainApp() {
           </button>
 
           <div className="flex items-center gap-2">
-            <ChartSettingsModal
-              settings={chartSettings}
-              onSettingsChange={setChartSettings}
-              departmentName={selectedDepartmentName}
-            />
-            
             {/* 데모 버튼 - Primary CTA */}
             <Button
               onClick={handleTestSimulation}
@@ -1540,6 +1545,42 @@ function MainApp() {
                 </>
               )}
             </Button>
+
+            {/* 설정 드롭다운 */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="icon" className="h-8 w-8">
+                  <Settings className="w-4 h-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuItem onClick={() => setChartSettingsOpen(true)} className="cursor-pointer">
+                  <Settings className="w-4 h-4 mr-2" />
+                  차트 설정
+                  {selectedDepartmentName && (
+                    <span className="ml-auto text-xs text-slate-400">{selectedDepartmentName}</span>
+                  )}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => setFeedbackOpen(true)} className="cursor-pointer">
+                  <MessageSquare className="w-4 h-4 mr-2" />
+                  피드백 보내기
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setSubscribeOpen(true)} className="cursor-pointer">
+                  <Bell className="w-4 h-4 mr-2" />
+                  출시 알림 받기
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            {/* ChartSettingsModal (드롭다운에서 열기) */}
+            <ChartSettingsModal
+              settings={chartSettings}
+              onSettingsChange={setChartSettings}
+              departmentName={selectedDepartmentName}
+              open={chartSettingsOpen}
+              onOpenChange={setChartSettingsOpen}
+            />
           </div>
         </div>
       </header>
@@ -1617,13 +1658,13 @@ function MainApp() {
                         className="text-2xl font-semibold border-0 outline-none placeholder:text-slate-300 bg-transparent w-[180px]"
                         style={{ fontSize: '28px' }}
                       />
-                      {/* 초기화 버튼 (휴지통) */}
+                      {/* 초기화 버튼 (휴지통) - 데스크탑에서만 표시 */}
                       <Button
                         variant="ghost"
                         size="icon"
                         onClick={handleReset}
                         disabled={isRecording || isRemoteRecording || isGeneratingChart}
-                        className="h-8 w-8 shrink-0 text-slate-300 hover:text-red-500 hover:bg-red-50 transition-colors"
+                        className="hidden lg:flex h-8 w-8 shrink-0 text-slate-300 hover:text-red-500 hover:bg-red-50 transition-colors"
                         title="초기화"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -1641,13 +1682,13 @@ function MainApp() {
                   </div>
                   {/* 타임스탬프 */}
                   {sessionStartTime && (
-                    <div className="ml-[52px] mt-2 flex items-center gap-4 text-xs text-slate-400">
+                    <div className="ml-[52px] mt-2 flex flex-col lg:flex-row lg:items-center gap-0.5 lg:gap-4 text-xs text-slate-400">
                       <span>
                         {sessionStartTime.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' })} {sessionStartTime.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}
                       </span>
                       {sessionEndTime && (
                         <>
-                          <span>•</span>
+                          <span className="hidden lg:inline">•</span>
                           <span>
                             {Math.floor((sessionEndTime.getTime() - sessionStartTime.getTime()) / 60000)}분 {Math.floor(((sessionEndTime.getTime() - sessionStartTime.getTime()) % 60000) / 1000)}초
                           </span>
@@ -1659,49 +1700,51 @@ function MainApp() {
 
             {/* 오른쪽: 녹음 컨트롤 */}
             <div className="flex items-center gap-3 shrink-0">
-              {/* 마이크 선택 */}
-              {!hasMicPermission ? (
-                // 권한 없음: 마이크 버튼 클릭 시 권한 요청 (펄스 효과로 주의 유도)
-                <div className="relative">
-                  {/* 펄스 효과 (버튼 뒤에 위치, 데모 중에는 숨김) */}
-                  {!isTestRunning && (
-                    <span className="absolute inset-0 rounded-md bg-blue-400/30 animate-ping pointer-events-none z-0" />
-                  )}
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={requestMicPermission}
-                    disabled={isRecording || isRemoteRecording || isTestRunning}
-                    className="h-8 w-8 shrink-0 text-blue-500 hover:text-blue-600 hover:bg-blue-50 relative z-10"
-                    title="마이크 권한 허용 (녹음하려면 먼저 클릭)"
-                  >
-                    <Mic className="w-4 h-4" />
-                  </Button>
-                </div>
-              ) : audioDevices.length > 1 ? (
-                // 권한 있음 + 여러 장치: 드롭다운
-                <Select value={selectedMicId} onValueChange={setSelectedMicId} disabled={isRecording || isRemoteRecording || isTestRunning}>
-                  <SelectTrigger className="h-8 w-[140px] text-xs border-slate-200">
-                    <Mic className="w-3 h-3 mr-1 shrink-0" />
-                    <SelectValue placeholder="마이크 선택" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {audioDevices.map((device) => (
-                      <SelectItem key={device.deviceId} value={device.deviceId} className="text-xs">
-                        {device.label || `마이크 ${audioDevices.indexOf(device) + 1}`}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              ) : null}
+              {/* 마이크 선택 - 데스크탑에서만 표시 */}
+              <div className="hidden lg:block">
+                {!hasMicPermission ? (
+                  // 권한 없음: 마이크 버튼 클릭 시 권한 요청 (펄스 효과로 주의 유도)
+                  <div className="relative">
+                    {/* 펄스 효과 (버튼 뒤에 위치, 데모 중에는 숨김) */}
+                    {!isTestRunning && (
+                      <span className="absolute inset-0 rounded-md bg-blue-400/30 animate-ping pointer-events-none z-0" />
+                    )}
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={requestMicPermission}
+                      disabled={isRecording || isRemoteRecording || isTestRunning}
+                      className="h-8 w-8 shrink-0 text-blue-500 hover:text-blue-600 hover:bg-blue-50 relative z-10"
+                      title="마이크 권한 허용 (녹음하려면 먼저 클릭)"
+                    >
+                      <Mic className="w-4 h-4" />
+                    </Button>
+                  </div>
+                ) : audioDevices.length > 1 ? (
+                  // 권한 있음 + 여러 장치: 드롭다운
+                  <Select value={selectedMicId} onValueChange={setSelectedMicId} disabled={isRecording || isRemoteRecording || isTestRunning}>
+                    <SelectTrigger className="h-8 w-[140px] text-xs border-slate-200">
+                      <Mic className="w-3 h-3 mr-1 shrink-0" />
+                      <SelectValue placeholder="마이크 선택" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {audioDevices.map((device) => (
+                        <SelectItem key={device.deviceId} value={device.deviceId} className="text-xs">
+                          {device.label || `마이크 ${audioDevices.indexOf(device) + 1}`}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : null}
+              </div>
 
-              {/* 휴대폰 마이크 연결 버튼 */}
+              {/* 휴대폰 마이크 연결 버튼 - 데스크탑에서만 표시 */}
               <Button
                 variant="ghost"
                 size="icon"
                 onClick={() => setRemoteMicOpen(true)}
                 disabled={isRecording || isTestRunning}
-                className={`h-8 w-8 shrink-0 transition-all ${
+                className={`hidden lg:flex h-8 w-8 shrink-0 transition-all ${
                   isRemoteRecording 
                     ? 'text-red-600 bg-red-50' 
                     : isRemoteConnected 
@@ -1738,8 +1781,8 @@ function MainApp() {
                 patientName={patientName}
                 patientMemo={patientMemo}
                 selectedDeviceId={selectedMicId}
-                disabled={!hasMicPermission || isTestRunning}
-                disabledReason={isTestRunning ? "데모 실행 중입니다" : "먼저 마이크 권한을 허용해주세요"}
+                disabled={isTestRunning}
+                disabledReason={isTestRunning ? "데모 실행 중입니다" : undefined}
               />
             </div>
           </div>
@@ -1766,6 +1809,48 @@ function MainApp() {
                 currentDemoSegment={isTestRunning && realtimeSegments.length > 0 ? realtimeSegments[realtimeSegments.length - 1] : null}
               />
             </div>
+
+            {/* 피드백 유도 배너 */}
+            {showFeedbackBanner && chartData && !isRecording && !isRemoteRecording && !isGeneratingChart && (
+              <div className="bg-gradient-to-r from-blue-50 to-slate-50 border border-blue-100 rounded-xl p-4 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
+                    <MessageSquare className="w-5 h-5 text-blue-600" />
+                  </div>
+                  <div>
+                    <p className="font-medium text-slate-800">사용해보신 소감이 궁금해요!</p>
+                    <p className="text-sm text-slate-500">피드백을 남겨주시면 더 좋은 서비스를 만드는 데 도움이 됩니다.</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setSubscribeOpen(true)}
+                    className="text-slate-600"
+                  >
+                    <Bell className="w-4 h-4 mr-1.5" />
+                    출시 알림
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => setFeedbackOpen(true)}
+                    className="bg-blue-600 hover:bg-blue-700"
+                  >
+                    <MessageSquare className="w-4 h-4 mr-1.5" />
+                    피드백 남기기
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setShowFeedbackBanner(false)}
+                    className="h-8 w-8 text-slate-400 hover:text-slate-600"
+                  >
+                    <X className="w-4 h-4" />
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Mobile: Chart Only */}
@@ -1790,6 +1875,42 @@ function MainApp() {
                 currentDemoSegment={isTestRunning && realtimeSegments.length > 0 ? realtimeSegments[realtimeSegments.length - 1] : null}
               />
             </div>
+
+            {/* 피드백 유도 배너 (모바일) */}
+            {showFeedbackBanner && chartData && !isRecording && !isRemoteRecording && !isGeneratingChart && (
+              <div className="bg-gradient-to-r from-blue-50 to-slate-50 border border-blue-100 rounded-xl p-3 mx-2">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="font-medium text-slate-800 text-sm">사용해보신 소감이 궁금해요!</p>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setShowFeedbackBanner(false)}
+                    className="h-6 w-6 text-slate-400"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </Button>
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setSubscribeOpen(true)}
+                    className="flex-1 text-xs"
+                  >
+                    <Bell className="w-3.5 h-3.5 mr-1" />
+                    출시 알림
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => setFeedbackOpen(true)}
+                    className="flex-1 text-xs bg-blue-600 hover:bg-blue-700"
+                  >
+                    <MessageSquare className="w-3.5 h-3.5 mr-1" />
+                    피드백
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Feedback & Subscribe Modals (숨김 처리된 트리거 없는 모달들) */}
@@ -1904,74 +2025,113 @@ function MainApp() {
           </Dialog>
 
           {/* Subscribe Info Modal */}
-          <Dialog open={subscribeOpen} onOpenChange={setSubscribeOpen}>
+          <Dialog open={subscribeOpen} onOpenChange={(open) => {
+            setSubscribeOpen(open);
+            if (!open) setSubscribeStep('info');
+          }}>
             <DialogContent className="sm:max-w-md">
               <DialogHeader>
                 <DialogTitle className="flex items-center gap-2">
-                  <Mail className="w-5 h-5 text-blue-600" />
-                  조금만 더 알려주세요!
+                  <Bell className="w-5 h-5 text-blue-600" />
+                  {subscribeStep === 'info' ? '출시 알림 받기' : '이메일 입력'}
                 </DialogTitle>
               </DialogHeader>
-              <form onSubmit={handleEmailSubscribe} className="space-y-4">
-                <p className="text-sm text-slate-500">
-                  <span className="font-medium text-slate-700">{email}</span>로 알림을 보내드립니다.
-                  <br />더 나은 서비스를 위해 간단한 정보를 입력해주세요.
-                </p>
-                
-                <div className="grid grid-cols-2 gap-3">
-                  <Select value={userAge} onValueChange={setUserAge}>
+              
+              {subscribeStep === 'info' ? (
+                <div className="space-y-4">
+                  <p className="text-sm text-slate-500">
+                    더 나은 서비스를 위해 간단한 정보를 입력해주세요.
+                  </p>
+                  
+                  <div className="grid grid-cols-2 gap-3">
+                    <Select value={userAge} onValueChange={setUserAge}>
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="연령대 *" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {AGE_OPTIONS.map(opt => (
+                          <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    
+                    <Select value={userJob} onValueChange={setUserJob}>
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="직업 *" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {JOB_OPTIONS.map(opt => (
+                          <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  
+                  <Select value={userSpecialty} onValueChange={setUserSpecialty}>
                     <SelectTrigger className="w-full">
-                      <SelectValue placeholder="연령대 *" />
+                      <SelectValue placeholder="전공과 *" />
                     </SelectTrigger>
-                    <SelectContent>
-                      {AGE_OPTIONS.map(opt => (
-                        <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                    <SelectContent className="max-h-[300px]">
+                      {SPECIALTY_OPTIONS.map(group => (
+                        <SelectGroup key={group.group}>
+                          <SelectLabel>{group.group}</SelectLabel>
+                          {group.items.map(opt => (
+                            <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                          ))}
+                        </SelectGroup>
                       ))}
                     </SelectContent>
                   </Select>
                   
-                  <Select value={userJob} onValueChange={setUserJob}>
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="직업 *" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {JOB_OPTIONS.map(opt => (
-                        <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <div className="flex justify-end gap-2">
+                    <Button type="button" variant="outline" onClick={() => setSubscribeOpen(false)}>
+                      취소
+                    </Button>
+                    <Button 
+                      onClick={() => {
+                        if (!userAge || !userJob || !userSpecialty) {
+                          toast.error('모든 필드를 선택해주세요');
+                          return;
+                        }
+                        setSubscribeStep('email');
+                      }}
+                      className="bg-blue-600 hover:bg-blue-700"
+                    >
+                      다음
+                      <ChevronRight className="w-4 h-4 ml-1" />
+                    </Button>
+                  </div>
                 </div>
-                
-                <Select value={userSpecialty} onValueChange={setUserSpecialty}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="전공과 *" />
-                  </SelectTrigger>
-                  <SelectContent className="max-h-[300px]">
-                    {SPECIALTY_OPTIONS.map(group => (
-                      <SelectGroup key={group.group}>
-                        <SelectLabel>{group.group}</SelectLabel>
-                        {group.items.map(opt => (
-                          <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                        ))}
-                      </SelectGroup>
-                    ))}
-                  </SelectContent>
-                </Select>
-                
-                <div className="flex justify-end gap-2">
-                  <Button type="button" variant="outline" onClick={() => setSubscribeOpen(false)}>
-                    취소
-                  </Button>
-                  <Button 
-                    type="submit" 
-                    disabled={isSubscribing}
-                    className="bg-blue-600 hover:bg-blue-700"
-                  >
-                    {isSubscribing ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Mail className="w-4 h-4 mr-2" />}
-                    완료
-                  </Button>
-                </div>
-              </form>
+              ) : (
+                <form onSubmit={handleEmailSubscribe} className="space-y-4">
+                  <p className="text-sm text-slate-500">
+                    출시 소식을 받을 이메일을 입력해주세요.
+                  </p>
+                  
+                  <Input
+                    type="email"
+                    placeholder="이메일 주소"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="w-full"
+                    required
+                  />
+                  
+                  <div className="flex justify-end gap-2">
+                    <Button type="button" variant="outline" onClick={() => setSubscribeStep('info')}>
+                      이전
+                    </Button>
+                    <Button 
+                      type="submit" 
+                      disabled={isSubscribing || !email.trim()}
+                      className="bg-blue-600 hover:bg-blue-700"
+                    >
+                      {isSubscribing ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Bell className="w-4 h-4 mr-2" />}
+                      알림 받기
+                    </Button>
+                  </div>
+                </form>
+              )}
             </DialogContent>
           </Dialog>
             </div>
